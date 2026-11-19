@@ -19,4 +19,4 @@ mod app;
 pub mod auth;
 pub mod error;
 
-pub use app::{AppState, router};
+pub use app::{AppState, ROUTES, router};

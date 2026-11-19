@@ -10,6 +10,9 @@
 //!   LEDGER_SCHEMA          the ledger schema, default `ledger`
 //!   LEDGER_LISTEN          the address to listen on, default `127.0.0.1:8080`
 //!   LEDGER_TOKENS_FILE     a JSON list of `{token, tenant, principal}` (see `ledger_api::auth`)
+//!   LEDGER_PEERS_FILE      optional: a JSON object of other cells' names to connection strings, for
+//!                          transfers to accounts homed there. Without it, only transfers within
+//!                          this cell can be made
 //!   LEDGER_ETCD_ENDPOINTS  comma-separated etcd client URLs
 //!   LEDGER_ETCD_PREFIX     the control plane's key prefix, default `/ledger`
 //!   LEDGER_LEASE_*         the lease guard's timings (see `control_plane::GuardConfig`)
@@ -90,7 +93,7 @@ async fn run() -> Result<(), String> {
         .map_err(|e| format!("cannot reach the control plane: {e}"))?;
     let guard = LeaseGuard::new(node.clone(), guard_config, Arc::new(SystemClock::new()))
         .map_err(|e| e.to_string())?;
-    let state = AppState::new(
+    let mut state = AppState::new(
         node.clone(),
         &schema,
         db,
@@ -98,6 +101,17 @@ async fn run() -> Result<(), String> {
         guard,
         Arc::new(tokens),
     );
+    if std::env::var_os("LEDGER_PEERS_FILE").is_some() {
+        let peers: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(&file("LEDGER_PEERS_FILE")?)
+                .map_err(|_| "LEDGER_PEERS_FILE: not a JSON object of strings".to_owned())?;
+        for (cell, conn) in peers {
+            let peer = connect(&conn, tls)
+                .await
+                .map_err(|_| format!("cannot connect to the database of cell {cell}"))?;
+            state = state.with_peer(&cell, peer);
+        }
+    }
 
     // A healthy cell renews the leases of the accounts homed here, on a timer.
     let renewing = state.clone();

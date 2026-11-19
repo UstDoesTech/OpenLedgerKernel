@@ -89,3 +89,21 @@ pub async fn claim(client: &Client, schema: &str, r: &Request<'_>) -> Result<Cla
         Ok(Claim::Conflict)
     }
 }
+
+/// Gives a key back when the request it held was declined and wrote nothing, so the same key can
+/// be used again once whatever caused the decline has changed.
+pub async fn release(client: &Client, schema: &str, r: &Request<'_>) -> Result<(), LegError> {
+    validate_schema_name(schema)?;
+    client
+        .execute(
+            &format!(
+                "delete from {schema}.api_request \
+                  where tenant_id = $1::text and principal = $2::text and idempotency_key = $3::text \
+                    and request_hash = $4::text"
+            ),
+            &[&r.tenant.as_str(), &r.principal, &r.key, &r.hash],
+        )
+        .await
+        .map_err(classify)?;
+    Ok(())
+}

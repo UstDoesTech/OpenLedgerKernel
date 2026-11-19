@@ -1,6 +1,7 @@
 //! The service: its state, the routes and what each does.
 
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 use axum::Json;
 use axum::Router;
@@ -12,10 +13,12 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use control_plane::{Admission, ControlError, ControlPlane, LeaseGuard, NodeId};
-use ledger_core::{AccountId, Currency, Money, TenantId};
+use ledger_core::{AccountId, Currency, JournalId, Money, TenantId};
 use ledger_store::accounts::{self, NewAccount};
+use ledger_store::cross_cell::{self, Pair};
 use ledger_store::holds;
 use ledger_store::requests::{self, Claim, Kind, Request};
+use ledger_store::same_cell::{self, SameCell};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio_postgres::Client;
@@ -45,6 +48,10 @@ struct Inner<C> {
     guard: LeaseGuard,
     auth: Arc<dyn Authenticator>,
     admission: Admission,
+    /// Connections to the other cells, for transfers that end there.
+    peers: HashMap<String, Client>,
+    /// The pairs of cells already made ready for in-transit value, so each is done once.
+    prepared: Mutex<HashSet<(String, String, String, String)>>,
 }
 
 impl<C: ControlPlane> AppState<C> {
@@ -67,8 +74,21 @@ impl<C: ControlPlane> AppState<C> {
                 guard,
                 auth,
                 admission: Admission::new(),
+                peers: HashMap::new(),
+                prepared: Mutex::new(HashSet::new()),
             }),
         }
+    }
+
+    /// Adds a connection to another cell's database, for transfers to accounts homed there. Call it
+    /// before the state is shared.
+    #[must_use]
+    pub fn with_peer(mut self, cell: &str, db: Client) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("peers are added before the state is shared")
+            .peers
+            .insert(cell.to_owned(), db);
+        self
     }
 
     /// What a healthy cell does on a timer: confirm the lease of every account homed here, which
@@ -83,6 +103,16 @@ impl<C: ControlPlane> AppState<C> {
     }
 }
 
+/// Every operation the service answers, as a method and a path in OpenAPI's form. A test holds
+/// this list and `api/openapi.yaml` to each other.
+pub const ROUTES: &[(&str, &str)] = &[
+    ("get", "/healthz"),
+    ("post", "/v1/accounts"),
+    ("get", "/v1/accounts/{accountId}"),
+    ("get", "/v1/accounts/{accountId}/balances"),
+    ("post", "/v1/transfers"),
+];
+
 /// The routes.
 pub fn router<C: ControlPlane + 'static>(state: AppState<C>) -> Router {
     Router::new()
@@ -90,6 +120,7 @@ pub fn router<C: ControlPlane + 'static>(state: AppState<C>) -> Router {
         .route("/v1/accounts", post(open_account::<C>))
         .route("/v1/accounts/{account_id}", get(get_account::<C>))
         .route("/v1/accounts/{account_id}/balances", get(get_balances::<C>))
+        .route("/v1/transfers", post(post_transfer::<C>))
         .with_state(state)
 }
 
@@ -400,4 +431,322 @@ async fn healthz<C: ControlPlane + 'static>(
             )),
         )
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NewTransfer {
+    payer_account_id: String,
+    payee_account_id: String,
+    amount: Money,
+}
+
+#[derive(Serialize)]
+struct Watermark {
+    cell: String,
+    watermark: i64,
+}
+
+#[derive(Serialize)]
+struct TransferView {
+    journal_id: String,
+    status: &'static str,
+    payer_account_id: String,
+    payee_account_id: String,
+    amount: Money,
+    watermarks: Vec<Watermark>,
+    /// True when the same request had been made before and nothing new was written.
+    replayed: bool,
+}
+
+/// `POST /v1/transfers`: moves an amount between two of the caller's accounts. The payer's
+/// account must be homed at this cell; the payee's may be homed anywhere.
+async fn post_transfer<C: ControlPlane + 'static>(
+    State(s): State<AppState<C>>,
+    Caller(caller): Caller,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let key = idempotency_key(&headers)?;
+    let request: NewTransfer =
+        serde_json::from_slice(&body).map_err(|e| ApiError::invalid(e.to_string()))?;
+    let payer: AccountId = request
+        .payer_account_id
+        .parse()
+        .map_err(|_| ApiError::not_found())?;
+    let payee: AccountId = request
+        .payee_account_id
+        .parse()
+        .map_err(|_| ApiError::not_found())?;
+    if request.amount.minor() <= 0 {
+        return Err(ApiError::invalid("the amount must be positive"));
+    }
+    if payer == payee {
+        return Err(ApiError::invalid("the payer and the payee must differ"));
+    }
+    let _ticket = s
+        .inner
+        .admission
+        .enter()
+        .map_err(|_| ApiError::home_unavailable("this cell is draining"))?;
+
+    let journal_id = derived_id(
+        "jr_",
+        &["transfer", caller.tenant.as_str(), &caller.name, &key],
+    );
+    let journal: JournalId = journal_id.parse().map_err(|_| ApiError::internal())?;
+    let hash = hex(&Sha256::digest(
+        format!(
+            "transfer|{payer}|{payee}|{}|{}",
+            request.amount.minor(),
+            request.amount.currency()
+        )
+        .as_bytes(),
+    ));
+    let claim_request = Request {
+        tenant: &caller.tenant,
+        principal: &caller.name,
+        key: &key,
+        kind: Kind::Transfer,
+        hash: &hash,
+        resource: &journal_id,
+    };
+    let claim = requests::claim(&s.inner.db, &s.inner.schema, &claim_request).await?;
+    if claim == Claim::Conflict {
+        return Err(ApiError::idempotency_conflict());
+    }
+
+    let mut wrote = false;
+    let result = run_transfer(
+        &s,
+        &caller,
+        &journal,
+        &payer,
+        &payee,
+        request.amount,
+        &mut wrote,
+    )
+    .await;
+    let watermarks = match result {
+        Ok(w) => w,
+        Err(e) => {
+            // A decline before anything was written gives the key back. A failure after the first
+            // half was written keeps it, so a retry finishes the transfer exactly once.
+            if !wrote {
+                let _ = requests::release(&s.inner.db, &s.inner.schema, &claim_request).await;
+            }
+            return Err(e);
+        }
+    };
+    let repeat = matches!(claim, Claim::Repeat { .. }) || watermarks.1;
+    let view = TransferView {
+        journal_id,
+        status: "posted",
+        payer_account_id: payer.to_string(),
+        payee_account_id: payee.to_string(),
+        amount: request.amount,
+        watermarks: watermarks.0,
+        replayed: repeat,
+    };
+    Ok(replayed(
+        (StatusCode::CREATED, Json(view)).into_response(),
+        repeat,
+    ))
+}
+
+/// Does the posting. Returns the watermark at each cell touched, and whether every step had
+/// already been done. `wrote` says whether anything reached a ledger before a failure.
+async fn run_transfer<C: ControlPlane + 'static>(
+    s: &AppState<C>,
+    caller: &Principal,
+    journal: &JournalId,
+    payer: &AccountId,
+    payee: &AccountId,
+    amount: Money,
+    wrote: &mut bool,
+) -> Result<(Vec<Watermark>, bool), ApiError> {
+    let i = &s.inner;
+    let currency = amount.currency().to_string();
+    let Some(payer_record) = accounts::get(&i.db, &i.schema, &caller.tenant, payer).await? else {
+        return Err(payer_elsewhere(s, &caller.tenant, payer).await);
+    };
+    if payer_record.currency != currency {
+        return Err(ApiError::invalid(
+            "the amount is not in the payer's currency",
+        ));
+    }
+    let payer_epoch = i.guard.check(&*i.cp, payer).await?;
+
+    let (payee_home, payee_epoch) = match i.cp.home(payee).await {
+        Ok(h) => h,
+        Err(ControlError::UnknownAccount(_)) => return Err(ApiError::not_found()),
+        Err(e) => return Err(e.into()),
+    };
+
+    if payee_home == i.node {
+        let payee_record = accounts::get(&i.db, &i.schema, &caller.tenant, payee)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        if payee_record.currency != currency {
+            return Err(ApiError::invalid(
+                "the payee's account is in another currency",
+            ));
+        }
+        let payee_epoch = i.guard.check(&*i.cp, payee).await?;
+        let step = same_cell::post(
+            &i.db,
+            &i.schema,
+            &SameCell {
+                tenant: caller.tenant.clone(),
+                journal: journal.clone(),
+                actor: caller.name.clone(),
+                payer: payer.clone(),
+                payee: payee.clone(),
+                amount,
+                cell: i.node.to_string(),
+                payer_epoch: payer_epoch.0 as i64,
+                payee_epoch: payee_epoch.0 as i64,
+            },
+        )
+        .await?;
+        return Ok((
+            vec![Watermark {
+                cell: i.node.to_string(),
+                watermark: step.watermark,
+            }],
+            step.replayed,
+        ));
+    }
+
+    // The payee is homed at another cell. Both cells must be reachable before anything is
+    // written, and the payee must exist there, so the first half is never stranded.
+    let peer = i
+        .peers
+        .get(payee_home.as_str())
+        .ok_or_else(|| ApiError::home_unavailable("this cell has no route to the payee's cell"))?;
+    let payee_record = accounts::get(peer, &i.schema, &caller.tenant, payee)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    if payee_record.currency != currency {
+        return Err(ApiError::invalid(
+            "the payee's account is in another currency",
+        ));
+    }
+    let pair = Pair {
+        tenant: caller.tenant.clone(),
+        from_cell: i.node.to_string(),
+        to_cell: payee_home.to_string(),
+        currency: currency.clone(),
+        sending: derived_in_transit(
+            "send",
+            caller,
+            &i.node.to_string(),
+            payee_home.as_str(),
+            &currency,
+        )?,
+        receiving: derived_in_transit(
+            "recv",
+            caller,
+            &i.node.to_string(),
+            payee_home.as_str(),
+            &currency,
+        )?,
+    };
+    let marker = (
+        caller.tenant.to_string(),
+        pair.from_cell.clone(),
+        pair.to_cell.clone(),
+        currency,
+    );
+    let known = i
+        .prepared
+        .lock()
+        .map(|p| p.contains(&marker))
+        .unwrap_or(false);
+    if !known {
+        cross_cell::prepare(&i.db, &i.schema, &pair, &pair.from_cell).await?;
+        cross_cell::prepare(peer, &i.schema, &pair, &pair.to_cell).await?;
+        if let Ok(mut p) = i.prepared.lock() {
+            p.insert(marker);
+        }
+    }
+
+    let t = cross_cell::Transfer {
+        tenant: caller.tenant.clone(),
+        journal: journal.clone(),
+        actor: caller.name.clone(),
+        payer: payer.clone(),
+        payee: payee.clone(),
+        sending: pair.sending.clone(),
+        receiving: pair.receiving.clone(),
+        amount,
+        payer_cell: pair.from_cell.clone(),
+        payee_cell: pair.to_cell.clone(),
+        payer_epoch: payer_epoch.0 as i64,
+        sending_epoch: 1,
+        receiving_epoch: 1,
+        payee_epoch: payee_epoch.0 as i64,
+    };
+    let sent = cross_cell::send(&i.db, &i.schema, &t).await?;
+    *wrote = true;
+    let received = cross_cell::receive(peer, &i.schema, &t).await?;
+    cross_cell::settle(&i.db, &i.schema, &caller.tenant, journal).await?;
+    Ok((
+        vec![
+            Watermark {
+                cell: pair.from_cell,
+                watermark: sent.watermark,
+            },
+            Watermark {
+                cell: pair.to_cell,
+                watermark: received.watermark,
+            },
+        ],
+        sent.replayed && received.replayed,
+    ))
+}
+
+/// The id of one in-transit account for a pair of cells and a currency, the same on both cells.
+fn derived_in_transit(
+    side: &str,
+    caller: &Principal,
+    from: &str,
+    to: &str,
+    currency: &str,
+) -> Result<AccountId, ApiError> {
+    derived_id(
+        "acc_",
+        &[
+            "in-transit",
+            side,
+            caller.tenant.as_str(),
+            from,
+            to,
+            currency,
+        ],
+    )
+    .parse()
+    .map_err(|_| ApiError::internal())
+}
+
+/// The payer is not at this cell. If it is the caller's own account, homed at a cell this one can
+/// reach, say where to go; otherwise it is the same answer as an account that does not exist, so
+/// another tenant's account is never confirmed.
+async fn payer_elsewhere<C: ControlPlane + 'static>(
+    s: &AppState<C>,
+    tenant: &TenantId,
+    payer: &AccountId,
+) -> ApiError {
+    let i = &s.inner;
+    if let Ok((home, _)) = i.cp.home(payer).await
+        && home != i.node
+        && let Some(peer) = i.peers.get(home.as_str())
+        && matches!(
+            accounts::get(peer, &i.schema, tenant, payer).await,
+            Ok(Some(_))
+        )
+    {
+        return ApiError::wrong_home(home.as_str());
+    }
+    ApiError::not_found()
 }
