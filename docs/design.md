@@ -32,6 +32,8 @@ A cell is the unit of failure and of authority: one Postgres primary with synchr
 
 ### Journals across cells
 
+![A journal across two cells](diagrams/cross-cell-journal.svg)
+
 A journal whose accounts live on different cells is posted in legs, and every leg balances inside its own cell. Each ordered pair of cells has two in-transit internal accounts, one homed at each cell, because an account has one writer and so one sequence of entries. The sending account is homed at the payer's cell, and the receiving account at the payee's:
 
 1. The payer's cell debits the payer and credits the sending account, after checking available balance, in one SQL call.
@@ -43,6 +45,8 @@ Each cell's books balance at every instant, and the in-transit value (sending ba
 The harness posts the two legs directly against the customer accounts. The in-transit account is the production refinement, so that every cell's trial balance holds at all times.
 
 ### Replication
+
+![Replication and durability tiers](diagrams/replication-and-durability.svg)
 
 Entries replicate between regions as a pull-based outbox over plain SQL, so the design depends on no platform replication feature.
 
@@ -65,6 +69,8 @@ The tier is chosen by policy per command, not by the caller: strong above a valu
 A strong write is an ordinary write at the home followed by an acknowledgement from the remote cell, which returns only once the remote holds every entry of the write in its log. An entry the remote quarantines is not durable. If no acknowledgement arrives in time, the caller gets `durability_not_met`. The write is committed at the home, so a retry with the same key replays it, posts nothing new, and completes the acknowledgement.
 
 ### Failover
+
+![Failover](diagrams/failover.svg)
 
 1. The home's lease lapses because it cannot reach the control plane.
 2. The control plane promotes the standby cell, which reports its high-water mark. That becomes the cutoff for the old epoch.

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 640" width="1060" height="640" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+<title id="t">A journal across two cells</title><desc id="d">A payment between accounts on different cells posts in three steps: the payer's cell debits the payer and credits a sending account, the payee's cell debits a receiving account and credits the payee, then the payer's cell marks the journal posted.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#7b8794"/></marker></defs>
+<rect width="1060" height="640" fill="#ffffff"/>
+<text x="530" y="34" font-size="22" font-weight="700" text-anchor="middle" fill="#1f2933">A journal across two cells</text>
+<text x="530" y="58" font-size="13" font-weight="400" text-anchor="middle" fill="#52606d">Each leg balances inside its own cell, so every cell's books balance at every instant.</text>
+<rect x="40" y="90" width="440" height="330" rx="12" fill="#fff4e5" stroke="#c26a00" stroke-width="2"/>
+<text x="260" y="118" font-size="17" font-weight="700" text-anchor="middle" fill="#c26a00">Payer's cell</text>
+<rect x="580" y="90" width="440" height="330" rx="12" fill="#e6f0fb" stroke="#1f5fa8" stroke-width="2"/>
+<text x="800" y="118" font-size="17" font-weight="700" text-anchor="middle" fill="#1f5fa8">Payee's cell</text>
+<text x="260" y="136" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">homes the payer and the sending account</text>
+<text x="800" y="136" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">homes the receiving account and the payee</text>
+<rect x="60" y="160" width="170" height="56" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="145.0" y="182" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Payer</text>
+<text x="145.0" y="202" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">customer account</text>
+<rect x="270" y="160" width="170" height="56" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="355.0" y="182" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Sending</text>
+<text x="355.0" y="202" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">in-transit, homed here</text>
+<rect x="600" y="160" width="170" height="56" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="685.0" y="182" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Receiving</text>
+<text x="685.0" y="202" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">in-transit, homed here</text>
+<rect x="830" y="160" width="170" height="56" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="915.0" y="182" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Payee</text>
+<text x="915.0" y="202" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">customer account</text>
+<line x1="230" y1="188" x2="268" y2="188" stroke="#c26a00" stroke-width="2" marker-end="url(#a)"/>
+<circle cx="250" cy="168" r="12" fill="#c26a00"/>
+<text x="250" y="173" font-size="13" font-weight="700" text-anchor="middle" fill="#fff">1</text>
+<rect x="60" y="250" width="400" height="76" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="75" y="272" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">Step 1, one SQL call:</text>
+<text x="75" y="289" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">check available balance, debit the payer,</text>
+<text x="75" y="306" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">credit the sending account. Declined? Nothing is written.</text>
+<line x1="770" y1="188" x2="828" y2="188" stroke="#1f5fa8" stroke-width="2" marker-end="url(#a)"/>
+<circle cx="800" cy="168" r="12" fill="#1f5fa8"/>
+<text x="800" y="173" font-size="13" font-weight="700" text-anchor="middle" fill="#fff">2</text>
+<rect x="600" y="250" width="400" height="76" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="615" y="272" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">Step 2, one SQL call:</text>
+<text x="615" y="289" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">debit the receiving account, credit the payee.</text>
+<text x="615" y="306" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">Keyed by journal id, so it completes exactly once.</text>
+<path d="M 440 188 L 600 188" fill="none" stroke="#7b8794" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="520" y="176" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">value in transit</text>
+<path d="M 440 300 L 600 300" fill="none" stroke="#7b8794" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="520" y="290" font-size="11" font-weight="400" text-anchor="middle" fill="#52606d">asks for step 2</text>
+<rect x="60" y="346" width="400" height="56" rx="8" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5"/>
+<circle cx="80" cy="374" r="12" fill="#2e7d32"/>
+<text x="80" y="379" font-size="13" font-weight="700" text-anchor="middle" fill="#fff">3</text>
+<text x="270" y="370" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Payer's cell marks the journal posted</text>
+<text x="270" y="388" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">after the payee's leg is confirmed</text>
+<path d="M 780 326 L 780 372 L 460 372" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="40" y="450" width="980" height="150" rx="10" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="60" y="478" font-size="15" font-weight="700" text-anchor="start" fill="#1f2933">What keeps it correct</text>
+<text x="60" y="504" font-size="13" font-weight="400" text-anchor="start" fill="#1f2933">•  Recovery finishes any journal interrupted between legs, keyed by journal id, so it completes exactly once.</text>
+<text x="60" y="528" font-size="13" font-weight="400" text-anchor="start" fill="#1f2933">•  In-transit value (sending balance plus receiving balance) equals the value of journals still between legs.</text>
+<text x="60" y="552" font-size="13" font-weight="400" text-anchor="start" fill="#1f2933">•  Reconciliation checks that the in-transit balances drain to zero.</text>
+<text x="60" y="576" font-size="13" font-weight="400" text-anchor="start" fill="#1f2933">•  Each ordered pair of cells has two in-transit accounts, one homed at each cell, because an account has one writer.</text>
+</svg>

@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 670" width="1060" height="670" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+<title id="t">Infrastructure layers and the guarded apply route</title><desc id="d">Seven OpenTofu layers are applied in order, each reading earlier ones through remote state. A person dispatches the infra-apply workflow from main; plans and logs go to a private plan store, and an apply needs approval of the infra-apply environment.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#7b8794"/></marker></defs>
+<rect width="1060" height="670" fill="#ffffff"/>
+<text x="530" y="34" font-size="22" font-weight="700" text-anchor="middle" fill="#1f2933">Infrastructure layers and the guarded apply route</text>
+<text x="530" y="58" font-size="13" font-weight="400" text-anchor="middle" fill="#52606d">Each layer is its own OpenTofu root under infra/envs/&lt;env&gt;/&lt;layer&gt;. Destroy in reverse order.</text>
+<rect x="40" y="86" width="430" height="46" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="58" y="106" font-size="14" font-weight="700" text-anchor="start" fill="#1f2933">1  network</text>
+<text x="58" y="125" font-size="11" font-weight="400" text-anchor="start" fill="#52606d">private networks in each cloud</text>
+<line x1="255" y1="132" x2="255" y2="152" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="40" y="152" width="430" height="46" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="58" y="172" font-size="14" font-weight="700" text-anchor="start" fill="#1f2933">2  private-access</text>
+<text x="58" y="191" font-size="11" font-weight="400" text-anchor="start" fill="#52606d">private endpoints and Key Vault</text>
+<line x1="255" y1="198" x2="255" y2="218" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="40" y="218" width="430" height="46" rx="8" fill="#f3e8fb" stroke="#7a3fa0" stroke-width="1.5"/>
+<text x="58" y="238" font-size="14" font-weight="700" text-anchor="start" fill="#1f2933">3  interconnect</text>
+<text x="58" y="257" font-size="11" font-weight="400" text-anchor="start" fill="#52606d">encrypted VPN links between the clouds</text>
+<line x1="255" y1="264" x2="255" y2="284" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="40" y="284" width="430" height="46" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="58" y="304" font-size="14" font-weight="700" text-anchor="start" fill="#1f2933">4  registries</text>
+<text x="58" y="323" font-size="11" font-weight="400" text-anchor="start" fill="#52606d">private image registries per cloud</text>
+<line x1="255" y1="330" x2="255" y2="350" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="40" y="350" width="430" height="46" rx="8" fill="#f3e8fb" stroke="#7a3fa0" stroke-width="1.5"/>
+<text x="58" y="370" font-size="14" font-weight="700" text-anchor="start" fill="#1f2933">5  control-plane</text>
+<text x="58" y="389" font-size="11" font-weight="400" text-anchor="start" fill="#52606d">five etcd members: two, two, one</text>
+<line x1="255" y1="396" x2="255" y2="416" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="40" y="416" width="430" height="46" rx="8" fill="#fff4e5" stroke="#c26a00" stroke-width="1.5"/>
+<text x="58" y="436" font-size="14" font-weight="700" text-anchor="start" fill="#1f2933">6  cell-first</text>
+<text x="58" y="455" font-size="11" font-weight="400" text-anchor="start" fill="#52606d">first database cell per cloud</text>
+<line x1="255" y1="462" x2="255" y2="482" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="40" y="482" width="430" height="46" rx="8" fill="#fff4e5" stroke="#c26a00" stroke-width="1.5"/>
+<text x="58" y="502" font-size="14" font-weight="700" text-anchor="start" fill="#1f2933">7  cells</text>
+<text x="58" y="521" font-size="11" font-weight="400" text-anchor="start" fill="#52606d">more cells: self-hosted (VMs) or managed (RDS, Azure Flexible, Cloud SQL)</text>
+<text x="255" y="552" font-size="11" font-weight="400" text-anchor="middle" fill="#52606d" font-style="italic">state in S3; later layers read earlier ones with terraform_remote_state</text>
+<rect x="540" y="86" width="480" height="560" rx="12" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="780" y="114" font-size="15" font-weight="700" text-anchor="middle" fill="#1f2933">infra-apply workflow (public repository)</text>
+<rect x="580" y="130" width="400" height="62" rx="8" fill="#fdeaea" stroke="#b42318" stroke-width="1.5"/>
+<text x="780.0" y="152" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Person dispatches, from main only</text>
+<text x="780.0" y="172" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">owner only; never a push or pull request</text>
+<line x1="780" y1="192" x2="780" y2="212" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="580" y="212" width="400" height="62" rx="8" fill="#e6f0fb" stroke="#1f5fa8" stroke-width="1.5"/>
+<text x="780.0" y="234" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Plan job: infra-plan environment</text>
+<text x="780.0" y="254" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">read-only identity, no state lock</text>
+<line x1="780" y1="274" x2="780" y2="294" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="580" y="294" width="400" height="62" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="780.0" y="316" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Counts and fingerprint to the job summary</text>
+<text x="780.0" y="336" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">tofu output never reaches the public log</text>
+<line x1="780" y1="356" x2="780" y2="376" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="580" y="376" width="400" height="62" rx="8" fill="#f3e8fb" stroke="#7a3fa0" stroke-width="1.5"/>
+<text x="780.0" y="398" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Person reads the plan in the plan store</text>
+<text x="780.0" y="418" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">private S3 bucket, by run id</text>
+<line x1="780" y1="438" x2="780" y2="458" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="580" y="458" width="400" height="62" rx="8" fill="#fdeaea" stroke="#b42318" stroke-width="1.5"/>
+<text x="780.0" y="480" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Apply job: approval of infra-apply</text>
+<text x="780.0" y="500" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">named reviewer, main only</text>
+<line x1="780" y1="520" x2="780" y2="540" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="580" y="540" width="400" height="62" rx="8" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5"/>
+<text x="780.0" y="562" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Re-plan, compare fingerprint, apply saved plan</text>
+<text x="780.0" y="582" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">mismatch means nothing is applied</text>
+<text x="780" y="626" font-size="11" font-weight="400" text-anchor="middle" fill="#52606d">Each cloud trusts one environment of one repository (OIDC). No stored cloud secrets.</text>
+</svg>

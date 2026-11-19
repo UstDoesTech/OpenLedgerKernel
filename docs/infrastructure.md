@@ -4,6 +4,8 @@ OpenTofu code in `infra/` builds the architecture across AWS, Azure and Google C
 
 ## Order
 
+![Infrastructure layers and the guarded apply route](diagrams/infrastructure-and-apply.svg)
+
 Each layer is its own OpenTofu root under `infra/envs/<env>/<layer>`, with state in an S3 bucket. Later layers read earlier ones through `terraform_remote_state`. Apply them in this order:
 
 1. `network`

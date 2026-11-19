@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 600" width="1060" height="600" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+<title id="t">Replication and durability tiers</title><desc id="d">Cells pull entries from each other's outbox over plain SQL. A standard write returns when the home commits with in-region standbys. A strong write also waits for an acknowledgement from the remote cell.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#7b8794"/></marker></defs>
+<rect width="1060" height="600" fill="#ffffff"/>
+<text x="530" y="34" font-size="22" font-weight="700" text-anchor="middle" fill="#1f2933">Replication and durability tiers</text>
+<text x="530" y="58" font-size="13" font-weight="400" text-anchor="middle" fill="#52606d">Plain SQL only: no extensions, no logical-replication slots, no dependence on platform replication.</text>
+<rect x="40" y="84" width="440" height="250" rx="12" fill="#fff4e5" stroke="#c26a00" stroke-width="2"/>
+<text x="260" y="112" font-size="17" font-weight="700" text-anchor="middle" fill="#c26a00">Home cell</text>
+<rect x="580" y="84" width="440" height="250" rx="12" fill="#e6f0fb" stroke="#1f5fa8" stroke-width="2"/>
+<text x="800" y="112" font-size="17" font-weight="700" text-anchor="middle" fill="#1f5fa8">Destination cell</text>
+<rect x="65" y="130" width="180" height="60" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="155.0" y="152" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Entries</text>
+<text x="155.0" y="172" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">append-only, per account</text>
+<rect x="275" y="130" width="180" height="60" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="365.0" y="152" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Outbox</text>
+<text x="365.0" y="172" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">plus a watermark, even idle</text>
+<line x1="245" y1="160" x2="275" y2="160" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="605" y="130" width="180" height="60" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="695.0" y="152" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Apply batch</text>
+<text x="695.0" y="172" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">one SQL call per batch</text>
+<rect x="815" y="130" width="180" height="60" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="905.0" y="152" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Entries + buffer</text>
+<text x="905.0" y="172" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">cursor moves with the batch</text>
+<line x1="785" y1="160" x2="815" y2="160" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<path d="M 580 160 L 455 160" fill="none" stroke="#1f5fa8" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="518" y="150" font-size="12" font-weight="700" text-anchor="middle" fill="#1f5fa8">pull</text>
+<text x="260" y="232" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">Positions are allocated before commit, so a row can</text>
+<text x="260" y="249" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">appear after the cursor has passed it. The relay also</text>
+<text x="260" y="266" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">catches up by account, comparing the highest</text>
+<text x="260" y="283" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">(epoch, sequence) on each side.</text>
+<text x="800" y="232" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">In (epoch, sequence) order, idempotent by entry id.</text>
+<text x="800" y="249" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">A gap is buffered and re-fetched, never skipped.</text>
+<text x="800" y="266" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">An entry from a superseded epoch goes to quarantine,</text>
+<text x="800" y="283" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">never merged.</text>
+<text x="530" y="372" font-size="16" font-weight="700" text-anchor="middle" fill="#1f2933">Durability tier, chosen by policy per command (not by the caller)</text>
+<rect x="40" y="392" width="480" height="190" rx="10" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="2"/>
+<text x="280" y="420" font-size="16" font-weight="700" text-anchor="middle" fill="#1f2933">Standard</text>
+<text x="60" y="446" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">Returns when the home commits with</text>
+<text x="60" y="464" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">synchronous standbys in-region.</text>
+<text x="60" y="482" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933"></text>
+<text x="60" y="500" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">Data loss on regional failure: the unreplicated</text>
+<text x="60" y="518" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">tail, typically seconds, quarantined and reconciled.</text>
+<text x="60" y="536" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">Used for: card authorisations, small payments,</text>
+<text x="60" y="554" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">internal postings.</text>
+<rect x="540" y="392" width="480" height="190" rx="10" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+<text x="780" y="420" font-size="16" font-weight="700" text-anchor="middle" fill="#1f2933">Strong</text>
+<text x="560" y="446" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">Also applied in the standby region before it returns.</text>
+<text x="560" y="464" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">No acknowledgement in time: durability_not_met.</text>
+<text x="560" y="482" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">The write is committed, so a retry with the same key</text>
+<text x="560" y="500" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">replays it and completes the acknowledgement.</text>
+<text x="560" y="518" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933"></text>
+<text x="560" y="536" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">Used for: payments above a tenant threshold, CHAPS,</text>
+<text x="560" y="554" font-size="12" font-weight="400" text-anchor="start" fill="#1f2933">loan drawdowns, settlement, agent-initiated above limit.</text>
+</svg>

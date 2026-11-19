@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 700" width="1060" height="700" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+<title id="t">Open Ledger Kernel: system overview</title><desc id="d">Clients call a tenant API. Each of three clouds in the UK runs ledger cells with synchronous standbys across availability zones. A five-member etcd control plane spans the clouds, and encrypted links join them.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#7b8794"/></marker></defs>
+<rect width="1060" height="700" fill="#ffffff"/>
+<text x="530" y="34" font-size="22" font-weight="700" text-anchor="middle" fill="#1f2933">Open Ledger Kernel: how it hangs together</text>
+<text x="530" y="58" font-size="13" font-weight="400" text-anchor="middle" fill="#52606d">One tenant, three UK clouds. Every account has one home cell; entries are append-only and replicate by pull.</text>
+<rect x="330" y="78" width="400" height="62" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="530.0" y="100" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Commands and queries</text>
+<text x="530.0" y="120" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">Tenant comes from the token. Idempotency key on every command</text>
+<rect x="30" y="190" width="310" height="330" rx="12" fill="#fff4e5" stroke="#c26a00" stroke-width="2"/>
+<text x="185" y="216" font-size="17" font-weight="700" text-anchor="middle" fill="#c26a00">AWS</text>
+<text x="185" y="234" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">eu-west-2 (London)</text>
+<rect x="45" y="250" width="280" height="200" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="185" y="270" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Cell: one Postgres primary</text>
+<rect x="58" y="282" width="120" height="50" rx="8" fill="#fff4e5" stroke="#c26a00" stroke-width="1.5"/>
+<text x="118.0" y="312.0" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">API + node agent</text>
+<rect x="192" y="282" width="120" height="50" rx="8" fill="#fff4e5" stroke="#c26a00" stroke-width="1.5"/>
+<text x="252.0" y="312.0" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Primary</text>
+<text x="185" y="356" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">synchronous standbys in other zones</text>
+<rect x="58" y="366" width="120" height="38" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="118.0" y="390.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">Standby, zone b</text>
+<rect x="192" y="366" width="120" height="38" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="252.0" y="390.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">Standby, zone c</text>
+<text x="185" y="432" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">Entries, in-transit accounts, outbox</text>
+<line x1="178" y1="307" x2="190" y2="307" stroke="#7b8794" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="375" y="190" width="310" height="330" rx="12" fill="#e6f0fb" stroke="#1f5fa8" stroke-width="2"/>
+<text x="530" y="216" font-size="17" font-weight="700" text-anchor="middle" fill="#1f5fa8">Azure</text>
+<text x="530" y="234" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">uksouth</text>
+<rect x="390" y="250" width="280" height="200" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="530" y="270" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Cell: one Postgres primary</text>
+<rect x="403" y="282" width="120" height="50" rx="8" fill="#e6f0fb" stroke="#1f5fa8" stroke-width="1.5"/>
+<text x="463.0" y="312.0" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">API + node agent</text>
+<rect x="537" y="282" width="120" height="50" rx="8" fill="#e6f0fb" stroke="#1f5fa8" stroke-width="1.5"/>
+<text x="597.0" y="312.0" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Primary</text>
+<text x="530" y="356" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">synchronous standbys in other zones</text>
+<rect x="403" y="366" width="120" height="38" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="463.0" y="390.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">Standby, zone b</text>
+<rect x="537" y="366" width="120" height="38" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="597.0" y="390.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">Standby, zone c</text>
+<text x="530" y="432" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">Entries, in-transit accounts, outbox</text>
+<line x1="523" y1="307" x2="535" y2="307" stroke="#7b8794" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="720" y="190" width="310" height="330" rx="12" fill="#e7f6ec" stroke="#1e7a46" stroke-width="2"/>
+<text x="875" y="216" font-size="17" font-weight="700" text-anchor="middle" fill="#1e7a46">Google Cloud</text>
+<text x="875" y="234" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">europe-west2 (London)</text>
+<rect x="735" y="250" width="280" height="200" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="875" y="270" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Cell: one Postgres primary</text>
+<rect x="748" y="282" width="120" height="50" rx="8" fill="#e7f6ec" stroke="#1e7a46" stroke-width="1.5"/>
+<text x="808.0" y="312.0" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">API + node agent</text>
+<rect x="882" y="282" width="120" height="50" rx="8" fill="#e7f6ec" stroke="#1e7a46" stroke-width="1.5"/>
+<text x="942.0" y="312.0" font-size="14" font-weight="700" text-anchor="middle" fill="#1f2933">Primary</text>
+<text x="875" y="356" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">synchronous standbys in other zones</text>
+<rect x="748" y="366" width="120" height="38" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="808.0" y="390.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">Standby, zone b</text>
+<rect x="882" y="366" width="120" height="38" rx="8" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="942.0" y="390.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">Standby, zone c</text>
+<text x="875" y="432" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">Entries, in-transit accounts, outbox</text>
+<line x1="868" y1="307" x2="880" y2="307" stroke="#7b8794" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="70" y="462" width="100" height="40" rx="8" fill="#f3e8fb" stroke="#7a3fa0" stroke-width="1.5"/>
+<text x="120.0" y="487.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">etcd member</text>
+<rect x="190" y="462" width="100" height="40" rx="8" fill="#f3e8fb" stroke="#7a3fa0" stroke-width="1.5"/>
+<text x="240.0" y="487.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">etcd member</text>
+<rect x="415" y="462" width="100" height="40" rx="8" fill="#f3e8fb" stroke="#7a3fa0" stroke-width="1.5"/>
+<text x="465.0" y="487.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">etcd member</text>
+<rect x="535" y="462" width="100" height="40" rx="8" fill="#f3e8fb" stroke="#7a3fa0" stroke-width="1.5"/>
+<text x="585.0" y="487.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">etcd member</text>
+<rect x="760" y="462" width="100" height="40" rx="8" fill="#f3e8fb" stroke="#7a3fa0" stroke-width="1.5"/>
+<text x="810.0" y="487.0" font-size="12" font-weight="700" text-anchor="middle" fill="#1f2933">etcd member</text>
+<path d="M 370 140 L 370 165 L 118 165 L 118 250" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<path d="M 450 140 L 450 250" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<path d="M 690 140 L 690 165 L 805 165 L 805 250" fill="none" stroke="#7b8794" stroke-width="2" marker-end="url(#a)"/>
+<rect x="30" y="540" width="1000" height="50" rx="10" fill="#f3e8fb" stroke="#7a3fa0" stroke-width="2"/>
+<text x="530" y="562" font-size="14" font-weight="700" text-anchor="middle" fill="#7a3fa0">Encrypted links between the clouds (site-to-site VPN)</text>
+<text x="530" y="580" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">Carry replication pulls, lease checks and fence pushes. Nothing leaves the UK.</text>
+<line x1="185" y1="520" x2="185" y2="540" stroke="#7b8794" stroke-width="2" marker-end="url(#a)" marker-start="url(#a)"/>
+<line x1="530" y1="520" x2="530" y2="540" stroke="#7b8794" stroke-width="2" marker-end="url(#a)" marker-start="url(#a)"/>
+<line x1="875" y1="520" x2="875" y2="540" stroke="#7b8794" stroke-width="2" marker-end="url(#a)" marker-start="url(#a)"/>
+<text x="530" y="624" font-size="13" font-weight="700" text-anchor="middle" fill="#7a3fa0">Control plane: five etcd members (two, two, one) hold each account's home and epoch, its lease and every fence</text>
+<text x="530" y="644" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d">Standby cells sit in another cloud. A cloud failure promotes standbys elsewhere, and the epoch fence keeps the old home out.</text>
+<text x="530" y="674" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d" font-style="italic">Replication between cells: each cell pulls per account in (epoch, sequence) order, applies idempotently, buffers gaps, and quarantines superseded epochs.</text>
+</svg>
