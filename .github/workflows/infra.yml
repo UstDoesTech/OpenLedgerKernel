@@ -1,0 +1,70 @@
+name: infra
+
+# Checks the OpenTofu code. It holds no cloud credentials and never runs tofu apply or tofu
+# plan against a real account: agents never apply, a person does (task I-01f), by hand or through
+# the separate, gated infra-apply.yml (task I-01m).
+
+# Runs when the OpenTofu code or the region guard changes, once per change.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "scripts/check_uk_regions.py"
+      - ".github/workflows/infra.yml"
+  pull_request:
+    paths:
+      - "infra/**"
+      - "scripts/check_uk_regions.py"
+      - ".github/workflows/infra.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Region guard
+        run: python3 scripts/check_uk_regions.py
+      - name: Download each provider once
+        # Every directory runs `tofu init`. Without a shared cache, each one downloads its own
+        # copy of the providers (the Azure one is about 200 MB), and the runner runs out of disk.
+        run: |
+          mkdir -p "$RUNNER_TEMP/tofu-plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/tofu-plugin-cache" >> "$GITHUB_ENV"
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.10.0
+      - name: Format
+        run: tofu fmt -check -recursive -diff infra
+      - name: Validate every module
+        run: |
+          set -euo pipefail
+          for dir in $(find infra -name '*.tf' -printf '%h\n' | sort -u); do
+            echo "::group::validate $dir"
+            tofu -chdir="$dir" init -backend=false -input=false
+            tofu -chdir="$dir" validate
+            echo "::endgroup::"
+          done
+      - name: Module tests
+        run: |
+          set -euo pipefail
+          for dir in $(find infra -name '*.tftest.hcl' -printf '%h\n' | sort -u | sed 's#/tests$##'); do
+            echo "::group::test $dir"
+            tofu -chdir="$dir" init -backend=false -input=false
+            tofu -chdir="$dir" test
+            echo "::endgroup::"
+          done
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.54.0
+      - name: Lint
+        env:
+          # Lets tflint --init download the rulesets without hitting GitHub's anonymous limit.
+          # This is the workflow's own read-only token, not a cloud credential.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tflint --init --config "$PWD/infra/.tflint.hcl"
+          tflint --chdir infra --recursive --config "$PWD/infra/.tflint.hcl"

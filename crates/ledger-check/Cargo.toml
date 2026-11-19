@@ -1,0 +1,17 @@
+[package]
+name = "ledger-check"
+version = "0.0.0"
+description = "Checks the ledger's invariants on one or more cells and names the account, journal or cell that breaks one."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ledger-store = { path = "../ledger-store", version = "0.0.0" }
+sha2 = "0.11"
+thiserror = "2"
+tokio-postgres = "0.7"
+
+[lints]
+workspace = true

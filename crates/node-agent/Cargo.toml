@@ -1,0 +1,31 @@
+[package]
+name = "node-agent"
+version = "0.0.0"
+description = "Starts one cell Postgres node, as primary or standby, from a configuration file. It runs inside the container image in images/postgres."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "ledger-node"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+base64 = "0.23"
+hmac = "0.13"
+sha2 = "0.11"
+# The cloud secret stores are reached over HTTPS, through private endpoints. TLS comes from the
+# system's OpenSSL, which the Postgres image already carries, and trusts the system's own
+# certificates. The rustls option would bundle a certificate list under a licence deny.toml
+# does not allow.
+ureq = { version = "3", default-features = false, features = ["native-tls-no-default"] }
+
+
+[dev-dependencies]
+
+[lints]
+workspace = true

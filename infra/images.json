@@ -1,0 +1,15 @@
+{
+  "etcd": {
+    "source": "quay.io/coreos/etcd",
+    "tag": "v3.5.17",
+    "digest": "sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
+  },
+  "flatcar": {
+    "channel": "stable",
+    "version": "4757.2.3"
+  },
+  "postgres": {
+    "source": "ghcr.io/ustdoestech/openledgerkernel/postgres",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

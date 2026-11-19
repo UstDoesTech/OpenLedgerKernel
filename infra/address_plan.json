@@ -1,0 +1,22 @@
+{
+  "layout": {
+    "tiers": ["cell", "control_plane", "api"],
+    "zones": 3,
+    "subnet_newbits": 4,
+    "tier_stride": 4,
+    "gateway_newbits": 11,
+    "gateway_number": 2047
+  },
+  "geos": {
+    "uk": {
+      "aws": "10.10.0.0/16",
+      "azure": "10.20.0.0/16",
+      "gcp": "10.30.0.0/16"
+    },
+    "europe": {
+      "aws": "10.11.0.0/16",
+      "azure": "10.21.0.0/16",
+      "gcp": "10.31.0.0/16"
+    }
+  }
+}

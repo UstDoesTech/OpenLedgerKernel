@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ledger-pg
+  labels:
+    app: ledger-pg
+spec:
+  serviceName: ledger-pg
+  replicas: 3
+  # All three start together. A standby waits for the primary, so order does not matter.
+  podManagementPolicy: Parallel
+  # Never restart a database because a manifest changed. A person deletes one pod at a time.
+  updateStrategy:
+    type: OnDelete
+  selector:
+    matchLabels:
+      app: ledger-pg
+  template:
+    metadata:
+      labels:
+        app: ledger-pg
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      # One node in each zone, and never two on one machine.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: ledger-pg
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: ledger-pg
+      initContainers:
+        - name: render-config
+          image: ledger-postgres
+          command: ["bash", "/init/render-config.sh"]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: SERVICE_NAME
+              value: ledger-pg
+          envFrom:
+            - configMapRef:
+                name: ledger-pg-settings
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: init
+              mountPath: /init
+              readOnly: true
+            - name: config
+              mountPath: /etc/ledger
+      containers:
+        - name: postgres
+          image: ledger-postgres
+          ports:
+            - name: postgres
+              containerPort: 5432
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              memory: 4Gi
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-h", "/run/ledger", "-q"]
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-h", "/run/ledger", "-q"]
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: credential
+              mountPath: /secrets/out
+            - name: config
+              mountPath: /etc/ledger
+              readOnly: true
+            - name: tls
+              mountPath: /run/secrets/tls
+              readOnly: true
+            - name: run
+              mountPath: /run/ledger
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: init
+          configMap:
+            name: ledger-pg-init
+            defaultMode: 365 # 0555
+        - name: config
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        # The customer's certificates: server.crt, server.key, ca.crt, replication.crt and
+        # replication.key. See docs/self-hosted-postgres.md for what they must name.
+        - name: tls
+          secret:
+            secretName: ledger-pg-tls
+            defaultMode: 288 # 0440
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # Replace with a class that encrypts with the customer's own key.
+        storageClassName: ledger-encrypted
+        resources:
+          requests:
+            storage: 100Gi
+    # Where the primary writes the administrator's credential, once, for the customer to copy
+    # into their secret store. Small, and on an encrypted class too.
+    - metadata:
+        name: credential
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ledger-encrypted
+        resources:
+          requests:
+            storage: 1Gi

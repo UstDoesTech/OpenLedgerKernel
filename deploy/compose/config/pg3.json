@@ -1,0 +1,9 @@
+{
+  "tenant": "ten_example",
+  "node": "pg3",
+  "role": "standby",
+  "postgres_version": 16,
+  "primary_address": "pg1",
+  "synchronous_standby_names": "",
+  "secret_id": "cell-a/administrator"
+}

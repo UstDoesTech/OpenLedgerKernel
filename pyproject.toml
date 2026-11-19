@@ -1,0 +1,18 @@
+[project]
+name = "open-ledger-kernel"
+version = "0.1.0"
+description = "Thin active-active banking ledger over plain Postgres (one node per region/cloud)"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Ust Oldfield" }]
+dependencies = ["psycopg[binary]>=3.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyyaml>=6", "openapi-spec-validator>=0.7", "kubernetes-validate>=1.34"]
+
+[tool.setuptools]
+packages = ["ledger"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

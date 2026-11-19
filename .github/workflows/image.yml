@@ -1,0 +1,84 @@
+name: image
+
+# Builds the Postgres node image and proves it with three real containers. It never pushes
+# the image anywhere: publishing needs registry credentials, so a person does that.
+
+# Runs when the image, its deploy files or the Rust it builds change, once per change.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "images/**"
+      - "deploy/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "ledger/**"
+      - "infra/flows.json"
+      - "tests/test_customer_network.py"
+      - "docs/self-hosted-postgres.md"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "images/**"
+      - "deploy/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "ledger/**"
+      - "infra/flows.json"
+      - "tests/test_customer_network.py"
+      - "docs/self-hosted-postgres.md"
+      - ".github/workflows/image.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -f images/postgres/Dockerfile -t ledger-postgres:ci .
+      - name: Scan the image for secrets
+        run: |
+          docker save ledger-postgres:ci -o "$RUNNER_TEMP/image.tar"
+          python3 scripts/scan_image_layers.py "$RUNNER_TEMP/image.tar"
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-image-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-image-${{ runner.os }}-
+      - name: Three containers
+        run: LEDGER_IMAGE=ledger-postgres:ci cargo test -p node-agent --test containers -- --ignored --nocapture
+      - name: Render and validate the Kubernetes manifests
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet -e '.[dev]'
+          kubectl kustomize deploy/kubernetes > "$RUNNER_TEMP/rendered.yaml"
+          "$RUNNER_TEMP/venv/bin/kubernetes-validate" -k 1.34 "$RUNNER_TEMP/rendered.yaml"
+          RENDERED_MANIFESTS="$RUNNER_TEMP/rendered.yaml" "$RUNNER_TEMP/venv/bin/python" -m pytest -q tests/test_customer_network.py
+      - name: Run the compose file against the image
+        run: |
+          deploy/compose/make-test-certs.sh
+          LEDGER_IMAGE=ledger-postgres:ci docker compose -f deploy/compose/compose.yaml up -d
+          LEDGER_IMAGE=ledger-postgres:ci deploy/compose/verify.sh
+      - name: Remove the compose deployment
+        if: always()
+        run: LEDGER_IMAGE=ledger-postgres:ci docker compose -f deploy/compose/compose.yaml down -v
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          for c in $(docker ps -a --format '{{.Names}}'); do echo "== $c"; docker logs --tail 80 "$c" 2>&1; done

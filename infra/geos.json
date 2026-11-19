@@ -1,0 +1,15 @@
+{
+  "enabled": ["uk", "europe"],
+  "geos": {
+    "uk": {
+      "aws": ["eu-west-2"],
+      "azure": ["uksouth", "ukwest"],
+      "gcp": ["europe-west2"]
+    },
+    "europe": {
+      "aws": ["eu-north-1"],
+      "azure": ["northeurope"],
+      "gcp": ["europe-north1"]
+    }
+  }
+}
