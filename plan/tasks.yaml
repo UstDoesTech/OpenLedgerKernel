@@ -1,0 +1,1513 @@
+# Task graph for the open ledger kernel. Source of truth for what to build, in what order, and how
+# "done" is judged. docs/implementation-plan.md renders from this file:
+#   python plan/render.py          # rewrite the generated sections
+#   python plan/render.py --check  # CI: fail if the doc is out of date
+#
+# Rules for agents are in AGENTS.md. In short: pick a task whose status is todo, whose
+# depends_on are all done and which no open PR already claims; claim it with a draft PR
+# titled "[<id>] <title>"; finish when every acceptance line is true and CI is green.
+#
+# status: todo | in_progress | blocked | done
+# size:   S (about a day of focused agent work), M (several days), L (split before starting)
+# owner:  agent (default) or human; human tasks are never claimed by agents
+# decisions: ids from the decisions list that must be "decided" before the vendor- or
+#   policy-specific part can ship. Until then, build behind an interface with the proposed
+#   default as an in-memory or simulated implementation (see AGENTS.md).
+# refs: design sections, as repo-relative paths with GitHub heading anchors.
+#
+# The commercial add-on (command engine, products, payments, agents, data, console, launch) is
+# planned in a separate private repository and starts from the release GATE-1 tags.
+
+version: 1
+phases:
+- id: P1
+  name: Stable open kernel
+  goal: Turn the reference implementation into a production-grade Rust ledger kernel, prove it on real
+    UK clouds with real network faults, and put a thin write path on it, so that it can be released as
+    a stable open-source kernel.
+  gate: GATE-1
+workstreams:
+  F: Foundation
+  K: Ledger kernel
+  R: Replication
+  C: Control plane and failover
+  T: Testing and fault injection
+  I: Infrastructure
+  S: Security and compliance
+  GATE: Gates
+decisions:
+- id: D-02
+  title: Managed Postgres service per cloud, and whether Lakebase is available in the UK regions needed
+  status: decided
+  proposed: Each cloud's managed PostgreSQL 16 service, Lakebase where Databricks runs; Neon for development
+  outcome: Any vanilla PostgreSQL 16 will do, with no extensions and no logical replication slots, whether
+    managed on any cloud, self-hosted or Neon for development. Lakebase is the default where Databricks
+    runs. The product does not matter. (Ust Oldfield, 2026-11-14)
+- id: D-03
+  title: Control plane technology across three clouds
+  status: decided
+  proposed: etcd v3, five members spread over the three clouds
+  outcome: etcd v3, five members spread over the three clouds by default. It must also run with a minimum
+    of three members, because some geographies have only one region. (Ust Oldfield, 2026-11-14)
+- id: D-14
+  title: Latency budget - same-cell leg, cross-cell transfer and strong-tier acknowledgement, p50 and
+    p95
+  status: open
+  proposed: null
+- id: D-16
+  title: Where the credentialed workflows run once the code is public
+  status: decided
+  proposed: The private repository runs them against a pinned commit of the public one, so logs, secrets
+    and cloud trust stay private
+  outcome: The credentialed workflows run on the public repository. Its workflow logs are readable by
+    anyone, so S-07's guards are required, not optional. That means no plan output or identifiers in a
+    log, dispatch only from main, a named approver, and cloud trust pinned to that repository's environment.
+    (Ust Oldfield, 2026-11-19)
+tasks:
+- id: F-01
+  title: Rust workspace and CI
+  phase: P1
+  workstream: F
+  size: S
+  status: done
+  depends_on: []
+  deliverables:
+  - Cargo.toml
+  - rust-toolchain.toml
+  - deny.toml
+  - crates/
+  - .github/workflows/rust.yml
+  acceptance:
+  - A Cargo workspace exists with edition 2024 and a pinned toolchain in rust-toolchain.toml.
+  - CI runs cargo fmt --check, cargo clippy --all-targets -- -D warnings, cargo test and cargo deny check
+    on every push and pull request.
+  - cargo deny rejects copyleft licences and known advisories.
+  - The existing Python CI (test.yml) keeps running unchanged.
+  refs:
+  - AGENTS.md
+- id: F-02
+  title: Local three-node environment with fault proxy
+  phase: P1
+  workstream: F
+  size: S
+  status: done
+  depends_on:
+  - F-01
+  deliverables:
+  - compose.yaml
+  - Makefile
+  acceptance:
+  - make up starts three Postgres 16 nodes, a single-node etcd and Toxiproxy in front of every node; make
+    down removes them.
+  - Nodes are reachable on fixed ports both directly and through Toxiproxy.
+  - CI uses the same compose file for Rust integration tests.
+  refs:
+  - scripts/local_nodes.sh
+- id: F-03
+  title: Plan tooling and validation
+  phase: P1
+  workstream: F
+  size: S
+  status: done
+  depends_on: []
+  deliverables:
+  - plan/tasks.yaml
+  - plan/render.py
+  - tests/test_plan.py
+  - docs/implementation-plan.md
+  - AGENTS.md
+  acceptance:
+  - The task graph validates in CI (unique ids, known dependencies, no cycles, decisions exist, refs resolve).
+  - docs/implementation-plan.md is regenerated from the task graph and CI fails when it is stale.
+  refs:
+  - AGENTS.md
+- id: K-01
+  title: Ledger domain types
+  phase: P1
+  workstream: K
+  size: S
+  status: done
+  depends_on:
+  - F-01
+  deliverables:
+  - crates/ledger-core
+  acceptance:
+  - Money is integer minor units plus an ISO 4217 code; no floating point anywhere in the crate.
+  - Typed, prefixed identifiers for tenant, account, journal, entry, hold, command and party.
+  - Journal construction refuses any journal whose entries do not net to zero per currency (property test
+    with proptest).
+  - The crate has no I/O dependencies.
+  refs:
+  - docs/design.md#data-model
+  - docs/api-design.md#conventions
+- id: K-02
+  title: Schema v1 migrations
+  phase: P1
+  workstream: K
+  size: M
+  status: done
+  depends_on:
+  - F-02
+  - K-01
+  deliverables:
+  - crates/ledger-store/migrations
+  acceptance:
+  - Tables for tenant-scoped accounts, journals, entries, holds, epoch fences, quarantine, in-transit
+    accounts and the outbox; every table carries tenant_id.
+  - Every constraint in schema.sql is preserved, including unique (account, epoch, seq) and unique (journal,
+    account, leg).
+  - Migrations apply cleanly to an empty database and are idempotent on re-run.
+  - No column can hold names, addresses, card numbers or free-text payment references.
+  refs:
+  - docs/design.md#data-model
+  - schema.sql
+- id: K-03
+  title: Single-round-trip ledger leg
+  phase: P1
+  workstream: K
+  size: M
+  status: done
+  depends_on:
+  - K-02
+  deliverables:
+  - crates/ledger-store
+  acceptance:
+  - Posting a leg (lock, fence check, available-balance check, entry insert, projection update, outbox
+    write) is one SQL call and returns the watermark.
+  - 20 concurrent debits of 10 against a balance of 100 from three clients yield exactly 10 successes.
+  - Reusing a journal id with a different amount is rejected; repeating it with the same amount returns
+    the original entry.
+  - A writer holding a stale epoch is rejected by the database.
+  refs:
+  - docs/design.md#write-path-performance
+  - docs/design.md#cells-homes-and-epochs
+- id: K-04
+  title: Cross-cell journals through in-transit accounts
+  phase: P1
+  workstream: K
+  size: M
+  status: done
+  depends_on:
+  - K-03
+  deliverables:
+  - crates/ledger-store
+  acceptance:
+  - A cross-cell transfer posts payer-to-in-transit on the payer's cell and in-transit-to-payee on the
+    payee's cell.
+  - Each cell's trial balance is zero when sampled mid-flight during a concurrent workload.
+  - A crash between legs is completed exactly once by recovery; in-transit accounts drain to zero.
+  - A journal declined at the first leg writes nothing.
+  refs:
+  - docs/design.md#journals-across-cells
+- id: K-05
+  title: Holds and available balance
+  phase: P1
+  workstream: K
+  size: S
+  status: done
+  depends_on:
+  - K-03
+  deliverables:
+  - crates/ledger-store
+  acceptance:
+  - Holds can be placed, released, converted to a journal and expired; each transition is idempotent.
+  - Available balance equals posted minus active holds plus arranged overdraft, and every debit authorises
+    against it.
+  refs:
+  - docs/design.md#data-model
+- id: K-06
+  title: Invariant checker
+  phase: P1
+  workstream: K
+  size: S
+  status: done
+  depends_on:
+  - K-02
+  deliverables:
+  - crates/ledger-check
+  - crates/ledgerctl (check subcommand)
+  acceptance:
+  - Checks every invariant in ledger/checks.py plus cell trial balance and in-transit age.
+  - ledgerctl check exits non-zero and names the account or cell when any invariant fails.
+  refs:
+  - docs/design.md#invariants-checked-continuously
+  - ledger/checks.py
+- id: K-07
+  title: ISO 4217 currency list, refreshable from the official source
+  phase: P1
+  workstream: K
+  size: S
+  status: done
+  depends_on:
+  - K-01
+  deliverables:
+  - crates/ledger-core/data/iso4217.csv
+  - scripts/refresh_iso4217.py
+  - .github/workflows/iso4217.yml
+  acceptance:
+  - Currency parsing accepts only codes on the embedded ISO 4217 list, and exposes numeric code and minor-unit
+    exponent.
+  - scripts/refresh_iso4217.py rebuilds the embedded list from SIX Group's List One (the ISO 4217 maintenance
+    agency), validates it, and changes nothing when the published list is unchanged.
+  - A workflow runs the script monthly and on demand, and opens a pull request with added and removed
+    codes when the list changes.
+  - The embedded data records whether it came from the official source or is a provisional seed.
+  refs:
+  - docs/api-design.md#conventions
+  - docs/design.md#data-model
+- id: C-01
+  title: Control plane interface and in-memory implementation
+  phase: P1
+  workstream: C
+  size: S
+  status: done
+  depends_on:
+  - K-01
+  deliverables:
+  - crates/control-plane
+  acceptance:
+  - A trait covering register, home lookup, lease check, heartbeat, expire, renew, promote and fence listing.
+  - The in-memory implementation reproduces ledger/control.py including heartbeat renewal; a forced expiry
+    is never revived by the heartbeat.
+  refs:
+  - docs/design.md#cells-homes-and-epochs
+  - ledger/control.py
+- id: C-02
+  title: etcd control plane
+  phase: P1
+  workstream: C
+  size: M
+  status: done
+  depends_on:
+  - C-01
+  - F-02
+  decisions:
+  - D-03
+  deliverables:
+  - crates/control-plane
+  acceptance:
+  - Leases, epochs and fences are stored in etcd with compare-and-swap on epoch.
+  - Nodes watch fences and install them; a node that cannot reach etcd stops renewing and loses its lease.
+  - The trait's test suite passes against both implementations.
+  refs:
+  - docs/design.md#failover
+- id: R-01
+  title: Outbox relay and batched apply
+  phase: P1
+  workstream: R
+  size: M
+  status: done
+  depends_on:
+  - K-03
+  deliverables:
+  - crates/ledger-repl
+  acceptance:
+  - Entries ship per account in (epoch, seq) order and apply idempotently in batches, one round trip per
+    batch.
+  - A gap is buffered and re-fetched, never skipped; redelivery applies nothing twice.
+  - Each home publishes a per-cell watermark even when idle.
+  refs:
+  - docs/design.md#replication
+- id: R-02
+  title: Fencing and quarantine on apply
+  phase: P1
+  workstream: R
+  size: M
+  status: done
+  depends_on:
+  - R-01
+  - C-01
+  deliverables:
+  - crates/ledger-repl
+  - crates/ledger-store/migrations
+  acceptance:
+  - The void rule from ledger/node.py is enforced in SQL on every node.
+  - Entries from a superseded epoch beyond its cutoff move to quarantine, with the projection reversed,
+    whether written locally or received.
+  - Quarantined entries are never merged silently.
+  refs:
+  - docs/design.md#failover
+  - ledger/node.py
+- id: R-03
+  title: Strong durability tier
+  phase: P1
+  workstream: R
+  size: S
+  status: done
+  depends_on:
+  - R-01
+  deliverables:
+  - crates/ledger-repl
+  acceptance:
+  - A strong write returns only after a remote cell has applied it; if no acknowledgement arrives in time,
+    the caller gets durability_not_met and a retry with the same key completes it without double-posting.
+  refs:
+  - docs/design.md#durability-tiers
+- id: C-03
+  title: Failover orchestrator
+  phase: P1
+  workstream: C
+  size: M
+  status: done
+  depends_on:
+  - C-01
+  - R-02
+  deliverables:
+  - crates/control-plane
+  - crates/ledgerctl (promote, drain subcommands)
+  acceptance:
+  - Promotion reads the standby's high-water mark, issues epoch+1 with that cutoff and pushes the fence
+    to every reachable node.
+  - Draining routes new requests away from a cell without stopping in-flight commits.
+  - Promotion of a level standby finishes inside 15 seconds on the local environment.
+  refs:
+  - docs/design.md#failover
+- id: T-01
+  title: Conformance suite ported from the harness
+  phase: P1
+  workstream: T
+  size: M
+  status: done
+  depends_on:
+  - K-04
+  - K-05
+  - K-06
+  - R-02
+  - R-03
+  - C-03
+  deliverables:
+  - crates/conformance
+  - scripts/mutation_check.sh
+  - docs/conformance.md
+  acceptance:
+  - Every scenario in tests/test_active_active.py has a Rust equivalent that passes against three local
+    nodes, including both failover drills.
+  - A documented mutation script shows the suite fails when fencing or the account row lock is disabled.
+  - After parity, the Python harness is marked as the reference implementation in README.md and no longer
+    extended.
+  refs:
+  - tests/test_active_active.py
+  - docs/conformance.md
+- id: T-02
+  title: Real network fault injection
+  phase: P1
+  workstream: T
+  size: M
+  status: done
+  depends_on:
+  - T-01
+  - C-02
+  deliverables:
+  - crates/conformance
+  acceptance:
+  - Using Toxiproxy, scenarios cut a home from its peers and the control plane, cut only the control plane,
+    add 200 ms latency and drop packets.
+  - Serving continues on valid leases when only the control plane is cut.
+  - Every invariant holds after each scenario settles.
+  refs:
+  - docs/design.md#failover
+- id: K-08
+  title: Node-side lease guard
+  phase: P1
+  workstream: K
+  size: S
+  status: done
+  depends_on:
+  - C-02
+  - T-02
+  deliverables:
+  - crates/control-plane
+  acceptance:
+  - A node confirms its lease with the control plane before it serves an account, and refuses when the
+    lease has lapsed or the node is not home.
+  - While the control plane is unreachable, a node keeps serving an account on the last lease it confirmed,
+    timed locally from when it last renewed, and stops before the control plane could let the lease lapse.
+  - A node that cannot reach the control plane reports it as unavailable, never as a lost lease.
+  - The T-02 network scenarios assert this guard, with the control plane cut for shorter and longer than
+    the ttl.
+  refs:
+  - docs/design.md#failover
+- id: K-09
+  title: Recover cross-cell journals by current home
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - T-03
+  deliverables:
+  - crates/ledger-store
+  - crates/conformance
+  acceptance:
+  - Recovery finishes a cross-cell journal at the payee's current home, even when the payee failed over
+    after the send, and acts only on journals for the cell it is given.
+  - The receiving in-transit account and epochs come from the cell that does the receive, so the pair
+    of in-transit accounts still nets to zero.
+  - The randomised runs (T-03) fail an account over while a transfer to it is in flight, and the harness
+    no longer skips those failovers or needs its own recovery loop.
+  refs:
+  - docs/design.md#journals-across-cells
+- id: K-10
+  title: Generalise the ledger kernel's vocabulary
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - T-03
+  deliverables:
+  - crates/ledger-core
+  - crates/conformance
+  - docs/kernel.md
+  acceptance:
+  - The kernel can hold a unit that is not a currency (points, kWh, shares) with a declared scale, alongside
+    Money. Money stays integer minor units plus an ISO 4217 code, with no floating point, and every existing
+    K-01 test passes unchanged.
+  - The kernel crates and docs/kernel.md name no bank-specific concept (payer, payee, sort code, scheme);
+    banking vocabulary lives in layers above the kernel or is documented as an alias.
+  - Two examples run on the kernel with no banking terms, a general-ledger book and a points scheme, and
+    both pass the conformance invariants.
+  - docs/kernel.md says what the kernel does not do (chart of accounts, dimensions, period close, revaluation,
+    multiple books) and where those belong.
+  - Every existing conformance test and acceptance line passes unchanged. A change that would loosen one
+    is opened as a pull request labelled needs-human.
+  refs:
+  - docs/design.md#data-model
+- id: K-11
+  title: Write path skeleton, the API service and opening accounts
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-03
+  - K-08
+  deliverables:
+  - crates/api
+  acceptance:
+  - A service in crates/api starts next to one cell, reads the cell's database and the control plane,
+    and answers a health check that says whether the cell holds its leases.
+  - Every request carries a bearer token and the tenant comes only from the token, through an Authenticator
+    trait with an in-memory implementation for tests and the proving environment. A tenant in a path or
+    body is refused, and a token for one tenant never reads or writes another's accounts.
+  - POST /v1/accounts opens an account for the token's tenant with a currency, a kind and an overdraft
+    allowance, at its home cell and current epoch, and is safe to repeat with the same Idempotency-Key.
+  - Errors are problem+json with a stable code for each refusal the kernel can give.
+  - The service refuses to serve an account whose home is another cell or whose lease the guard cannot
+    confirm, and says which, so a caller can go to the right place.
+  - These behaviours are proven in CI against three real Postgres nodes and etcd (make up), including
+    a second tenant's token and a node that loses its lease.
+  notes: A walking skeleton, ahead of GATE-1 on the owner's say. It is thin on purpose. Authentication,
+    the command catalogue, simulate and commit, and policy are A-01 to A-06 and replace its stand-ins
+    one at a time, so nothing here is thrown away. Tenants come from tokens, never paths or bodies.
+  refs:
+  - docs/design.md#cells-homes-and-epochs
+  - docs/api-design.md#identity-and-authorisation
+- id: K-12
+  title: Write path skeleton, transfers over HTTP
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-11
+  - K-04
+  - K-05
+  deliverables:
+  - crates/api
+  - api/openapi.yaml
+  acceptance:
+  - POST /v1/transfers moves an amount between two of the tenant's accounts with an Idempotency-Key, and
+    returns the journal id, the watermark at each cell and whether it was a repeat.
+  - A transfer between accounts on one cell posts through the kernel's single-call leg. A transfer between
+    two cells goes through the in-transit accounts, and a crash between its legs is finished exactly once
+    by recovery.
+  - Repeating a request with the same key and body returns the original result and writes nothing. The
+    same key with a different body is refused with an idempotency conflict.
+  - A decline (funds, currency, unknown account, stale epoch, wrong home) writes nothing and says why
+    in problem+json.
+  - Twenty concurrent debits of 10 against a balance of 100 through the service yield exactly 10 successes,
+    and the invariant checker passes on every cell afterwards.
+  - There is no endpoint that updates or deletes an entry. A correction is a new journal.
+  - Money in requests and responses is integer minor units plus an ISO 4217 code, with no floating point
+    anywhere.
+  - api/openapi.yaml describes both paths and a test fails if the service and the file disagree.
+  notes: Two accounts and one amount, no products, no approvals, no policy. Each of those arrives as the
+    command catalogue (A-01) and the simulate and commit engine (A-02), which wrap this path.
+  refs:
+  - docs/design.md#journals-across-cells
+  - docs/api-design.md#errors-idempotency-and-retries
+- id: K-13
+  title: Write path skeleton, run the API next to each cell
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-12
+  - S-05
+  deliverables:
+  - images/api
+  - infra/modules/api
+  - scripts/smoke_write.sh
+  - docs/runbooks/first-entry.md
+  acceptance:
+  - An API image is built and published from the public repository by digest, by a workflow with the same
+    guards as the Postgres image, and recorded in infra/images.json.
+  - An infrastructure module runs the API next to each cell on all three clouds, private only, with a
+    machine identity that can read only its cell's database secret and nothing else, and tofu validate
+    passes in CI.
+  - scripts/smoke_write.sh opens two accounts, makes a transfer, repeats it and reads both balances back,
+    and prints counts only, never an identifier or a balance.
+  - docs/runbooks/first-entry.md takes a person from an applied environment to a first entry, and says
+    what each step proves.
+  - The module does not apply anything. A person applies it through the infra-apply workflow.
+  notes: A person runs the smoke test against the proving environment, so this task cannot prove the last
+    step by itself. Real money and real customer data are never used. The proving environment holds none.
+  refs:
+  - docs/credentialed-workflows.md
+  - docs/design.md#write-path-performance
+- id: T-03
+  title: Randomised fault testing
+  phase: P1
+  workstream: T
+  size: M
+  status: done
+  depends_on:
+  - T-02
+  deliverables:
+  - crates/conformance
+  - .github/workflows/nightly.yml
+  acceptance:
+  - Seeded random sequences of commands and faults run at least 1,000 times nightly, checking invariants
+    after each run.
+  - Any failing seed reproduces locally with one command and is attached to an automatically opened issue.
+  refs:
+  - docs/conformance.md
+- id: I-01a
+  title: Infrastructure code scaffold, CI checks and UK-region guard
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - F-01
+  deliverables:
+  - infra/README.md
+  - infra/modules/
+  - infra/.tflint.hcl
+  - infra/uk_regions.json
+  - scripts/check_uk_regions.py
+  - tests/test_uk_regions.py
+  - .github/workflows/infra.yml
+  acceptance:
+  - infra/ has a module layout and pinned provider versions for AWS, Azure and Google Cloud, and holds
+    no credentials, state or secrets.
+  - CI runs tofu fmt -check, tofu validate and tflint over every module on every push and pull request.
+  - A UK-region guard fails CI when any configuration names a region outside the allowed UK list, and
+    has tests with passing and failing examples.
+  - The workflow holds no cloud credentials and never runs tofu apply or tofu plan against a real account.
+    Agents never run apply; a person applies.
+  refs:
+  - AGENTS.md
+  - docs/infrastructure.md
+- id: I-01g
+  title: Geo-aware region policy, starting with the UK geo
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - I-01a
+  deliverables:
+  - infra/geos.json
+  - scripts/check_uk_regions.py
+  - tests/test_uk_regions.py
+  acceptance:
+  - Allowed regions are defined per geo in one file. Every region of an enabled geo is allowed, so the
+    UK geo allows AWS eu-west-2, Azure uksouth and ukwest, and Google europe-west2.
+  - Only the UK geo is enabled. Europe, US and Asia can be added later by a person, one geo at a time,
+    without changing the guard.
+  - Each deployment names its geo, and the guard fails CI when a configuration uses a region outside the
+    geo it names.
+  - The guard keeps refusing multi-regions that span geos, and has tests with passing and failing examples
+    for each geo rule.
+  notes: Decided by Ust Oldfield on 2026-11-14. Some customers will need several geos, so the model is
+    per geo, not UK only. This changes a CI check, so the pull request needs a person to merge it.
+  refs:
+  - AGENTS.md
+  - docs/infrastructure.md
+- id: I-01h
+  title: Region guard ignores attribute names that only contain "location"
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - I-01g
+  deliverables:
+  - scripts/check_uk_regions.py
+  - tests/test_uk_regions.py
+  acceptance:
+  - The guard no longer treats attributes such as allocation_method and private_ip_address_allocation
+    as regions, and still checks every attribute whose name is or ends in region or location.
+  - The two uk-guard exemptions in infra/modules/interconnect/azure.tf are removed, and the guard passes
+    without them.
+  - Tests show that allocation, relocation and similar names pass, and that location, region, source_region
+    and gateway_location with a non-geo value still fail.
+  notes: Found in I-01c. The guard matches any name containing "location", so Azure's allocation_method
+    is flagged. This changes a CI check, so the pull request needs a person to merge it.
+  refs:
+  - AGENTS.md
+- id: I-01b
+  title: Network modules for AWS London, Azure UK South and Google Cloud London
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01a
+  - I-01g
+  deliverables:
+  - infra/modules/network-aws
+  - infra/modules/network-azure
+  - infra/modules/network-gcp
+  acceptance:
+  - Each cloud has a network module in its UK region with private subnets across three availability zones,
+    no public ingress to the database or control plane subnets, and flow logging on.
+  - The three networks take their address ranges from one shared plan, with no overlap, so private links
+    can route between them.
+  - tofu validate, tflint and the UK-region guard pass for every module.
+  refs:
+  - docs/infrastructure.md
+  - docs/design.md#cells-homes-and-epochs
+- id: I-01c
+  title: Private cross-cloud connectivity
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01b
+  deliverables:
+  - infra/modules/interconnect
+  acceptance:
+  - Encrypted private links join every pair of the three networks (AWS and Azure, AWS and Google, Azure
+    and Google), with site-to-site IPsec VPN as the default and the mechanism a module setting.
+  - Each pair has at least two tunnels, so no single tunnel is a point of failure.
+  - Rules allow only the ports the platform needs between cell, control plane and API subnets (Postgres,
+    etcd client and peer, and the relay) and deny the rest.
+  - tofu validate, tflint and the UK-region guard pass.
+  refs:
+  - docs/infrastructure.md
+  - docs/design.md#failover
+- id: I-01d
+  title: Postgres module with a provider setting
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01b
+  decisions:
+  - D-02
+  deliverables:
+  - infra/modules/postgres
+  acceptance:
+  - A module gives a cell a vanilla PostgreSQL 16 with synchronous standbys across zones in its region,
+    and takes the provider as a setting - Lakebase by default where Databricks runs, the cloud's managed
+    service, or self-hosted - with no extensions or logical replication slots required.
+  - The database has a private address only, and is encrypted at rest with a per-tenant key from the cloud's
+    key service.
+  - Outputs are a host, a port and a secret reference, never a password or a full connection string.
+  - tofu validate, tflint and the UK-region guard pass.
+  refs:
+  - docs/design.md#cells-homes-and-epochs
+  - docs/design.md#data-model
+- id: I-01e
+  title: Control plane module (etcd across three clouds)
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01c
+  - I-01d
+  decisions:
+  - D-03
+  deliverables:
+  - infra/modules/control-plane
+  acceptance:
+  - A module runs etcd v3 across the three clouds with five members by default, placed two, two and one,
+    and takes a member count of at least three. Fewer than three is refused by input validation, shown
+    by a tofu test.
+  - Placement is checked by a test for three and for five members, showing that losing any one cloud leaves
+    a quorum.
+  - Client and peer traffic uses mutual TLS, with certificates referenced from a secret store and none
+    in the repository.
+  - tofu validate, tflint and the UK-region guard pass.
+  refs:
+  - docs/design.md#failover
+  - docs/design.md#cells-homes-and-epochs
+- id: I-01i
+  title: Container image for self-hosted Postgres
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01d
+  decisions:
+  - D-02
+  deliverables:
+  - images/postgres
+  - crates/node-agent
+  acceptance:
+  - One OCI image, built on the official PostgreSQL 16 image with no extra extensions, runs a cell node
+    as primary or standby from a node configuration file. It runs as a non-root user, needs no privileged
+    mode, and works on any container host that follows the OCI standard (Docker, Podman, Kubernetes).
+  - A primary starts with TLS only, using a certificate from a mounted secret, sets synchronous_standby_names
+    from the configuration, and creates the administrator's credential and hands it to a secret store
+    behind a trait. A standby takes a base backup from the primary and joins by physical streaming replication.
+    No logical replication slots are created.
+  - A test against three real containers shows that a commit on the primary returns once one standby has
+    it, still returns with one standby stopped, and waits with both stopped, and that data survives a
+    restart of every node.
+  - The image holds no password, key or certificate, shown by a scan of its layers in CI, and a node starts
+    with no route to the internet.
+  - The image is built and tested in CI. Publishing it needs registry credentials, so a person does that.
+  notes: Asked for by Ust Oldfield on 2026-11-14, ideally run as a container inside a customer's own network.
+    Automatic failover is not part of this task. Secret stores for the three clouds come in I-01ka.
+  refs:
+  - docs/design.md#failover
+  - docs/design.md#cells-homes-and-epochs
+- id: I-01j
+  title: Run the Postgres image inside a customer's network
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - I-01i
+  deliverables:
+  - deploy/kubernetes
+  - deploy/compose
+  - docs/self-hosted-postgres.md
+  acceptance:
+  - A Kubernetes manifest runs three nodes as a StatefulSet spread across zones, with persistent volumes,
+    a headless service for the peers, and network policy that allows only the ports in infra/flows.json.
+    A compose file runs the same three nodes on plain hosts.
+  - The guide lists what the customer provides (a private registry, three zones or hosts, an encrypted
+    volume class, certificates and a secret store) and what the platform needs from the network. It says
+    that failover is manual.
+  - CI renders and validates the manifests, and runs the compose file against the image from I-01i.
+  notes: Customers keep their own hosts, so this task adds no cloud account use.
+  refs:
+  - AGENTS.md
+- id: I-01ka
+  title: Node agent keeps the administrator's credential in the cloud's secret store
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01i
+  decisions:
+  - D-02
+  deliverables:
+  - crates/node-agent
+  acceptance:
+  - The agent's secret store setting takes aws_secrets_manager, azure_key_vault or gcp_secret_manager,
+    each reading and writing the credential with the machine's own identity from the cloud's metadata
+    service. No key or token is configured, stored or logged.
+  - Each store has a reference format that is checked at start, with tests of references that are accepted
+    and refused for each, so a malformed reference stops the node before it makes a database.
+  - Requests are tested without a cloud. AWS request signing matches AWS's published signing example,
+    and the Azure and Google token and secret calls are checked against a fake metadata and secret service.
+  - New dependencies pass cargo deny and the node image still passes its layer scan and the three-container
+    test.
+  notes: Split from I-01k on 2026-11-14, because the agent work and the module work are each a task of
+    their own. The agent needs an HTTPS client that trusts the system's certificates, since the secret
+    stores are reached over private endpoints. Real cloud calls are proven only when I-01f applies. A
+    change to deny.toml needs a person.
+  refs:
+  - docs/design.md#data-model
+- id: I-01kb
+  title: Self-hosted modules run the container image
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01ka
+  - I-01d
+  deliverables:
+  - infra/modules/postgres/aws-self-hosted
+  - infra/modules/postgres/azure-self-hosted
+  - infra/modules/postgres/gcp-self-hosted
+  acceptance:
+  - The three self-hosted modules take a container image reference by digest instead of a machine image,
+    and refuse a tag. Each machine runs it on a minimal container operating system, with no public address,
+    and pulls the image from a private registry reached over a private endpoint.
+  - Each machine's node configuration names the cloud's secret store and the secret, and the machine's
+    own identity may read and write that secret and nothing else.
+  - tofu validate, tflint and the UK-region guard pass, and the existing Postgres module tests still pass
+    without being loosened.
+  notes: Split from I-01k on 2026-11-14. Replaces the unwritten machine image contract in infra/README.md.
+    The self-hosted input changes from image_id to image, so the pull request needs a person to merge
+    it.
+  refs:
+  - AGENTS.md
+- id: I-01kc
+  title: TLS material reaches self-hosted cloud nodes
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01kb
+  deliverables:
+  - infra/modules/node-boot
+  - infra/modules/postgres
+  - docs/self-hosted-postgres.md
+  acceptance:
+  - Each self-hosted machine gets its server certificate, key, CA certificate and, for standbys, replication
+    certificate and key into /etc/ledger/tls at boot, from the cloud's secret store, using the machine's
+    own identity and no internet access.
+  - Each machine's identity may read only its own certificate secrets, and no certificate or key is in
+    the repository, the Ignition file or the state in readable form.
+  - The data in the three clouds' stores is described, with who issues the certificates and how they are
+    renewed, in docs/self-hosted-postgres.md.
+  - tofu validate, tflint and the UK-region guard pass, and a test shows the Ignition file names the secrets
+    and holds none of their contents.
+  notes: Split out of I-01kb on 2026-11-14. I-01kb creates and mounts /etc/ledger/tls but nothing fills
+    it. Who issues the certificates may need a decision from a person; if so, build to an interface and
+    open a Decision needed issue.
+  refs:
+  - AGENTS.md
+- id: I-01m
+  title: Gated infrastructure workflow
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01a
+  deliverables:
+  - .github/workflows/infra-apply.yml
+  - docs/credentialed-workflows.md
+  - AGENTS.md
+  acceptance:
+  - A manually dispatched workflow plans and applies one layer of one environment under infra/envs, and
+    is the only way an apply runs from GitHub. It never runs from a push or a pull request, and agents
+    never dispatch it.
+  - The apply job runs in a GitHub Environment that needs a person's approval and only runs from main.
+    It re-plans, refuses to apply if the plan differs from the one the plan job showed, and applies the
+    saved plan.
+  - No cloud secret is stored in GitHub. Each cloud trusts GitHub's identity token (AWS, Azure and Google
+    Cloud federation); the plan job uses read-only roles and never takes the state lock.
+  - Sensitive inputs reach the run as TF_VAR_ secrets of the apply environment. No secret is in the repository,
+    the logs or an artefact, and the plan file is never uploaded.
+  - docs/credentialed-workflows.md gives each cloud's one-time setup for the federation, the two environments,
+    the variables and secrets, and how to revoke access.
+  - AGENTS.md names this workflow as the one route for applying, and still bars agents from running tofu
+    apply, using cloud credentials, or dispatching it. The change is made by a pull request labelled needs-human.
+  notes: A person chose a gated workflow over applying by hand on 16 November 2026. It does not change
+    I-01f, which a person still owns and approves.
+  refs:
+  - AGENTS.md
+  - docs/infrastructure.md
+- id: I-01n
+  title: Enable the Europe geo (north Europe) for proving
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - I-01g
+  deliverables:
+  - infra/geos.json
+  - infra/address_plan.json
+  - tests/test_uk_regions.py
+  - infra/README.md
+  acceptance:
+  - infra/geos.json defines a europe geo with AWS eu-north-1, Azure northeurope and Google Cloud europe-north1,
+    and enables it beside uk. The UK geo is unchanged.
+  - infra/address_plan.json gives the europe geo one range per cloud that does not overlap any other range,
+    and the address plan tests pass for both geos.
+  - The region guard still fails a configuration that uses a region outside its own geo, in both geos,
+    and the test of the real policy names both geos.
+  - infra/README.md says the europe geo is for proving the platform: no real customer or ledger data goes
+      in it, and the UK geo stays the production rule.
+  notes: A person chose Europe regions on 16 November 2026 because the three cloud accounts could be set
+    up there. The pull request changes the enabled geos, so a person merges it. The regions are the north
+    Europe region of each cloud (Stockholm, Dublin and Finland), so they are not in one city and cross-cloud
+    latency is higher than in the London design. The first plan changed Frankfurt to these regions after
+    the person's AWS state bucket was made in eu-north-1.
+  refs:
+  - docs/implementation-plan.md
+  - infra/README.md
+- id: I-01oa
+  title: Europe root environment, networks layer
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01n
+  - I-01m
+  - I-01b
+  deliverables:
+  - infra/envs/europe
+  - infra/envs/README.md
+  acceptance:
+  - infra/envs/europe holds deployment.json naming the europe geo and a networks layer at infra/envs/europe/network,
+    a root configuration with an empty S3 backend block (the infra-apply workflow supplies the settings
+    and the state path europe/network), that builds the regions, address plan and the three networks.
+  - The root takes its regions only from the regions module, and sets every input the modules take. Nothing
+    sensitive is a variable of this layer.
+  - tofu validate, tflint and the region guard pass for the root, and a test shows every module input
+    is set. Nothing is applied.
+  - A plan run of the infra-apply workflow on europe/network can be started by a person (the first real
+    check of the cloud setup).
+  notes: The first layer, so that the cloud trust, roles and state can be proven early. The layout infra/envs/<env>/<layer>
+    is what the infra-apply workflow expects.
+  refs:
+  - docs/credentialed-workflows.md
+  - docs/infrastructure.md
+- id: I-01ob
+  title: Europe root environment, private access and interconnect layers
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01oa
+  - I-01c
+  deliverables:
+  - infra/envs/europe
+  acceptance:
+  - infra/envs/europe/private-access and infra/envs/europe/interconnect are root configurations with their
+    own state, reading the networks layer's outputs from its state.
+  - The tunnels' pre-shared keys come from a variable with no default, so they reach the run as a TF_VAR_
+    secret. No secret is in the repository or in any .tfvars file.
+  - The configurations make the registries, the Azure Key Vault and the identities the modules take as
+    inputs but do not make.
+  - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is
+    applied.
+  refs:
+  - docs/credentialed-workflows.md
+  - docs/infrastructure.md
+- id: I-01oca
+  title: Europe Azure Key Vault reachable by the plan and apply runs
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - I-01ob
+  deliverables:
+  - .github/workflows/infra-apply.yml
+  - infra/envs/europe/private-access
+  - docs/credentialed-workflows.md
+  acceptance:
+  - The Azure Key Vault from I-01ob keeps its private endpoint and no public access for machines, but
+    a run can reach its data plane. The vault's firewall stays on Deny, and each run adds its own runner
+    address for the run and removes it at the end, even if the run fails.
+  - Only the apply identity may write to the vault (an RBAC role limited to the vault). The plan identity
+    can read keys and secrets' metadata only.
+  - The workflow change is small and tested for these properties (the step runs only when the Azure sign-in
+    ran, removes the address in an always-run step, and uses no stored key). It is a needs-human pull
+    request, because it edits a workflow that holds credentials.
+  - docs/credentialed-workflows.md says how it works and how to revoke it.
+  notes: A person chose this on 17 November 2026. The Azure disk encryption set needs a vault key, and
+    the control plane and Postgres modules write certificates and the administrator secret into the vault.
+    A GitHub runner has a different address each run, so the vault's firewall cannot hold a fixed list.
+  refs:
+  - docs/credentialed-workflows.md
+  - infra/envs/README.md
+- id: I-01ocb
+  title: Europe control plane layer and its keys, registries and identities
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01oca
+  - I-01e
+  - I-01kc
+  deliverables:
+  - infra/envs/europe/control-plane
+  - infra/envs/README.md
+  acceptance:
+  - infra/envs/europe/control-plane is a root configuration with its own state and an empty S3 backend
+    block, reading the networks and private access layers from state.
+  - It makes what the control plane module takes but does not make: the AWS KMS key and ECR repository,
+      the Azure disk encryption set (with its Key Vault key and the role it needs), and the Google Cloud
+      KMS key ring, key and Artifact Registry repository.
+  - The etcd image digests, the Flatcar machine image ids for each cloud and the SSH public key are variables
+    with no default, supplied as TF_VAR_ secrets. No secret or key is in the repository.
+  - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is
+    applied.
+  - infra/envs/README.md lists the variables and says how to publish the etcd image and find the Flatcar
+    image ids.
+  refs:
+  - docs/credentialed-workflows.md
+  - docs/infrastructure.md
+- id: I-01occ
+  title: Europe cell layer for a tenant
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01ocb
+  deliverables:
+  - infra/envs/europe/cell-first
+  - infra/envs/README.md
+  acceptance:
+  - infra/envs/europe/cell-<name> is a root configuration with its own state, reading the earlier layers
+    from state, for the first tenant (a ten_ id a person gives).
+  - The tenant's own encryption keys on each cloud, its registries or repositories, and the cell administrator
+    identities are made. The Postgres image digests are variables with no default. A cell never uses another
+    tenant's key.
+  - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is
+    applied.
+  notes: Needs the first tenant's id from a person. Fill it in when the task starts.
+  refs:
+  - docs/credentialed-workflows.md
+  - docs/infrastructure.md
+- id: I-01p
+  title: Image manifest, and the control plane layer reads its images from it
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - I-01ocb
+  deliverables:
+  - infra/images.json
+  - infra/envs/europe/control-plane
+  - tests/test_images_manifest.py
+  - docs/credentialed-workflows.md
+  acceptance:
+  - infra/images.json is the one place that names the images: the etcd image by its upstream digest, and
+      a Flatcar Container Linux release. A test checks its shape (digest form, one release, a version
+      tag and never latest). The download links and sha256 checksums of the Flatcar files are added by
+      I-01s, which is where they are used.
+  - The control plane layer reads the etcd digest from the manifest. The variable etcd_image_digest and
+    its TF_VAR_ secret are gone. The layer looks up the AWS image (owner and name pinned to the release)
+    and the Google Cloud image (project and name pinned to the release) with data sources, so aws_flatcar_ami_id
+    and gcp_flatcar_image are gone too.
+  - The Azure image still comes from a variable until I-01s, and the README says so.
+  - tofu validate, tflint, the region guard and the test that every module input is set pass. Nothing
+    is applied.
+  notes: A person asked on 17 November 2026 for the base images to be pinned in the repository and pushed
+    out to the clouds by workflows. The manifest is public information (digests and checksums), so it
+    is reviewed in a pull request and is not a secret. The Postgres node image is built by this repository
+    and is added to the manifest when its task needs it.
+  refs:
+  - infra/envs/README.md
+  - docs/credentialed-workflows.md
+- id: I-01q
+  title: Europe registries layer, before the control plane
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01p
+  deliverables:
+  - infra/envs/europe/registries
+  - infra/envs/europe/control-plane
+  - infra/envs/README.md
+  acceptance:
+  - infra/envs/europe/registries is a root configuration with its own state that makes the etcd repository
+    in each cloud (ECR, the Azure registry's repository path and Artifact Registry) with immutable tags,
+    so the image can be published before the control plane layer is applied.
+  - The control plane layer reads the repositories from that layer's state and no longer makes them. The
+    order is registries, publish images, control plane, and the README says so.
+  - tofu validate, tflint, the region guard and the test that every module input is set pass. Nothing
+    is applied.
+  notes: Needs a person to apply the layer that moves the repositories if the control plane layer was
+    already applied. The plan shows it as a move; use tofu state mv by hand and say so in the pull request.
+  refs:
+  - infra/envs/README.md
+  - docs/infrastructure.md
+- id: I-01r
+  title: Publish images workflow for etcd
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01q
+  - I-01oca
+  deliverables:
+  - .github/workflows/publish-images.yml
+  - tests/test_publish_images_workflow.py
+  - docs/credentialed-workflows.md
+  acceptance:
+  - A workflow a person starts copies the etcd image named in infra/images.json from upstream, by digest,
+    to a private GitHub Container Registry package linked to this repository, and from there to the repository
+    of each cloud, then fails unless all three digests equal the manifest's.
+  - It signs in to each cloud through the federated identities and the infra-apply environment (so it
+    needs the approval), uses no stored key, and opens the private Azure registry to the runner for the
+    run only and closes it again in a step that always runs.
+  - Pinned actions, least permissions (packages write only on the job that needs it), and tests of these
+    properties, in the style of the infra-apply workflow tests. It never runs tofu.
+  - It is a needs-human pull request, because it edits a workflow that holds credentials. docs/credentialed-workflows.md
+    lists the push roles each identity needs.
+  refs:
+  - docs/credentialed-workflows.md
+- id: I-01s
+  title: Import Flatcar into each cloud from a pinned release
+  phase: P1
+  workstream: I
+  size: L
+  status: todo
+  depends_on:
+  - I-01r
+  deliverables:
+  - .github/workflows/publish-images.yml
+  - infra/envs/europe/registries
+  - infra/images.json
+  - docs/credentialed-workflows.md
+  acceptance:
+  - infra/images.json gains the download link and sha256 checksum of each Flatcar file for the pinned
+    release (a test checks their form). The release is downloaded, checked against those checksums and
+    kept as GitHub Release assets, one release for each Flatcar version.
+  - The workflow imports it into each cloud as that cloud's own image (a snapshot and AMI on AWS, a managed
+    image on Azure, a Compute Engine image on Google Cloud) and the layers use those images instead of
+    the public ones. The buckets and storage account it needs are made by OpenTofu, and any extra roles
+    are listed in the docs.
+  - A needs-human pull request, and tests of the workflow's safety properties. Nothing is applied by an
+    agent.
+  notes: Size L means split first. When it starts, split it into one part for each cloud, with the release
+    assets first.
+  refs:
+  - docs/credentialed-workflows.md
+- id: I-01t
+  title: Build and publish the Postgres node image to GitHub Container Registry
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01i
+  - I-01r
+  deliverables:
+  - .github/workflows/publish-postgres-image.yml
+  - tests/test_publish_postgres_image_workflow.py
+  - docs/credentialed-workflows.md
+  acceptance:
+  - A workflow a person starts from main builds images/postgres, scans its layers for secrets with scripts/scan_image_layers.py,
+    and pushes it by digest to a private GitHub Container Registry package linked to this repository,
+    tagged with the commit. The run summary shows the digest.
+  - It uses only the workflow's own token, with packages write on the job that pushes and nothing else,
+    holds no cloud credential and no stored key, and pins its actions as the other workflows do.
+  - It does not run tofu or touch a cloud, and it fails if the scan finds a secret or the pushed digest
+    differs from the built one.
+  - Tests of these properties, in the style of tests/test_publish_images_workflow.py. docs/credentialed-workflows.md
+    says how to run it and how to read the digest.
+  notes: The digest is only known after the build, so it goes into infra/images.json in a later pull request
+    (I-01u). I-01i said a person publishes the image; this makes that one command.
+  refs:
+  - docs/credentialed-workflows.md
+  - images/postgres/README.md
+- id: I-01u
+  title: Publish the Postgres node image to each tenant repository
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01t
+  - I-01occ
+  deliverables:
+  - infra/images.json
+  - .github/workflows/publish-images.yml
+  - tests/test_publish_images_workflow.py
+  - tests/test_images_manifest.py
+  - docs/credentialed-workflows.md
+  acceptance:
+  - infra/images.json gains a postgres entry with the GitHub Container Registry address and the digest
+    that I-01t printed (a test checks their form, and that no tag is used to select it).
+  - publish-images also copies the Postgres image from that package, by digest, to the repository of each
+    cloud named in the outputs of the cell layer (infra/envs/europe/cell-first, postgres_repositories),
+    and fails unless every copy has the manifest's digest. Re-running it is safe.
+  - The same safety rules as for etcd hold and are tested: environment approval, no stored key, the Azure
+      registry opened for the run only.
+  - It is a needs-human pull request, because it edits a workflow that holds credentials. docs/credentialed-workflows.md
+    lists any extra roles.
+  notes: Needs the cell layer applied first, so the repositories exist. Then the postgres_image_digest
+    secret is set to the manifest's digest.
+  refs:
+  - docs/credentialed-workflows.md
+  - infra/envs/README.md
+- id: I-01va
+  title: Europe cells layer, self-hosted cells for the first tenant
+  phase: P1
+  workstream: I
+  size: M
+  status: done
+  depends_on:
+  - I-01u
+  - I-01kb
+  deliverables:
+  - infra/envs/europe/cells
+  - infra/modules/postgres
+  - infra/envs/README.md
+  acceptance:
+  - infra/envs/europe/cells is a root configuration with its own state, an empty S3 backend block and
+    the first tenant's id written once, reading the networks, private access, registries and cell-first
+    layers from state. It calls modules/postgres once for each cloud with provider_kind self_hosted, using
+    the tenant's own key, repository and administrator from the cell-first layer's outputs and the node
+    image by the manifest's digest. A cell never uses another tenant's key.
+  - The Flatcar machine images come from the manifest and the Azure image variable as in the control plane
+    layer, and the administrator SSH public key is a sensitive variable with no default. Any other variable
+    has no default and is supplied as a TF_VAR_ secret.
+  - modules/postgres takes an optional machine size for each cloud that overrides its size table, so that
+    the layer can use sizes the subscription and region can supply (the Azure subscription has no quota
+    for the Dsv5 series, and n2 has had no capacity in europe-north1-a). The default is unchanged and
+    a test checks it.
+  - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is
+    applied.
+  notes: Part 1 of I-01v (split). The kind of Postgres is chosen by a person; self-hosted comes first,
+    then managed (I-01vb), then Lakebase (I-01vc). The cells layer is read-only for the later parts, which
+    add to it.
+  refs:
+  - docs/credentialed-workflows.md
+  - docs/infrastructure.md
+  - docs/self-hosted-postgres.md
+- id: I-01vb
+  title: Europe cells layer, managed cells
+  phase: P1
+  workstream: I
+  size: M
+  status: todo
+  depends_on:
+  - I-01va
+  deliverables:
+  - infra/envs/europe/cells
+  - infra/envs/README.md
+  acceptance:
+  - The cells layer can run each cloud's cell as the cloud's own managed PostgreSQL (RDS Multi-AZ cluster,
+    Azure zone-redundant flexible server, Cloud SQL regional instance) by a variable that names the kind,
+    with self-hosted as the default so that nothing changes for an applied layer. Azure's private DNS
+    zone comes from modules/postgres/azure-dns.
+  - A test checks that the kind is one of the allowed values, that the managed form takes the tenant's
+    own key, and that switching kinds is shown in a plan as a replacement, not a silent change.
+  - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is
+    applied.
+  notes: Part 2 of I-01v (split).
+  refs:
+  - docs/credentialed-workflows.md
+  - docs/infrastructure.md
+- id: I-01vc
+  title: Europe cells layer, Lakebase cell
+  phase: P1
+  workstream: I
+  size: M
+  status: todo
+  depends_on:
+  - I-01vb
+  deliverables:
+  - infra/envs/europe/cells
+  - infra/envs/README.md
+  acceptance:
+  - The cells layer can run a cell as Databricks Lakebase, taking the tenant's Databricks workspace administrator
+    application id, and the two statements the module cannot check (the workspace uses Private Link, and
+    a customer-managed key configuration is bound to it), as variables with no default.
+  - A test checks that Lakebase is refused unless both statements are true, and that no Databricks credential
+    is a variable or a value.
+  - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is
+    applied.
+  notes: Part 3 of I-01v (split). Needs the tenant's Databricks workspace details from a person before
+    it can be applied; the layer can be built and validated without them.
+  refs:
+  - docs/credentialed-workflows.md
+  - docs/infrastructure.md
+- id: I-01l
+  title: Root environment for the UK geo
+  phase: P1
+  workstream: I
+  size: M
+  status: todo
+  depends_on:
+  - I-01e
+  - I-01kc
+  deliverables:
+  - infra/envs/uk
+  - infra/envs/README.md
+  acceptance:
+  - infra/envs/uk holds a root configuration with deployment.json naming the uk geo, that joins the regions,
+    address plan, three networks, private access, interconnect, control plane and a cell's Postgres modules,
+    one state per layer, with the backend named in a file that holds no credentials.
+  - The configuration makes what the modules take as inputs but do not make: the control plane's and each
+      tenant's encryption keys, the container registries, the Azure Key Vault, disk encryption set and
+      identities, and the cells' administrator service accounts. Nothing is made outside the UK regions.
+  - Sensitive inputs (the tunnels' pre-shared keys, the SSH public key and the image digests) come from
+    variables with no default, and no secret is in the repository or in any .tfvars file it holds.
+  - tofu validate, tflint and the UK-region guard pass for the root, and a test shows that every module
+    input is set. Nothing is applied.
+  notes: Found while writing docs/infrastructure.md for I-01f. infra/envs holds only a README, so
+    there is nothing to apply. If this is too large for one pull request, split it by layer (networks
+    and interconnect, then control plane, then cells). Where state lives is a person's call (see the guide);
+    build to a backend file the person fills in.
+  refs:
+  - AGENTS.md
+  - docs/infrastructure.md
+- id: I-01f
+  title: Apply the infrastructure to the three UK accounts
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  owner: human
+  depends_on:
+  - I-01e
+  - I-01l
+  deliverables:
+  - docs/evidence/infra-applied.md
+  acceptance:
+  - A person has run tofu apply for each cloud, with state held in a UK-region backend.
+  - The evidence page records the modules and versions applied, the date, and the endpoints and secret
+    references, and holds no secrets.
+  notes: Follow docs/infrastructure.md. It cannot start until the root environment exists (I-01l).
+  refs:
+  - AGENTS.md
+  - docs/infrastructure.md
+- id: I-02
+  title: Region-to-region latency measurement
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - I-01f
+  - K-04
+  - R-03
+  decisions:
+  - D-14
+  deliverables:
+  - docs/evidence/latency.md
+  acceptance:
+  - A probe running beside each cell measures same-cell legs, cross-cell transfers and strong-tier acknowledgements
+    for every cloud pair, p50 and p95.
+  - The report compares results with the D-14 budget.
+  refs:
+  - docs/design.md#write-path-performance
+- id: I-03
+  title: Failover drills on the UK clouds
+  phase: P1
+  workstream: I
+  size: M
+  status: todo
+  depends_on:
+  - I-01f
+  - T-01
+  - C-02
+  deliverables:
+  - .github/workflows/drill.yml
+  - docs/evidence/drills.md
+  acceptance:
+  - Standard and strong drills pass for every ordered cloud pair, run by a manually dispatched workflow.
+  - Promotion time is recorded and stays inside 15 seconds; the strong tier loses nothing.
+  refs:
+  - docs/conformance.md
+- id: GATE-1
+  title: 'Gate 1: stable open kernel'
+  phase: P1
+  workstream: GATE
+  owner: human
+  size: S
+  status: todo
+  depends_on:
+  - T-03
+  - I-02
+  - I-03
+  - K-11
+  - K-12
+  - K-13
+  deliverables:
+  - docs/evidence/gate-1.md
+  acceptance:
+  - Drills pass on all three UK clouds with promotion inside 15 seconds.
+  - Latency is inside the D-14 budget.
+  - Seven consecutive nightly randomised runs are clean.
+  - A person has made a first entry through the API on the proving environment, following docs/runbooks/first-entry.md.
+  - A person tags the release as v1.0 and signs off in docs/evidence/gate-1.md. The commercial add-on
+    builds only on a tagged release.
+  refs:
+  - docs/implementation-plan.md
+  notes: The open kernel is stable when this gate passes. The commercial add-on is planned in a separate
+    private repository and starts from the tagged release.
+- id: S-04
+  title: Apache-2.0 licence for the repository
+  phase: P1
+  workstream: S
+  size: S
+  status: done
+  depends_on: []
+  deliverables:
+  - LICENSE
+  - NOTICE
+  acceptance:
+  - The repository has the unmodified Apache-2.0 text in LICENSE and a NOTICE naming the copyright holder,
+    Ust Oldfield, from 2026.
+  - The Rust workspace and the Python package both declare Apache-2.0, and a test fails if either, the
+    LICENSE text or the NOTICE drifts.
+  - The README says what the licence covers and what it does not (trademarks, third-party software in
+    the node image).
+  notes: A person must review it because it is a legal choice. Asked for by Ust Oldfield on 18 November
+    2026, who holds the copyright. Contributions are accepted under Apache-2.0 section 5 until a contributor
+    policy says otherwise.
+  refs:
+  - deny.toml
+- id: S-05
+  title: Publish the kernel and infrastructure to OpenLedgerKernel
+  phase: P1
+  workstream: S
+  size: M
+  status: done
+  depends_on:
+  - S-04
+  deliverables:
+  - docs/infrastructure.md
+  acceptance:
+  - The public repository holds the Rust kernel, the Python reference, the schema and command API, the
+    node image and the infrastructure layers, with a tenant-neutral example tenant, as one clean first
+    commit.
+  - The public repository's own checks pass on that commit (Rust, Python, image and infrastructure validation).
+  - The Postgres image is published from the public repository and its digest recorded in infra/images.json.
+  notes: Ust Oldfield pushes the first commit, because the Claude GitHub App is not installed on the public
+    repository. Plans, the console, the product and agent designs and the first tenant's real name stay
+    private.
+  refs:
+  - docs/credentialed-workflows.md
+- id: S-07
+  title: Credentialed workflows for the public repository
+  phase: P1
+  workstream: S
+  size: M
+  status: todo
+  depends_on:
+  - S-05
+  decisions:
+  - D-16
+  deliverables:
+  - .github/workflows/infra-apply.yml
+  - docs/credentialed-workflows.md
+  acceptance:
+  - Credentialed workflows run only by dispatch, never on a pull request, never with pull_request_target,
+    from main only, in an environment that needs a named person's approval.
+  - Each cloud trusts only that environment of that repository, and a test checks the trust subject written
+    in the documentation.
+  - A run never prints a plan, identifiers or outputs into a public log: the plan is kept in the private
+      state store and the log holds counts only, with a test that fails if a step prints plan output.
+  - Changes to .github/workflows need the owner's review, and actions are pinned to full commits.
+  notes: A person must review it because it edits workflows that hold credentials. D-16 puts them on the
+    public repository, where logs are public, so every guard here is required.
+  refs:
+  - docs/credentialed-workflows.md
