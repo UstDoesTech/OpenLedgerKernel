@@ -631,6 +631,30 @@ tasks:
   refs:
   - docs/credentialed-workflows.md
   - docs/design.md#write-path-performance
+- id: K-16
+  title: Run the API machines in the Europe environment
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-13
+  - K-15
+  deliverables:
+  - infra/envs/europe/api
+  acceptance:
+  - A layer of the Europe environment makes one API machine next to each cell on all three clouds from
+    infra/modules/api, with the image digest read from infra/images.json and refused if it differs from the
+    one the layer was given.
+  - The layer reads the network, private access, registries and cell-first layers from state, adds the
+    API's two ports to the cell tier's rules for the customers' network and the other cells only, and
+    makes nothing public.
+  - It is applied only through infra-apply, and docs/runbooks/first-entry.md names the layer. tofu validate
+    passes in CI.
+  notes: Needs the API image published and its digest in infra/images.json, which a person does after K-13's
+    workflow merges. The proving environment holds no real money and no customer data.
+  refs:
+  - docs/credentialed-workflows.md
 - id: T-03
   title: Randomised fault testing
   phase: P1
@@ -1495,6 +1519,8 @@ tasks:
   - K-12
   - K-13
   - K-14
+  - K-15
+  - K-16
   deliverables:
   - docs/evidence/gate-1.md
   acceptance:
