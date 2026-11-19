@@ -10,6 +10,6 @@
   },
   "postgres": {
     "source": "ghcr.io/ustdoestech/openledgerkernel/postgres",
-    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    "digest": "sha256:98347cd30c79f482b84a940aaeec6279c7c873958dfc6cc96c56ed0cf48a880f"
   }
 }
