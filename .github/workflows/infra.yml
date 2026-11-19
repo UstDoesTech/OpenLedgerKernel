@@ -25,7 +25,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Region guard
         run: python3 scripts/check_uk_regions.py
       - name: Download each provider once
@@ -34,7 +34,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/tofu-plugin-cache"
           echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/tofu-plugin-cache" >> "$GITHUB_ENV"
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@v2
         with:
           tofu_version: 1.10.0
       - name: Format
@@ -57,7 +57,7 @@ jobs:
             tofu -chdir="$dir" test
             echo "::endgroup::"
           done
-      - uses: terraform-linters/setup-tflint@v4
+      - uses: terraform-linters/setup-tflint@v6
         with:
           tflint_version: v0.54.0
       - name: Lint
