@@ -68,9 +68,12 @@ jobs:
       INPUT_ENV: ${{ inputs.env }}
       INPUT_LAYER: ${{ inputs.layer }}
       STATE_KEY_NAME: ${{ vars.TOFU_STATE_KEY_NAME || 'key' }}
-      BACKEND_CONFIG: ${{ vars.TOFU_BACKEND_CONFIG }}
-      PLAN_STORE: ${{ vars.PLAN_STORE }}
-      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      BACKEND_CONFIG: ${{ secrets.TOFU_BACKEND_CONFIG }}
+      PLAN_STORE: ${{ secrets.PLAN_STORE }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      HAS_AZURE: ${{ secrets.AZURE_CLIENT_ID != '' }}
+      HAS_GCP: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+      HAS_VAULT: ${{ secrets.AZURE_KEY_VAULT_NAME != '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -98,28 +101,28 @@ jobs:
       - name: AWS (federated)
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 3600
       - name: Azure (federated)
-        if: vars.AZURE_CLIENT_ID != ''
+        if: env.HAS_AZURE == 'true'
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Google Cloud (federated)
-        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+        if: env.HAS_GCP == 'true'
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - name: Open the Azure Key Vault to this run
         id: keyvault
-        if: vars.AZURE_CLIENT_ID != '' && vars.AZURE_KEY_VAULT_NAME != ''
+        if: env.HAS_AZURE == 'true' && env.HAS_VAULT == 'true'
         env:
-          VAULT: ${{ vars.AZURE_KEY_VAULT_NAME }}
-          VAULT_GROUP: ${{ vars.AZURE_KEY_VAULT_RESOURCE_GROUP }}
+          VAULT: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+          VAULT_GROUP: ${{ secrets.AZURE_KEY_VAULT_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
           # The vault's firewall stays on Deny. This run's own address is added for the run
@@ -176,8 +179,8 @@ jobs:
       - name: Close the Azure Key Vault again
         if: always() && steps.keyvault.outputs.ip != ''
         env:
-          VAULT: ${{ vars.AZURE_KEY_VAULT_NAME }}
-          VAULT_GROUP: ${{ vars.AZURE_KEY_VAULT_RESOURCE_GROUP }}
+          VAULT: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+          VAULT_GROUP: ${{ secrets.AZURE_KEY_VAULT_RESOURCE_GROUP }}
           RUNNER_IP: ${{ steps.keyvault.outputs.ip }}
         run: |
           az keyvault network-rule remove --name "$VAULT" --resource-group "$VAULT_GROUP" --ip-address "$RUNNER_IP/32" --only-show-errors -o none \
@@ -197,9 +200,12 @@ jobs:
       INPUT_ENV: ${{ inputs.env }}
       INPUT_LAYER: ${{ inputs.layer }}
       STATE_KEY_NAME: ${{ vars.TOFU_STATE_KEY_NAME || 'key' }}
-      BACKEND_CONFIG: ${{ vars.TOFU_BACKEND_CONFIG }}
-      PLAN_STORE: ${{ vars.PLAN_STORE }}
-      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      BACKEND_CONFIG: ${{ secrets.TOFU_BACKEND_CONFIG }}
+      PLAN_STORE: ${{ secrets.PLAN_STORE }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      HAS_AZURE: ${{ secrets.AZURE_CLIENT_ID != '' }}
+      HAS_GCP: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+      HAS_VAULT: ${{ secrets.AZURE_KEY_VAULT_NAME != '' }}
       REVIEWED_PLAN_SHA: ${{ needs.plan.outputs.plan_sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -229,28 +235,28 @@ jobs:
       - name: AWS (federated)
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 14400
       - name: Azure (federated)
-        if: vars.AZURE_CLIENT_ID != ''
+        if: env.HAS_AZURE == 'true'
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Google Cloud (federated)
-        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+        if: env.HAS_GCP == 'true'
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - name: Open the Azure Key Vault to this run
         id: keyvault
-        if: vars.AZURE_CLIENT_ID != '' && vars.AZURE_KEY_VAULT_NAME != ''
+        if: env.HAS_AZURE == 'true' && env.HAS_VAULT == 'true'
         env:
-          VAULT: ${{ vars.AZURE_KEY_VAULT_NAME }}
-          VAULT_GROUP: ${{ vars.AZURE_KEY_VAULT_RESOURCE_GROUP }}
+          VAULT: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+          VAULT_GROUP: ${{ secrets.AZURE_KEY_VAULT_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
           # The vault's firewall stays on Deny. This run's own address is added for the run
@@ -305,8 +311,8 @@ jobs:
       - name: Close the Azure Key Vault again
         if: always() && steps.keyvault.outputs.ip != ''
         env:
-          VAULT: ${{ vars.AZURE_KEY_VAULT_NAME }}
-          VAULT_GROUP: ${{ vars.AZURE_KEY_VAULT_RESOURCE_GROUP }}
+          VAULT: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+          VAULT_GROUP: ${{ secrets.AZURE_KEY_VAULT_RESOURCE_GROUP }}
           RUNNER_IP: ${{ steps.keyvault.outputs.ip }}
         run: |
           az keyvault network-rule remove --name "$VAULT" --resource-group "$VAULT_GROUP" --ip-address "$RUNNER_IP/32" --only-show-errors -o none \

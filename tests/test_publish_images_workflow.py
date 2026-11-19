@@ -49,7 +49,9 @@ def test_it_waits_for_the_approved_environment_with_least_permissions():
 def test_it_never_applies_infrastructure_and_holds_no_stored_credential():
     text = code()
     assert not re.search(r"\b(tofu|terraform)\s+(apply|destroy|import|refresh)\b", text)
-    assert "secrets." not in text, "the only token is the run's own (github.token)"
+    allowed = {"AWS_ROLE_ARN", "AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID",
+               "GCP_WORKLOAD_IDENTITY_PROVIDER", "GCP_SERVICE_ACCOUNT", "TOFU_BACKEND_CONFIG"}
+    assert set(re.findall(r"secrets\.(\w+)", text)) <= allowed, "the only token is the run's own (github.token)"
     for bad in ("AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "client-secret", "credentials_json", "creds:", "az login", "docker login"):
         assert bad not in text, bad
     assert "upload-artifact" not in text

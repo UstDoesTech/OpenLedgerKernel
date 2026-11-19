@@ -42,19 +42,28 @@ Agents never dispatch these workflows and never hold these roles.
 
 **Settings, Actions, General.** Require approval for all outside contributors. Set the workflow permissions to read-only. **Settings, Moderation, Interaction limits:** collaborators only.
 
-Each environment gets **variables** (Settings, Environments, the environment, Variables), with its own values.
+Each environment gets **secrets** and **variables** (Settings, Environments, the environment), with its own values.
+
+**Anything that identifies your accounts is a secret, not a variable.** GitHub prints a step's environment and an action's inputs in the log header, and anyone can read that log. A secret is masked there as `***`. A variable is printed in full. Masking only hides values in logs. It does not control access: the cloud trust below does that.
+
+| Secret | Value |
+| --- | --- |
+| `AWS_ROLE_ARN` | The role for this environment. Required, because the plan store is in AWS. |
+| `PLAN_STORE` | The private bucket and prefix for logs, such as `s3://<state bucket>/plans`. Required. |
+| `TOFU_BACKEND_CONFIG` | The partial backend settings, one `name = "value"` per line, such as `bucket = "..."`, `region = "..."`, `use_lockfile = true`, `encrypt = true` |
+| `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | The app registration for this environment, the tenant and the subscription. Azure is skipped when `AZURE_CLIENT_ID` is empty or unset. |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT` | The provider and the service account for this environment. Google Cloud is skipped when the provider is unset. |
+| `AZURE_KEY_VAULT_NAME`, `AZURE_KEY_VAULT_RESOURCE_GROUP` | Optional. From the `private-access` layer's outputs. See "The Azure Key Vault and the runs" below. |
+| `TF_VAR_<variable name>` | One per sensitive input of the layers. Only secrets with this prefix reach OpenTofu. GitHub shows names in capitals and the workflow lowers the part after the prefix. |
 
 | Variable | Value |
 | --- | --- |
-| `AWS_ROLE_ARN`, `AWS_REGION` | The role for this environment, and the region it is assumed in (the state bucket's region). Required, because the plan store is in AWS. |
-| `PLAN_STORE` | The private bucket and prefix for logs, such as `s3://<state bucket>/plans`. Required. |
-| `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | The app registration for this environment, the tenant and the subscription. Skipped when `AZURE_CLIENT_ID` is empty. |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT` | The provider and the service account for this environment. Skipped when the provider is empty. |
-| `TOFU_BACKEND_CONFIG` | The partial backend settings, one `name = "value"` per line, such as `bucket = "..."`, `region = "..."`, `use_lockfile = true`, `encrypt = true` |
+| `AWS_REGION` | The region the role is assumed in (the state bucket's region). Already public in `infra/geos.json`. |
 | `TOFU_STATE_KEY_NAME` | Optional. `key` (the default) or `prefix` |
-| `AZURE_KEY_VAULT_NAME`, `AZURE_KEY_VAULT_RESOURCE_GROUP` | Optional. From the `private-access` layer's outputs. See "The Azure Key Vault and the runs" below. |
 
-The state path for a layer is added for you: `<env>/<layer>`. **Secrets**, on both environments: one per sensitive input of the layers, named `TF_VAR_<variable name>`. Only secrets with that prefix reach OpenTofu. GitHub shows names in capitals and the workflow lowers the part after the prefix.
+A secret set on the repository works too, and an environment's secret of the same name wins. Put them on the environments, so only jobs that run in `infra-plan` or `infra-apply` can read them.
+
+The state path for a layer is added for you: `<env>/<layer>`.
 
 ### 2. The plan store
 
@@ -130,6 +139,6 @@ If it says "the plan changed since it was shown", nothing was applied. Read why,
 
 ## Revoking access
 
-- **Stop everything now:** delete the `infra-apply` environment, or remove its reviewers and variables. Without it the job cannot get a token.
+- **Stop everything now:** delete the `infra-apply` environment, or remove its reviewers and secrets. Without it the job cannot get a token.
 - **Cloud side:** delete the AWS role's trust, the Azure federated credential, or the Google provider's binding. Each is independent of GitHub and works at once.
-- **Rotate** the `TF_VAR_` secrets on your own schedule. The workflows store no other secret.
+- **Rotate** the `TF_VAR_` secrets on your own schedule. The other secrets name your accounts and are not credentials, so there is nothing to rotate, but change them if you rebuild an account. The workflows store no cloud credential.
