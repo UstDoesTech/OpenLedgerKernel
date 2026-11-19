@@ -130,15 +130,31 @@ resource "aws_instance" "member" {
     kms_key_id = var.kms_key_arn
   }
 
-  ebs_block_device {
-    device_name = "/dev/sdf"
-    volume_type = "gp3"
-    volume_size = var.storage_gb
-    encrypted   = true
-    kms_key_id  = var.kms_key_arn
-  }
-
   lifecycle {
     ignore_changes = [ami, user_data]
   }
+}
+
+# The data disk is its own resource, as on Azure and Google, so replacing a member to roll a new
+# image keeps the disk and with it the member's identity in the cluster. Replacing the machine
+# detaches the disk, creates the new machine and attaches the disk to it. The machine's boot finds
+# the disk by size, and the member's own restart picks it up if it arrives late.
+resource "aws_ebs_volume" "data" {
+  for_each = local.members
+
+  availability_zone = aws_instance.member[each.key].availability_zone
+  type              = "gp3"
+  size              = var.storage_gb
+  encrypted         = true
+  kms_key_id        = var.kms_key_arn
+  tags              = merge(var.tags, { Name = "${each.key}-data" })
+}
+
+resource "aws_volume_attachment" "data" {
+  for_each = local.members
+
+  device_name                    = "/dev/sdf"
+  volume_id                      = aws_ebs_volume.data[each.key].id
+  instance_id                    = aws_instance.member[each.key].id
+  stop_instance_before_detaching = true
 }
