@@ -1,0 +1,1094 @@
+openapi: 3.1.0
+info:
+  title: Core banking command and read API
+  version: 1.0.0-draft
+  summary: One API for the customer app, the colleague console, rail adapters and AI agents.
+  description: |
+    Writes are typed commands that can be simulated, are decided by a policy engine, may need a
+    person's approval, and commit only if their effect matches the simulated effect hash.
+    Reads are resources that report how fresh they are through ledger watermarks.
+
+    Tenant always comes from the token, never from a path or body. Money is always integer minor
+    units plus an ISO 4217 code. Personal data appears only under /v1/parties, masked by default.
+
+    The design is described in the "API design" tab of the core banking design document.
+servers:
+  - url: https://api.example.invalid
+    description: Placeholder; each tenant gets its own host
+security:
+  - oauth2: []
+  - mutualTLS: []
+
+tags:
+  - name: Commands
+  - name: Approvals
+  - name: Catalogue
+  - name: Accounts
+  - name: Journals
+  - name: Parties
+  - name: Operations
+  - name: Agents
+  - name: Events
+
+paths:
+  /v1/commands/{type}:simulate:
+    post:
+      tags: [Commands]
+      operationId: simulateCommand
+      summary: Simulate a command and return its exact effect and policy decision
+      description: Nothing is written. The result's effect_hash binds a later commit or approval.
+      parameters:
+        - $ref: '#/components/parameters/CommandType'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AgentRunId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommandRequest' }
+      responses:
+        '200':
+          description: Simulated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommandResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+
+  /v1/commands/{type}:
+    post:
+      tags: [Commands]
+      operationId: commitCommand
+      summary: Commit a command
+      description: |
+        Send either a simulation_id with its effect_hash (commit a simulation), or a full
+        CommandRequest (simulate and commit in one step when policy allows it outright).
+        Returns pending_approval when policy holds the command for a person.
+      parameters:
+        - $ref: '#/components/parameters/CommandType'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AgentRunId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/CommitRequest'
+                - $ref: '#/components/schemas/CommandRequest'
+      responses:
+        '201':
+          description: Committed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommandResult' }
+        '202':
+          description: Accepted (home failing over) or pending approval
+          headers:
+            Location:
+              schema: { type: string }
+              description: The command resource to poll
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommandResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+        '504': { $ref: '#/components/responses/Problem' }
+
+  /v1/commands/{commandId}:
+    get:
+      tags: [Commands]
+      operationId: getCommand
+      summary: Get a command, its decision, approval state and result
+      parameters:
+        - name: commandId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/CommandId' }
+      responses:
+        '200':
+          description: The command
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommandResult' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/approvals:
+    get:
+      tags: [Approvals]
+      operationId: listApprovals
+      summary: List approvals visible to the caller
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected, expired] }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of approvals
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Approval' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/approvals/{approvalId}:
+    get:
+      tags: [Approvals]
+      operationId: getApproval
+      summary: Get one approval with the simulated effect, reason and evidence
+      parameters:
+        - $ref: '#/components/parameters/ApprovalId'
+      responses:
+        '200':
+          description: The approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Approval' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/approvals/{approvalId}:approve:
+    post:
+      tags: [Approvals]
+      operationId: approve
+      summary: Approve the exact simulated effect
+      description: |
+        People only; agent tokens never carry this scope. The caller cannot have proposed the
+        command or started its chain. effect_hash must match the approval's effect.
+      parameters:
+        - $ref: '#/components/parameters/ApprovalId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalDecision' }
+      responses:
+        '200':
+          description: Approved; the command commits if its effect still matches
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Approval' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /v1/approvals/{approvalId}:reject:
+    post:
+      tags: [Approvals]
+      operationId: reject
+      summary: Reject a proposed command; nothing is written
+      parameters:
+        - $ref: '#/components/parameters/ApprovalId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalDecision' }
+      responses:
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Approval' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /v1/catalogue/commands:
+    get:
+      tags: [Catalogue]
+      operationId: listCatalogue
+      summary: Every command type, filtered to those the caller's scopes allow
+      responses:
+        '200':
+          description: The catalogue
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/CatalogueEntry' }
+
+  /v1/catalogue/commands/{type}:
+    get:
+      tags: [Catalogue]
+      operationId: getCatalogueEntry
+      summary: One command type with its payload schema; agent tools are generated from this
+      parameters:
+        - $ref: '#/components/parameters/CommandType'
+      responses:
+        '200':
+          description: The entry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogueEntry' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/accounts/{accountId}:
+    get:
+      tags: [Accounts]
+      operationId: getAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/Consistency'
+        - $ref: '#/components/parameters/MinWatermark'
+      responses:
+        '200':
+          description: The account; no personal data
+          headers:
+            Ledger-Watermark: { $ref: '#/components/headers/LedgerWatermark' }
+            Ledger-As-Of: { $ref: '#/components/headers/LedgerAsOf' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/accounts/{accountId}/balances:
+    get:
+      tags: [Accounts]
+      operationId: getBalances
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/Consistency'
+        - $ref: '#/components/parameters/MinWatermark'
+      responses:
+        '200':
+          description: Balances
+          headers:
+            Ledger-Watermark: { $ref: '#/components/headers/LedgerWatermark' }
+            Ledger-As-Of: { $ref: '#/components/headers/LedgerAsOf' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Balances' }
+
+  /v1/accounts/{accountId}/entries:
+    get:
+      tags: [Accounts]
+      operationId: listEntries
+      summary: Entries in (epoch, seq) order; cursors never skip or repeat across a failover
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: value_date_from
+          in: query
+          schema: { type: string, format: date }
+        - name: value_date_to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: A page of entries
+          headers:
+            Ledger-Watermark: { $ref: '#/components/headers/LedgerWatermark' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Entry' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/accounts/{accountId}/holds:
+    get:
+      tags: [Accounts]
+      operationId: listHolds
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, released, converted, expired] }
+      responses:
+        '200':
+          description: Holds
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Hold' }
+
+  /v1/journals/{journalId}:
+    get:
+      tags: [Journals]
+      operationId: getJournal
+      summary: A journal with its entries, command, actor, reason, evidence, decision and replication
+      parameters:
+        - name: journalId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^jr_[a-z0-9]+$' }
+      responses:
+        '200':
+          description: The journal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JournalDetail' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/parties/{partyId}:
+    get:
+      tags: [Parties]
+      operationId: getParty
+      summary: Customer details, masked unless revealed with a scope and a logged reason
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^pty_[a-z0-9]+$' }
+        - name: reveal
+          in: query
+          schema: { type: boolean, default: false }
+        - name: reason
+          in: query
+          description: Required when reveal=true; written to the audit trail
+          schema: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: The party
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Party' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/cells:
+    get:
+      tags: [Operations]
+      operationId: listCells
+      responses:
+        '200':
+          description: Cells for this tenant
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Cell' }
+
+  /v1/cells/{cellId}:
+    get:
+      tags: [Operations]
+      operationId: getCell
+      parameters:
+        - name: cellId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z]+-[a-z]+-[0-9]+$' }
+      responses:
+        '200':
+          description: The cell
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cell' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/quarantine:
+    get:
+      tags: [Operations]
+      operationId: listQuarantine
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Open quarantine items with owner and age
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/QuarantineItem' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/audit:
+    get:
+      tags: [Operations]
+      operationId: listAudit
+      summary: Every command and every reveal of personal data
+      parameters:
+        - name: actor_id
+          in: query
+          schema: { type: string }
+        - name: account_id
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of audit records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditRecord' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /v1/agents:
+    get:
+      tags: [Agents]
+      operationId: listAgents
+      responses:
+        '200':
+          description: Agents for this tenant
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Agent' }
+
+  /v1/agents/me/exposure:
+    get:
+      tags: [Agents]
+      operationId: getMyExposure
+      summary: What the calling agent has used of each limit in the current windows
+      responses:
+        '200':
+          description: Exposure
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [limits]
+                properties:
+                  limits:
+                    type: array
+                    items: { $ref: '#/components/schemas/LimitUsage' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /v1/handoffs:
+    post:
+      tags: [Agents]
+      operationId: handOff
+      summary: Move an item to a human queue with a summary and evidence
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AgentRunId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Handoff' }
+      responses:
+        '201':
+          description: Handed off
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [handoff_id, queue]
+                properties:
+                  handoff_id: { type: string }
+                  queue: { type: string }
+
+  /v1/events:
+    get:
+      tags: [Events]
+      operationId: streamEvents
+      summary: Server-sent event stream; each event id is a resume cursor
+      parameters:
+        - name: types
+          in: query
+          style: form
+          explode: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/EventType' }
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: text/event-stream of Event objects
+          content:
+            text/event-stream:
+              schema: { $ref: '#/components/schemas/Event' }
+
+  /v1/subscriptions:
+    post:
+      tags: [Events]
+      operationId: createSubscription
+      summary: Subscribe a webhook endpoint; deliveries are signed and deduplicated by event id
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, types]
+              properties:
+                url: { type: string, format: uri }
+                types:
+                  type: array
+                  items: { $ref: '#/components/schemas/EventType' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subscription_id, signing_key_id]
+                properties:
+                  subscription_id: { type: string }
+                  signing_key_id: { type: string }
+
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      description: Short-lived tokens carrying tenant, principal kind and accountable owner.
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.example.invalid/oauth2/token
+          scopes:
+            commands:write: Submit commands within the catalogue entries granted
+            approvals:decide: Approve or reject (people only)
+            parties:reveal: Reveal personal data with a logged reason
+            read: Read resources
+        authorizationCode:
+          authorizationUrl: https://auth.example.invalid/oauth2/authorize
+          tokenUrl: https://auth.example.invalid/oauth2/token
+          scopes:
+            commands:write: Submit commands within the catalogue entries granted
+            approvals:decide: Approve or reject (people only)
+            parties:reveal: Reveal personal data with a logged reason
+            read: Read resources
+    mutualTLS:
+      type: mutualTLS
+      description: Agent and service tokens are bound to their client certificate.
+
+  parameters:
+    CommandType:
+      name: type
+      in: path
+      required: true
+      description: Catalogue command type, noun.verb
+      schema: { type: string, pattern: '^[a-z_]+\.[a-z_]+$', examples: [fees.refund] }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Kept 7 days per tenant and principal; a repeat returns the first result.
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    AgentRunId:
+      name: Agent-Run-Id
+      in: header
+      required: false
+      description: Required for agent principals; ties the call to the gateway's run record.
+      schema: { type: string }
+    ApprovalId:
+      name: approvalId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^apr_[a-z0-9]+$' }
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^acc_[a-z0-9]+$' }
+    Consistency:
+      name: consistency
+      in: query
+      description: home routes the read to the account's home cell; any is served by the nearest replica.
+      schema: { type: string, enum: [any, home], default: any }
+    MinWatermark:
+      name: min_watermark
+      in: query
+      description: 'cell;epoch;seq. Waits up to 2 s for a replica to reach it, then reads from the home.'
+      schema: { type: string, pattern: '^[a-z]+-[a-z]+-[0-9]+;[0-9]+;[0-9]+$' }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+
+  headers:
+    LedgerWatermark:
+      description: 'Home position this response reflects: cell;epoch;seq'
+      schema: { type: string }
+    LedgerAsOf:
+      description: Time of the reflected position
+      schema: { type: string, format: date-time }
+
+  responses:
+    Problem:
+      description: Problem details (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Money:
+      type: object
+      required: [minor, currency]
+      properties:
+        minor: { type: integer, description: Integer minor units, signed where the field allows }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+      additionalProperties: false
+
+    CommandId:
+      type: string
+      pattern: '^cmd_[a-z0-9]+$'
+
+    Watermark:
+      type: object
+      required: [cell, epoch, seq]
+      properties:
+        cell: { type: string }
+        epoch: { type: integer, minimum: 1 }
+        seq: { type: integer, minimum: 1 }
+
+    Untrusted:
+      type: object
+      description: Customer-written or third-party text. Data, never instructions.
+      required: [untrusted]
+      properties:
+        untrusted: { type: string }
+        source: { type: string }
+
+    CommandRequest:
+      type: object
+      required: [payload]
+      properties:
+        payload:
+          type: object
+          description: Validated against the command type's catalogue schema
+        reason:
+          type: string
+          maxLength: 1000
+          description: Required for colleagues and agents
+        evidence:
+          type: array
+          description: References to supporting records; agents must send at least one
+          items: { type: string }
+        on_behalf_of:
+          type: string
+          pattern: '^pty_[a-z0-9]+$'
+
+    CommitRequest:
+      type: object
+      required: [simulation_id, effect_hash]
+      properties:
+        simulation_id: { type: string, pattern: '^sim_[a-z0-9]+$' }
+        effect_hash: { type: string }
+      additionalProperties: false
+
+    CommandResult:
+      type: object
+      required: [command_id, type, status]
+      properties:
+        command_id: { $ref: '#/components/schemas/CommandId' }
+        type: { type: string }
+        status:
+          type: string
+          enum: [simulated, committed, pending_approval, accepted, denied, rejected, failed]
+        simulation_id: { type: string }
+        approval_id: { type: string }
+        effect: { $ref: '#/components/schemas/Effect' }
+        effect_hash: { type: string }
+        decision: { $ref: '#/components/schemas/Decision' }
+        durability: { $ref: '#/components/schemas/Durability' }
+        watermark: { $ref: '#/components/schemas/Watermark' }
+        actor: { $ref: '#/components/schemas/Actor' }
+
+    Effect:
+      type: object
+      properties:
+        journals:
+          type: array
+          items: { $ref: '#/components/schemas/Journal' }
+        holds:
+          type: array
+          items: { $ref: '#/components/schemas/Hold' }
+        balances:
+          type: array
+          items: { $ref: '#/components/schemas/BalanceChange' }
+        other:
+          type: array
+          description: Non-ledger effects, such as a fence, a card status or a payment plan
+          items:
+            type: object
+            required: [item, target, change]
+            properties:
+              item: { type: string }
+              target: { type: string }
+              change: { type: string }
+              value: { type: string }
+
+    Journal:
+      type: object
+      required: [journal_id, entries]
+      properties:
+        journal_id: { type: string, pattern: '^jr_[a-z0-9]+$' }
+        type: { type: string }
+        value_date: { type: string, format: date }
+        entries:
+          type: array
+          minItems: 2
+          items: { $ref: '#/components/schemas/EntryLeg' }
+
+    EntryLeg:
+      type: object
+      required: [account_id, side, amount]
+      properties:
+        account_id: { type: string }
+        side: { type: string, enum: [debit, credit] }
+        amount: { $ref: '#/components/schemas/Money' }
+
+    Entry:
+      type: object
+      required: [entry_id, journal_id, account_id, epoch, seq, side, amount, posted_at, value_date]
+      properties:
+        entry_id: { type: string }
+        journal_id: { type: string }
+        account_id: { type: string }
+        epoch: { type: integer }
+        seq: { type: integer }
+        side: { type: string, enum: [debit, credit] }
+        amount: { $ref: '#/components/schemas/Money' }
+        balance_after: { $ref: '#/components/schemas/Money' }
+        posted_at: { type: string, format: date-time }
+        value_date: { type: string, format: date }
+        description: { type: string }
+        actor: { $ref: '#/components/schemas/Actor' }
+
+    JournalDetail:
+      allOf:
+        - $ref: '#/components/schemas/Journal'
+        - type: object
+          properties:
+            command_id: { $ref: '#/components/schemas/CommandId' }
+            actor: { $ref: '#/components/schemas/Actor' }
+            reason: { type: string }
+            evidence:
+              type: array
+              items: { type: string }
+            decision: { $ref: '#/components/schemas/Decision' }
+            durability: { $ref: '#/components/schemas/Durability' }
+
+    Hold:
+      type: object
+      required: [hold_id, account_id, amount, status]
+      properties:
+        hold_id: { type: string, pattern: '^hld_[a-z0-9]+$' }
+        account_id: { type: string }
+        amount: { $ref: '#/components/schemas/Money' }
+        reason: { type: string }
+        status: { type: string, enum: [active, released, converted, expired] }
+        placed_at: { type: string, format: date-time }
+        expires_at: { type: [string, 'null'], format: date-time }
+
+    BalanceChange:
+      type: object
+      required: [account_id]
+      properties:
+        account_id: { type: string }
+        posted_after: { $ref: '#/components/schemas/Money' }
+        available_after: { $ref: '#/components/schemas/Money' }
+        overdrawn_without_arrangement: { type: boolean }
+
+    Decision:
+      type: object
+      required: [outcome, policy]
+      properties:
+        outcome: { type: string, enum: [allow, allow_strong, require_approval, deny] }
+        policy: { type: string, description: Policy name and version }
+        rules:
+          type: array
+          items: { type: string }
+        approval_route: { type: string }
+
+    Durability:
+      type: object
+      required: [tier]
+      properties:
+        tier: { type: string, enum: [standard, strong] }
+        acknowledged_by:
+          type: array
+          items: { type: string }
+
+    Actor:
+      type: object
+      required: [kind, id]
+      properties:
+        kind: { type: string, enum: [customer, colleague, agent, service] }
+        id: { type: string }
+        agent_version: { type: string }
+        model_version: { type: string }
+        owner_id: { type: string }
+        on_behalf_of: { type: string }
+
+    Approval:
+      type: object
+      required: [approval_id, command_id, status, effect, effect_hash, proposed_by]
+      properties:
+        approval_id: { type: string }
+        command_id: { $ref: '#/components/schemas/CommandId' }
+        command_type: { type: string }
+        status: { type: string, enum: [pending, approved, rejected, expired] }
+        proposed_by: { $ref: '#/components/schemas/Actor' }
+        reason: { type: string }
+        evidence:
+          type: array
+          items: { type: string }
+        effect: { $ref: '#/components/schemas/Effect' }
+        effect_hash: { type: string }
+        decision: { $ref: '#/components/schemas/Decision' }
+        durability: { $ref: '#/components/schemas/Durability' }
+        requested_at: { type: string, format: date-time }
+        decided_by: { $ref: '#/components/schemas/Actor' }
+        note: { type: string }
+
+    ApprovalDecision:
+      type: object
+      required: [effect_hash]
+      properties:
+        effect_hash: { type: string }
+        note: { type: string, maxLength: 2000 }
+      additionalProperties: false
+
+    CatalogueEntry:
+      type: object
+      required: [type, version, payload_schema, risk_class, reversal, durability_rule, authority]
+      properties:
+        type: { type: string }
+        version: { type: integer }
+        summary: { type: string }
+        payload_schema: { type: object, description: JSON Schema for the payload }
+        effect: { type: string, description: Plain description of the ledger effect }
+        risk_class: { type: string, enum: [read, low, medium, high, critical] }
+        reversal: { type: [string, 'null'], description: Command type that reverses this one }
+        durability_rule: { type: string }
+        authority:
+          type: object
+          description: Default authority per principal kind; tenants can only tighten it
+          properties:
+            customer: { $ref: '#/components/schemas/AuthorityLevel' }
+            colleague: { $ref: '#/components/schemas/AuthorityLevel' }
+            agent: { $ref: '#/components/schemas/AuthorityLevel' }
+        deprecated: { type: boolean, default: false }
+
+    AuthorityLevel:
+      type: string
+      enum: [none, observe, recommend, act_within_limits, act_with_approval, human_only]
+
+    Account:
+      type: object
+      required: [account_id, product, status, home]
+      properties:
+        account_id: { type: string }
+        party_id: { type: string }
+        product: { type: string, description: Product name and version }
+        currency: { type: string }
+        status: { type: string, enum: [open, frozen, closing, closed, dormant] }
+        home:
+          type: object
+          required: [cell, epoch]
+          properties:
+            cell: { type: string }
+            epoch: { type: integer }
+            standby: { type: string }
+
+    Balances:
+      type: object
+      required: [account_id, posted, held, available]
+      properties:
+        account_id: { type: string }
+        posted: { $ref: '#/components/schemas/Money' }
+        held: { $ref: '#/components/schemas/Money' }
+        available: { $ref: '#/components/schemas/Money' }
+        arranged_overdraft: { $ref: '#/components/schemas/Money' }
+        accrued_interest: { $ref: '#/components/schemas/Money' }
+
+    Party:
+      type: object
+      required: [party_id, masked]
+      properties:
+        party_id: { type: string }
+        masked: { type: boolean }
+        name: { type: string }
+        date_of_birth: { type: string }
+        address: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        vulnerability_flag: { type: boolean }
+
+    Cell:
+      type: object
+      required: [cell_id, cloud, state, epoch_range]
+      properties:
+        cell_id: { type: string }
+        cloud: { type: string, enum: [aws-london, azure-uk-south, gcp-london] }
+        state: { type: string, enum: [serving, draining, promoting, fenced, rebuilding] }
+        accounts: { type: integer }
+        standby: { type: string }
+        standby_position: { type: string, enum: [level, behind] }
+        lease: { type: string, enum: [valid, renewal_missed, expired] }
+        epoch_range: { type: string }
+        replication_lag_seconds:
+          type: object
+          additionalProperties: { type: number }
+        last_drill_at: { type: string, format: date-time }
+
+    QuarantineItem:
+      type: object
+      required: [entry_id, account_id, epoch, seq, amount, reason]
+      properties:
+        entry_id: { type: string }
+        journal_id: { type: string }
+        account_id: { type: string }
+        epoch: { type: integer }
+        seq: { type: integer }
+        amount: { $ref: '#/components/schemas/Money' }
+        reason: { type: string, enum: [void_after_fence, void_on_arrival] }
+        owner: { type: string }
+        opened_at: { type: string, format: date-time }
+
+    Agent:
+      type: object
+      required: [agent_id, name, version, owner_id, status]
+      properties:
+        agent_id: { type: string, pattern: '^agt_[a-z0-9]+$' }
+        name: { type: string }
+        version: { type: string }
+        model_version: { type: string }
+        owner_id: { type: string }
+        status: { type: string, enum: [running, paused, breaker_open] }
+        commands:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/AuthorityLevel' }
+
+    LimitUsage:
+      type: object
+      required: [name, window, used, limit]
+      properties:
+        name: { type: string }
+        command_type: { type: string }
+        window: { type: string, examples: [1h, 24h] }
+        used: { type: number }
+        limit: { type: number }
+        resets_at: { type: string, format: date-time }
+
+    Handoff:
+      type: object
+      required: [queue, summary]
+      properties:
+        queue: { type: string }
+        summary: { type: string, maxLength: 2000 }
+        account_id: { type: string }
+        evidence:
+          type: array
+          items: { type: string }
+        proposed_command:
+          type: string
+          description: Optional simulation id the person can commit or approve
+
+    AuditRecord:
+      type: object
+      required: [record_id, at, actor, action]
+      properties:
+        record_id: { type: string }
+        at: { type: string, format: date-time }
+        actor: { $ref: '#/components/schemas/Actor' }
+        action: { type: string, description: Command type, or parties.reveal }
+        command_id: { $ref: '#/components/schemas/CommandId' }
+        reason: { type: string }
+        outcome: { type: string }
+
+    EventType:
+      type: string
+      enum:
+        - journal.posted
+        - hold.placed
+        - hold.released
+        - command.pending_approval
+        - approval.decided
+        - payment.status_changed
+        - quarantine.opened
+        - quarantine.resolved
+        - cell.state_changed
+        - cell.promoted
+        - agent.paused
+        - agent.breaker_tripped
+        - invariant.breached
+
+    Event:
+      type: object
+      required: [event_id, type, at, subject]
+      properties:
+        event_id: { type: string, description: Also the resume cursor }
+        type: { $ref: '#/components/schemas/EventType' }
+        at: { type: string, format: date-time }
+        subject: { type: string, description: Account, cell, approval or agent id }
+        watermark: { $ref: '#/components/schemas/Watermark' }
+        data: { type: object, description: Identifiers, amounts and statuses only }
+
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code:
+          type: string
+          enum:
+            - invalid_payload
+            - policy_denied
+            - limit_exceeded
+            - not_found
+            - effect_changed
+            - idempotency_conflict
+            - insufficient_funds
+            - rate_limited
+            - home_unavailable
+            - durability_not_met
+        retryable: { type: boolean }
+        limit: { $ref: '#/components/schemas/LimitUsage' }
+        trace_id: { type: string }

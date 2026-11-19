@@ -1,0 +1,85 @@
+name: test
+
+# Runs only when something the Python tests or the drills read changes, and once per change:
+# on pull requests, and on pushes to main. The tests read the plan, the docs, the infra code,
+# the deploy files and the other workflows, so those count. Rust source alone does not.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ledger/**"
+      - "tests/**"
+      - "api/**"
+      - "docs/**"
+      - "infra/**"
+      - "deploy/**"
+      - "images/**"
+      - "scripts/**"
+      - "schema.sql"
+      - "pyproject.toml"
+      - "crates/ledger-core/data/**"
+      - "crates/node-agent/Cargo.toml"
+      - ".github/workflows/**"
+      - ".github/workflows/test.yml"
+  pull_request:
+    paths:
+      - "ledger/**"
+      - "tests/**"
+      - "api/**"
+      - "docs/**"
+      - "infra/**"
+      - "deploy/**"
+      - "images/**"
+      - "scripts/**"
+      - "schema.sql"
+      - "pyproject.toml"
+      - "crates/ledger-core/data/**"
+      - "crates/node-agent/Cargo.toml"
+      - ".github/workflows/**"
+      - ".github/workflows/test.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    # Three Postgres nodes standing in for three regions. Written out in full: GitHub Actions
+    # does not accept YAML merge keys (<<: *anchor), which left this workflow unparseable.
+    services:
+      pg1:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ledger
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5431:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ledger" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      pg2:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ledger
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ledger" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      pg3:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ledger
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ledger" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      LEDGER_DSN_N1: postgresql://ledger@127.0.0.1:5431/postgres
+      LEDGER_DSN_N2: postgresql://ledger@127.0.0.1:5432/postgres
+      LEDGER_DSN_N3: postgresql://ledger@127.0.0.1:5433/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e '.[dev]'
+      - run: pytest -q
+      - run: python -m ledger.cli drill
+      - run: python -m ledger.cli drill --strong

@@ -1,0 +1,74 @@
+# Local stand-in for three regions: three Postgres 16 nodes, a single-node etcd, and
+# Toxiproxy in front of every node so tests can add latency, cut links and so on.
+# Development and tests only: trust authentication, no fsync, ports bound to localhost.
+#
+#   make up      start everything and wait until it is healthy
+#   make down    remove containers and volumes
+#
+# Fixed ports on 127.0.0.1:
+#   Postgres direct        5431 5432 5433     (nodes pg1 pg2 pg3)
+#   Postgres via Toxiproxy 15431 15432 15433  (same nodes, same order)
+#   etcd via Toxiproxy     12379
+#   Toxiproxy API          8474
+#   etcd                   2379
+
+x-postgres: &postgres
+  image: postgres:16
+  command: ["postgres", "-c", "fsync=off", "-c", "max_connections=200"]
+  environment:
+    POSTGRES_USER: ledger
+    POSTGRES_DB: postgres
+    POSTGRES_HOST_AUTH_METHOD: trust
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ledger -d postgres"]
+    interval: 2s
+    timeout: 3s
+    retries: 30
+
+services:
+  pg1:
+    <<: *postgres
+    ports: ["127.0.0.1:5431:5432"]
+  pg2:
+    <<: *postgres
+    ports: ["127.0.0.1:5432:5432"]
+  pg3:
+    <<: *postgres
+    ports: ["127.0.0.1:5433:5432"]
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.17
+    command:
+      - etcd
+      - --name=etcd0
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd:2379
+    ports: ["127.0.0.1:2379:2379"]
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./dev/toxiproxy.json:/config/toxiproxy.json:ro
+    ports:
+      - "127.0.0.1:8474:8474"
+      - "127.0.0.1:15431:15431"
+      - "127.0.0.1:15432:15432"
+      - "127.0.0.1:15433:15433"
+      - "127.0.0.1:12379:12379"
+    depends_on:
+      pg1: { condition: service_healthy }
+      pg2: { condition: service_healthy }
+      pg3: { condition: service_healthy }
+      etcd: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/toxiproxy-cli", "list"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

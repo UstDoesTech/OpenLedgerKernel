@@ -1,0 +1,45 @@
+# Only PostgreSQL's port, and only to the nodes themselves and the platform. The port comes
+# from infra/flows.json ("postgres": 5432). Nothing else comes in, and nothing else goes out
+# but name lookups. Replace 192.0.2.0/24, a range reserved for documents, with the ranges the
+# platform's api and cell tiers connect from. Until you do, no platform traffic is let in.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ledger-pg
+spec:
+  podSelector:
+    matchLabels:
+      app: ledger-pg
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: ledger-pg
+        - ipBlock:
+            cidr: 192.0.2.0/24
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: ledger-pg
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

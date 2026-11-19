@@ -1,0 +1,31 @@
+[package]
+name = "conformance"
+version = "0.0.0"
+description = "Scenario, fault-injection and randomised tests against real Postgres nodes."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# The network fault tests drive the etcd control plane, whose client needs `protoc` to build.
+# The Neon jobs do not, so they build without it. CI and `make` turn it on.
+etcd = ["control-plane/etcd"]
+
+[[test]]
+name = "network_faults"
+required-features = ["etcd"]
+
+[dev-dependencies]
+control-plane = { path = "../control-plane", version = "0.0.0", default-features = false }
+ledger-core = { path = "../ledger-core", version = "0.0.0" }
+ledger-store = { path = "../ledger-store", version = "0.0.0" }
+ledger-check = { path = "../ledger-check", version = "0.0.0" }
+ledger-repl = { path = "../ledger-repl", version = "0.0.0" }
+tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "time", "sync"] }
+tokio-postgres = "0.7"
+native-tls = "0.2"
+postgres-native-tls = "0.5"
+
+[lints]
+workspace = true

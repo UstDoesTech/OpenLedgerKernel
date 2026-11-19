@@ -1,0 +1,10 @@
+# A drain may take one node at a time, so a quorum of the other two always stays up.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ledger-pg
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ledger-pg

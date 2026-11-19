@@ -1,0 +1,22 @@
+terraform {
+  required_version = ">= 1.9.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 6.0"
+    }
+    databricks = {
+      source  = "databricks/databricks"
+      version = "~> 1.90"
+    }
+  }
+}

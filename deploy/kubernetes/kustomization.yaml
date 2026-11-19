@@ -1,0 +1,30 @@
+# Three Postgres nodes for one cell, inside a customer's own cluster. Apply with
+#   kubectl apply -k deploy/kubernetes
+# after reading docs/self-hosted-postgres.md. Change the image, the storage class and the
+# settings below with your own overlay, not by editing these files.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ledger
+
+resources:
+  - service.yaml
+  - statefulset.yaml
+  - networkpolicy.yaml
+  - poddisruptionbudget.yaml
+
+configMapGenerator:
+  - name: ledger-pg-init
+    files:
+      - render-config.sh
+  - name: ledger-pg-settings
+    literals:
+      - TENANT=ten_example
+      - SECRET_ID=cell-a/administrator
+      - PRIMARY_ORDINAL=0
+
+# Point this at the customer's private registry, by digest.
+images:
+  - name: ledger-postgres
+    newName: registry.example.internal/ledger-postgres
+    newTag: replace-with-a-digest

@@ -1,0 +1,6 @@
+[
+  { "name": "pg1", "listen": "0.0.0.0:15431", "upstream": "pg1:5432", "enabled": true },
+  { "name": "pg2", "listen": "0.0.0.0:15432", "upstream": "pg2:5432", "enabled": true },
+  { "name": "pg3", "listen": "0.0.0.0:15433", "upstream": "pg3:5432", "enabled": true },
+  { "name": "etcd", "listen": "0.0.0.0:12379", "upstream": "etcd:2379", "enabled": true }
+]

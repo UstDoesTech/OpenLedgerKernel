@@ -1,0 +1,16 @@
+[package]
+name = "ledger-store"
+version = "0.0.0"
+description = "Postgres schema migrations and, later, the ledger store."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ledger-core = { path = "../ledger-core", version = "0.0.0" }
+thiserror = "2"
+tokio-postgres = "0.7"
+
+[lints]
+workspace = true

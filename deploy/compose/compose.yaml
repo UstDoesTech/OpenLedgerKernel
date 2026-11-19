@@ -1,0 +1,59 @@
+# The same three nodes on plain hosts, for customers without Kubernetes. Run it as it is on
+# one host to try it out, or run one service on each of three hosts and put the real host names
+# in config/*.json. See docs/self-hosted-postgres.md.
+#
+#   deploy/compose/make-test-certs.sh        throwaway certificates, for trying it out only
+#   LEDGER_IMAGE=registry.example.internal/ledger-postgres@sha256:... docker compose up -d
+#   deploy/compose/verify.sh                 checks the three nodes and a commit
+#
+# Ports are bound to 127.0.0.1. Bind them to the private address when the nodes are on
+# separate hosts, and never to a public one.
+
+x-node: &node
+  image: ${LEDGER_IMAGE:?set LEDGER_IMAGE to the image to run}
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  stop_signal: SIGINT
+  stop_grace_period: 60s
+  restart: unless-stopped
+  tmpfs:
+    - /run/ledger:mode=0700,uid=999,gid=999
+    - /tmp:mode=1777
+
+services:
+  pg1:
+    <<: *node
+    container_name: ledger-pg1
+    ports: ["127.0.0.1:${PG1_PORT:-5441}:5432"]
+    volumes:
+      - pg1-data:/var/lib/postgresql/data
+      - pg1-credential:/secrets/out
+      - ./config/pg1.json:/etc/ledger/node.json:ro
+      - ./tls/pg1:/run/secrets/tls:ro
+  pg2:
+    <<: *node
+    container_name: ledger-pg2
+    ports: ["127.0.0.1:${PG2_PORT:-5442}:5432"]
+    volumes:
+      - pg2-data:/var/lib/postgresql/data
+      - pg2-credential:/secrets/out
+      - ./config/pg2.json:/etc/ledger/node.json:ro
+      - ./tls/pg2:/run/secrets/tls:ro
+  pg3:
+    <<: *node
+    container_name: ledger-pg3
+    ports: ["127.0.0.1:${PG3_PORT:-5443}:5432"]
+    volumes:
+      - pg3-data:/var/lib/postgresql/data
+      - pg3-credential:/secrets/out
+      - ./config/pg3.json:/etc/ledger/node.json:ro
+      - ./tls/pg3:/run/secrets/tls:ro
+
+volumes:
+  pg1-data:
+  pg2-data:
+  pg3-data:
+  pg1-credential:
+  pg2-credential:
+  pg3-credential:

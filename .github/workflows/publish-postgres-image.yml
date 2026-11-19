@@ -1,0 +1,76 @@
+name: publish-postgres-image
+
+# Builds the Postgres node image from images/postgres and keeps it as a private package in
+# GitHub's container registry (docs/infrastructure.md). A person dispatches it from
+# main. It prints the image's digest, which then goes into infra/images.json (task I-01u).
+#
+# - It uses only the run's own token. No cloud credential, no stored key, and nothing is
+#   applied: it never touches a cloud and never runs tofu.
+# - The image's layers are scanned for secrets before anything is pushed.
+# - After the push, the registry must give back the digest that was pushed.
+#
+# Third-party actions are pinned to a commit (the tag is in the comment).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time. Never cancel a push part-way.
+concurrency:
+  group: publish-postgres-image
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: build and publish
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write # to keep the private image in GitHub's container registry
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build the image
+        run: |
+          set -euo pipefail
+          docker build -f images/postgres/Dockerfile \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            -t ledger-postgres:publish .
+      - name: Scan the image for secrets
+        run: |
+          set -euo pipefail
+          docker save ledger-postgres:publish -o "$RUNNER_TEMP/image.tar"
+          python3 scripts/scan_image_layers.py "$RUNNER_TEMP/image.tar"
+          rm -f "$RUNNER_TEMP/image.tar"
+      - name: Push the image and check the digest
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          package="ghcr.io/${GITHUB_REPOSITORY,,}/postgres"
+          tag="git-${GITHUB_SHA}"
+          echo "::add-mask::${GITHUB_TOKEN}"
+          printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag ledger-postgres:publish "${package}:${tag}"
+          docker push "${package}:${tag}"
+          pushed=$(docker inspect --format '{{index .RepoDigests 0}}' "${package}:${tag}")
+          pushed="${pushed##*@}"
+          [[ "$pushed" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest after the push"; exit 1; }
+          registry=$(docker buildx imagetools inspect "${package}:${tag}" --format '{{.Manifest.Digest}}')
+          [ "$registry" = "$pushed" ] || { echo "::error::the registry gave ${registry}, not ${pushed}"; exit 1; }
+          docker logout ghcr.io
+          {
+            echo "### Postgres node image"
+            echo
+            echo "- Package: \`${package}\`"
+            echo "- Tag: \`${tag}\`"
+            echo "- Digest: \`${pushed}\`"
+            echo
+            echo "Put this in the postgres entry of infra/images.json (task I-01u)."
+          } >> "$GITHUB_STEP_SUMMARY"

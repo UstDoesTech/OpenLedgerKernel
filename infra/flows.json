@@ -1,0 +1,18 @@
+{
+  "protocol": "tcp",
+  "ports": {
+    "postgres": 5432,
+    "etcd_client": 2379,
+    "etcd_peer": 2380,
+    "relay": 8443
+  },
+  "flows": [
+    { "name": "api-to-cell-postgres", "source": "api", "destination": "cell", "port": "postgres" },
+    { "name": "cell-to-cell-postgres", "source": "cell", "destination": "cell", "port": "postgres" },
+    { "name": "api-to-cell-relay", "source": "api", "destination": "cell", "port": "relay" },
+    { "name": "cell-to-cell-relay", "source": "cell", "destination": "cell", "port": "relay" },
+    { "name": "api-to-control-plane-etcd", "source": "api", "destination": "control_plane", "port": "etcd_client" },
+    { "name": "cell-to-control-plane-etcd", "source": "cell", "destination": "control_plane", "port": "etcd_client" },
+    { "name": "control-plane-peers", "source": "control_plane", "destination": "control_plane", "port": "etcd_peer" }
+  ]
+}

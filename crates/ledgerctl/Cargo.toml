@@ -1,0 +1,30 @@
+[package]
+name = "ledgerctl"
+version = "0.0.0"
+description = "Operator command line for the ledger. `ledgerctl check` verifies the invariants; `promote`, `drain` and `undrain` run a failover."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "ledgerctl"
+path = "src/main.rs"
+
+[dependencies]
+control-plane = { path = "../control-plane", version = "0.0.0", optional = true }
+ledger-check = { path = "../ledger-check", version = "0.0.0" }
+ledger-core = { path = "../ledger-core", version = "0.0.0", optional = true }
+native-tls = "0.2"
+postgres-native-tls = "0.5"
+tokio = { version = "1", features = ["rt", "macros", "time"] }
+tokio-postgres = "0.7"
+
+[features]
+# `promote`, `drain` and `undrain` talk to etcd, whose client needs `protoc` to build. They are
+# a feature so that `check`, which the Neon workflow builds, does not need it. Build the
+# operator binary with `--features failover`.
+failover = ["dep:control-plane", "dep:ledger-core"]
+
+[lints]
+workspace = true

@@ -1,0 +1,18 @@
+# Gives each pod a stable name: ledger-pg-0.ledger-pg.<namespace>.svc and so on. Clients and
+# the other nodes use these names, and the certificate must name them. It is headless on
+# purpose: there is no single address, because only the primary takes writes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-pg
+  labels:
+    app: ledger-pg
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: ledger-pg
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

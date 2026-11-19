@@ -1,0 +1,95 @@
+name: rust
+
+# Runs only when something it reads changes, and once per change: on pull requests, and on
+# pushes to main. Docs-only and Python-only changes skip it, which saves Actions minutes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "deny.toml"
+      - "compose.yaml"
+      - "Makefile"
+      - "dev/**"
+      - ".github/workflows/rust.yml"
+  pull_request:
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "deny.toml"
+      - "compose.yaml"
+      - "Makefile"
+      - "dev/**"
+      - ".github/workflows/rust.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - name: Install the protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: |
+          cargo clippy --all-targets -- -D warnings
+          cargo clippy -p ledgerctl --all-targets --features failover -- -D warnings
+          cargo clippy -p conformance --all-targets --features etcd -- -D warnings
+      - name: Test
+        run: |
+          cargo test
+          cargo test -p ledgerctl --features failover
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-integration-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-integration-${{ runner.os }}-
+      - name: Install the protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Start the local environment
+        run: make up
+      - name: Integration tests
+        run: cargo test -p conformance -p control-plane --features conformance/etcd -- --ignored
+      - name: Mutation check (the conformance suite must fail without fencing or the row lock)
+        run: scripts/mutation_check.sh
+      - name: Show container logs on failure
+        if: failure()
+        run: make logs
+      - name: Remove the environment
+        if: always()
+        run: make down
