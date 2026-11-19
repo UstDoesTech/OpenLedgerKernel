@@ -28,6 +28,12 @@ provider "azurerm" {
   # The plan identity only reads, so it cannot register resource providers. A person registers
   # them once, by hand (see infra/envs/README.md).
   resource_provider_registrations = "none"
+
+  # Reading the flow-log storage account's queue settings is a data-plane call. By default the
+  # provider makes it with an account key, which needs the listKeys permission (so a read-only
+  # identity gets 403). With this it signs in with Microsoft Entra ID instead, which needs a
+  # data-plane reader role on the account (see docs/credentialed-workflows.md).
+  storage_use_azuread = true
 }
 
 provider "google" {

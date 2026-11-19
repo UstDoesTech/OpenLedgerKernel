@@ -98,7 +98,7 @@ The `infra-plan` role's last line ends `:environment:infra-plan`. **Check which 
 
 1. Entra ID, App registrations: two, `infra-plan` and `infra-apply`. Do not make a client secret.
 2. For each, Federated credentials, "GitHub Actions deploying Azure resources": organisation `UstDoesTech`, repository `OpenLedgerKernel`, entity type **Environment**, name `infra-plan` or `infra-apply`. The subject is `repo:UstDoesTech/OpenLedgerKernel:environment:infra-apply`. If the repository sends the immutable subject, choose "Other issuer" and type the subject by hand, as under AWS. The issuer is `https://token.actions.githubusercontent.com` and the audience `api://AzureADTokenExchange`.
-3. Role assignments on the subscription. `infra-plan`: `Reader` and `Storage Blob Data Reader` on the state container. `infra-apply`: `Contributor`, `User Access Administrator` and `Storage Blob Data Contributor` on the state container. For `publish-images`, the applying identity also needs `AcrPush` on the registry.
+3. Role assignments on the subscription. `infra-plan`: `Reader` and `Storage Blob Data Reader` on the state container, plus `Storage Queue Data Reader` and `Storage Blob Data Reader` on the subscription (the `network` layer reads the flow-log storage account through Microsoft Entra ID, never with an account key, so the plan identity needs no `listKeys`). `infra-apply`: `Contributor`, `User Access Administrator` and `Storage Blob Data Contributor` on the state container, plus `Storage Queue Data Contributor` and `Storage Blob Data Contributor` on the subscription. For `publish-images`, the applying identity also needs `AcrPush` on the registry.
 
 #### The Azure Key Vault and the runs
 
