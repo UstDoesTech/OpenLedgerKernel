@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 700" width="1060" height="700" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+<title id="t">Failover: promoting a standby cell</title><desc id="d">When a home cell loses its lease, the control plane promotes the standby, which reports its high-water mark as the cutoff. The new epoch's fence is pushed to every node. When the old home returns, writes past the cutoff are quarantined and then reconciled.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#7b8794"/></marker></defs>
+<rect width="1060" height="700" fill="#ffffff"/>
+<text x="530" y="34" font-size="22" font-weight="700" text-anchor="middle" fill="#1f2933">Failover: promoting a standby cell</text>
+<text x="530" y="58" font-size="13" font-weight="400" text-anchor="middle" fill="#52606d">The epoch fence, enforced in SQL on every node, keeps a stale primary from corrupting history.</text>
+<rect x="20" y="80" width="220" height="44" rx="8" fill="#fff4e5" stroke="#c26a00" stroke-width="2"/>
+<text x="130" y="108" font-size="14" font-weight="700" text-anchor="middle" fill="#c26a00">Old home</text>
+<line x1="130" y1="124" x2="130" y2="560" stroke="#c26a00" stroke-width="1.5" stroke-dasharray="4 5" opacity="0.6"/>
+<rect x="280" y="80" width="220" height="44" rx="8" fill="#f3e8fb" stroke="#7a3fa0" stroke-width="2"/>
+<text x="390" y="108" font-size="14" font-weight="700" text-anchor="middle" fill="#7a3fa0">Control plane (etcd)</text>
+<line x1="390" y1="124" x2="390" y2="560" stroke="#7a3fa0" stroke-width="1.5" stroke-dasharray="4 5" opacity="0.6"/>
+<rect x="540" y="80" width="220" height="44" rx="8" fill="#e6f0fb" stroke="#1f5fa8" stroke-width="2"/>
+<text x="650" y="108" font-size="14" font-weight="700" text-anchor="middle" fill="#1f5fa8">Standby cell (new home)</text>
+<line x1="650" y1="124" x2="650" y2="560" stroke="#1f5fa8" stroke-width="1.5" stroke-dasharray="4 5" opacity="0.6"/>
+<rect x="800" y="80" width="220" height="44" rx="8" fill="#e7f6ec" stroke="#1e7a46" stroke-width="2"/>
+<text x="910" y="108" font-size="14" font-weight="700" text-anchor="middle" fill="#1e7a46">Every other cell</text>
+<line x1="910" y1="124" x2="910" y2="560" stroke="#1e7a46" stroke-width="1.5" stroke-dasharray="4 5" opacity="0.6"/>
+<circle cx="24" cy="170" r="12" fill="#b42318"/>
+<text x="24" y="175" font-size="13" font-weight="700" text-anchor="middle" fill="#fff">1</text>
+<line x1="130" y1="170" x2="390" y2="170" stroke="#b42318" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<rect x="142.0" y="130" width="236" height="34" rx="4" fill="#ffffff" stroke="#ffffff" stroke-width="0"/>
+<text x="260.0" y="146" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Lease lapses</text>
+<text x="260.0" y="161" font-size="11" font-weight="400" text-anchor="middle" fill="#52606d">home cannot reach etcd, cannot renew</text>
+<circle cx="24" cy="250" r="12" fill="#7a3fa0"/>
+<text x="24" y="255" font-size="13" font-weight="700" text-anchor="middle" fill="#fff">2</text>
+<line x1="390" y1="250" x2="650" y2="250" stroke="#7a3fa0" stroke-width="2" marker-end="url(#a)"/>
+<rect x="402.0" y="210" width="236" height="34" rx="4" fill="#ffffff" stroke="#ffffff" stroke-width="0"/>
+<text x="520.0" y="226" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Promote the standby</text>
+<text x="520.0" y="241" font-size="11" font-weight="400" text-anchor="middle" fill="#52606d">it reports its high-water mark: the cutoff</text>
+<circle cx="24" cy="330" r="12" fill="#7a3fa0"/>
+<text x="24" y="335" font-size="13" font-weight="700" text-anchor="middle" fill="#fff">3</text>
+<line x1="390" y1="330" x2="910" y2="330" stroke="#7a3fa0" stroke-width="2" marker-end="url(#a)"/>
+<rect x="532.0" y="290" width="236" height="34" rx="4" fill="#ffffff" stroke="#ffffff" stroke-width="0"/>
+<text x="650.0" y="306" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Push the fence to every node</text>
+<text x="650.0" y="321" font-size="11" font-weight="400" text-anchor="middle" fill="#52606d">new home first, then all others in parallel</text>
+<line x1="390" y1="345" x2="650" y2="345" stroke="#7a3fa0" stroke-width="2" marker-end="url(#a)"/>
+<text x="520" y="362" font-size="11" font-weight="400" text-anchor="middle" fill="#52606d">new home starts writing</text>
+<rect x="22" y="410" width="216" height="130" rx="8" fill="#fdeaea" stroke="#b42318" stroke-width="1.5"/>
+<circle cx="40" cy="430" r="12" fill="#b42318"/>
+<text x="40" y="435" font-size="13" font-weight="700" text-anchor="middle" fill="#fff">4</text>
+<text x="140" y="434" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Old home returns</text>
+<text x="140" y="454" font-size="12" font-weight="400" text-anchor="middle" fill="#1f2933">Writes past the cutoff</text>
+<text x="140" y="471" font-size="12" font-weight="400" text-anchor="middle" fill="#1f2933">move to quarantine,</text>
+<text x="140" y="488" font-size="12" font-weight="400" text-anchor="middle" fill="#1f2933">out of the balance.</text>
+<text x="140" y="505" font-size="12" font-weight="400" text-anchor="middle" fill="#1f2933">The fence sweeps at once.</text>
+<rect x="555" y="410" width="340" height="130" rx="8" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5"/>
+<circle cx="573" cy="430" r="12" fill="#2e7d32"/>
+<text x="573" y="435" font-size="13" font-weight="700" text-anchor="middle" fill="#fff">5</text>
+<text x="725" y="434" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2933">Reconciliation</text>
+<text x="725" y="454" font-size="12" font-weight="400" text-anchor="middle" fill="#1f2933">Re-post each quarantined entry under</text>
+<text x="725" y="471" font-size="12" font-weight="400" text-anchor="middle" fill="#1f2933">the current epoch, keyed by its original</text>
+<text x="725" y="488" font-size="12" font-weight="400" text-anchor="middle" fill="#1f2933">journal id, so a client retry that already</text>
+<text x="725" y="505" font-size="12" font-weight="400" text-anchor="middle" fill="#1f2933">succeeded is not duplicated.</text>
+<path d="M 240 480 L 555 480" fill="none" stroke="#b42318" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="398" y="472" font-size="11" font-weight="400" text-anchor="middle" fill="#52606d">quarantined entries</text>
+<text x="530" y="596" font-size="12" font-weight="400" text-anchor="middle" fill="#52606d" font-style="italic">Debits the customer was already told about are re-posted even if they overdraw, and flagged for review.</text>
+<rect x="40" y="616" width="980" height="62" rx="10" fill="#f5f7fa" stroke="#9aa5b1" stroke-width="1.5"/>
+<text x="60" y="640" font-size="13" font-weight="700" text-anchor="start" fill="#1f2933">Planned moves</text>
+<text x="60" y="660" font-size="12" font-weight="400" text-anchor="start" fill="#52606d">ledgerctl drain: the cell refuses new requests and finishes admitted commits. Promote once idle, then undrain. A person approves; agents never run it on a real system.</text>
+</svg>

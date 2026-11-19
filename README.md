@@ -16,6 +16,12 @@ Each account has one home cell at a time, fenced by an epoch. Entries are append
 
 Start with [`docs/design.md`](docs/design.md), then [`docs/api-design.md`](docs/api-design.md). To run it across three clouds, see [`docs/infrastructure.md`](docs/infrastructure.md).
 
+## How it hangs together
+
+![System overview: three UK clouds, each running ledger cells with standbys across zones, joined by encrypted links, with a five-member etcd control plane](docs/diagrams/architecture-overview.svg)
+
+More diagrams: [a journal across two cells](docs/diagrams/cross-cell-journal.svg), [failover](docs/diagrams/failover.svg), [replication and durability tiers](docs/diagrams/replication-and-durability.svg) and [the infrastructure layers and guarded apply route](docs/diagrams/infrastructure-and-apply.svg).
+
 ## Try it
 
 ```
