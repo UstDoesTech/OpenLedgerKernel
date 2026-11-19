@@ -1,4 +1,5 @@
-# One self-hosted cell in each cloud. The sizes are proving sizes, chosen to keep the bill low
+# One cell in each cloud, self-hosted by default or the cloud's own managed PostgreSQL when
+# var.cell_kind says so. The sizes are proving sizes, chosen to keep the bill low
 # while the architecture is tested: shared-CPU machines. They run on CPU credits. Do not copy
 # them into a production environment, where the module's size table applies (delete the
 # machine_sizes lines).
@@ -21,6 +22,7 @@ locals {
     resource_group_name          = local.network.azure.resource_group_name
     subnet_ids                   = local.network.azure.subnet_ids["cell"]
     subnet_cidrs                 = local.plan.azure.subnets["cell"]
+    private_dns_zone_id          = try(module.azure_dns[0].private_dns_zone_id, null)
     key_vault_key_id             = local.cell_first.azure.key_vault_key_id
     identity_id                  = local.cell_first.azure.identity_id
     disk_encryption_set_id       = local.cell_first.azure.disk_encryption_set_id
@@ -53,7 +55,8 @@ module "cell_aws" {
   name                 = "${local.slug}-aws-001"
   tenant               = local.tenant
   cloud                = "aws"
-  provider_kind        = "self_hosted"
+  provider_kind        = var.cell_kind
+  deletion_protection  = var.deletion_protection
   aws                  = local.aws_input
   reuse_private_access = true
   machine_sizes        = { aws = "t3.medium" }
@@ -65,7 +68,8 @@ module "cell_azure" {
   name                 = "${local.slug}-azure-001"
   tenant               = local.tenant
   cloud                = "azure"
-  provider_kind        = "self_hosted"
+  provider_kind        = var.cell_kind
+  deletion_protection  = var.deletion_protection
   azure                = local.azure_input
   reuse_private_access = true
   machine_sizes        = { azure = "Standard_B2s" }
@@ -77,8 +81,33 @@ module "cell_gcp" {
   name                 = "${local.slug}-gcp-001"
   tenant               = local.tenant
   cloud                = "gcp"
-  provider_kind        = "self_hosted"
+  provider_kind        = var.cell_kind
+  deletion_protection  = var.deletion_protection
   gcp                  = local.gcp_input
   reuse_private_access = true
   machine_sizes        = { gcp = "e2-medium" }
+}
+
+# The managed forms need two things the cells do not make for themselves. Azure's private DNS
+# zone for flexible servers, made once for the network. And Cloud SQL's service agent must be
+# allowed to use the tenant's key, as the Compute Engine and Secret Manager agents are in the
+# cell-first layer. Neither is made for self-hosted cells.
+module "azure_dns" {
+  source = "../../../modules/postgres/azure-dns"
+  count  = var.cell_kind == "managed" ? 1 : 0
+
+  resource_group_name = local.network.azure.resource_group_name
+  virtual_network_id  = local.network.azure.network_id
+  name                = "${local.slug}-postgres"
+  tags                = { tenant = local.tenant, managed_by = "opentofu" }
+}
+
+data "google_project" "current" {}
+
+resource "google_kms_crypto_key_iam_member" "cloud_sql" {
+  count = var.cell_kind == "managed" ? 1 : 0
+
+  crypto_key_id = local.cell_first.gcp.kms_key_id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:service-${data.google_project.current.number}@gcp-sa-cloud-sql.iam.gserviceaccount.com"
 }

@@ -18,3 +18,20 @@ variable "administrator_ssh_public_key" {
   type        = string
   sensitive   = true
 }
+
+variable "cell_kind" {
+  description = "Who runs each cell's Postgres: \"self_hosted\" (three machines running the node image, the default) or \"managed\" (RDS Multi-AZ cluster, Azure zone-redundant flexible server, Cloud SQL regional instance). Changing it replaces the cells: the old kind is destroyed and the new one made, with no data carried across. Not a secret."
+  type        = string
+  default     = "self_hosted"
+
+  validation {
+    condition     = contains(["self_hosted", "managed"], var.cell_kind)
+    error_message = "The cell kind must be self_hosted or managed."
+  }
+}
+
+variable "deletion_protection" {
+  description = "Refuse to delete a managed cell's database. Leave true for any cell that holds data. Set to false, and apply, before destroying a proving environment. Not used by self-hosted cells."
+  type        = bool
+  default     = true
+}

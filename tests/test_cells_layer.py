@@ -13,14 +13,15 @@ def src():
     return text(LAYER)
 
 
-def test_one_self_hosted_cell_in_each_cloud_reusing_the_environments_private_access():
+def test_one_cell_in_each_cloud_reusing_the_environments_private_access():
     s = src()
     mods = dict(blocks(s, "module"))
     for cloud in ("aws", "azure", "gcp"):
         body = mods[f"cell_{cloud}"]
         assert 'source = "../../../modules/postgres"' in body
         assert f'cloud                = "{cloud}"' in body
-        assert 'provider_kind        = "self_hosted"' in body
+        assert "provider_kind        = var.cell_kind" in body
+        assert "deletion_protection  = var.deletion_protection" in body
         assert "reuse_private_access = true" in body
         assert "tenant               = local.tenant" in body
 
@@ -28,7 +29,8 @@ def test_one_self_hosted_cell_in_each_cloud_reusing_the_environments_private_acc
 def test_it_makes_no_key_repository_or_identity_and_writes_no_tenant_id():
     s = src()
     made = set(re.findall(r'^resource "(\w+)" "(\w+)"', s, re.M))
-    assert made == {("terraform_data", "image")}, made
+    # The one grant is for Cloud SQL's service agent on the tenant's own key, made only for managed cells.
+    assert made == {("terraform_data", "image"), ("google_kms_crypto_key_iam_member", "cloud_sql")}, made
     assert not re.search(r"ten_[0-9a-z]+", s.replace("trimprefix(local.tenant, \"ten_\")", ""))
     assert "local.cell_first.tenant" in s
     # The tenant's own key, repository and administrator, from the cell-first layer and no other.
@@ -51,8 +53,10 @@ def test_the_machine_images_come_from_the_manifest_and_the_ssh_key_is_a_sensitiv
     assert "local.flatcar.version" in s and "family" not in s
     v = dict(blocks(s, "variable"))
     assert re.search(r"sensitive\s*=\s*true", v["administrator_ssh_public_key"])
-    for body in v.values():
-        assert not re.search(r"^\s*default\s*=", body, re.M)
+    # Only the kind and its protection have defaults, so that an applied layer is unchanged.
+    for name, body in v.items():
+        has_default = bool(re.search(r"^\s*default\s*=", body, re.M))
+        assert has_default == (name in {"cell_kind", "deletion_protection"}), name
 
 
 def test_the_proving_sizes_are_marked_and_override_the_size_table_only_here():
@@ -80,3 +84,40 @@ def test_the_size_table_and_the_new_inputs_defaults_are_unchanged():
     assert re.search(r"default\s*=\s*\{\}", wrapper_vars["machine_sizes"])
     table = (PG / "main.tf").read_text()
     assert 'aws_vm = "m6i.large", azure_vm = "Standard_D2ds_v5", gcp_vm = "n2-standard-2"' in table
+
+
+def test_the_kind_is_a_checked_variable_that_defaults_to_self_hosted():
+    v = dict(blocks(src(), "variable"))
+    kind = v["cell_kind"]
+    assert 'default     = "self_hosted"' in kind
+    assert 'contains(["self_hosted", "managed"], var.cell_kind)' in kind
+    assert "default     = true" in v["deletion_protection"]
+
+
+def test_the_managed_form_takes_the_tenants_own_key_and_the_azure_zone_only_when_managed():
+    s = src()
+    # The managed modules take the same tenant key inputs the self-hosted form does.
+    for want in ("local.cell_first.aws.kms_key_arn", "local.cell_first.azure.key_vault_key_id", "local.cell_first.gcp.kms_key_id"):
+        assert want in s
+    wrapper = (PG / "main.tf").read_text()
+    for cloud, key in (("aws", "kms_key_arn"), ("azure", "key_vault_key_id"), ("gcp", "kms_key_id")):
+        body = re.search(rf'module "{cloud}_managed" \{{(.*?)\n\}}', wrapper, re.S).group(1)
+        assert f"var.{cloud}.{key}" in body
+    mods = dict(blocks(s, "module"))
+    assert 'source = "../../../modules/postgres/azure-dns"' in mods["azure_dns"]
+    assert 'count  = var.cell_kind == "managed" ? 1 : 0' in mods["azure_dns"]
+    assert "try(module.azure_dns[0].private_dns_zone_id, null)" in s
+    grant = re.search(r'resource "google_kms_crypto_key_iam_member" "cloud_sql" \{(.*?)\n\}', s, re.S).group(1)
+    assert 'count = var.cell_kind == "managed" ? 1 : 0' in grant
+    assert "local.cell_first.gcp.kms_key_id" in grant and "gcp-sa-cloud-sql" in grant
+    assert "cryptoKeyEncrypterDecrypter" in grant
+
+
+def test_switching_kind_replaces_the_cell_because_each_form_exists_only_for_its_own_kind():
+    wrapper = (PG / "main.tf").read_text()
+    for name, kind in (("aws_managed", "managed"), ("azure_managed", "managed"), ("gcp_managed", "managed"),
+                       ("aws_self_hosted", "self_hosted"), ("azure_self_hosted", "self_hosted"), ("gcp_self_hosted", "self_hosted")):
+        body = re.search(rf'module "{name}" \{{(.*?)\n\}}', wrapper, re.S).group(1)
+        assert f'local.kind == "{kind}" ? 1 : 0' in body, name
+    # The cell's address and name stay the same, so a plan shows the old form destroyed and the new one made.
+    assert 'name                 = "${local.slug}-aws-001"' in src()

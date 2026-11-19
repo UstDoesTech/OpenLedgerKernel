@@ -34,3 +34,5 @@ make check   # formatting, lints and tests
 Apache License, Version 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Copyright 2026 Ust Oldfield. Contributions are accepted under the same licence (section 5 of the licence).
 
 The licence does not cover the name "Open Ledger Kernel", which is not licensed for use as a trademark. The node image contains PostgreSQL and other third-party software, each under its own licence.
+
+The project's name is covered by [`TRADEMARK.md`](TRADEMARK.md). Security problems go through the private route in [`SECURITY.md`](SECURITY.md).

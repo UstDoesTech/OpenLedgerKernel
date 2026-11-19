@@ -92,7 +92,8 @@ def test_every_module_input_without_a_default_is_set(layer):
         assert module.is_dir(), f"{name}: {source}"
         missing = required_inputs(module) - set_inputs(body)
         assert not missing, f"{name} does not set {sorted(missing)}"
-        unknown = set_inputs(body) - {"source"} - {
+        # count and for_each are meta-arguments, not inputs.
+        unknown = set_inputs(body) - {"source", "count", "for_each"} - {
             n for n, _ in blocks("\n".join(tf.read_text() for tf in module.glob("variables.tf")), "variable")
         }
         assert not unknown, f"{name} sets inputs the module does not take: {sorted(unknown)}"
