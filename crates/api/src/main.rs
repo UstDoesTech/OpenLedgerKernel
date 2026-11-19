@@ -10,9 +10,17 @@
 //!   LEDGER_SCHEMA          the ledger schema, default `ledger`
 //!   LEDGER_LISTEN          the address to listen on, default `127.0.0.1:8080`
 //!   LEDGER_TOKENS_FILE     a JSON list of `{token, tenant, principal}` (see `ledger_api::auth`)
-//!   LEDGER_PEERS_FILE      optional: a JSON object of other cells' names to connection strings, for
-//!                          transfers to accounts homed there. Without it, only transfers within
-//!                          this cell can be made
+//!   LEDGER_INTERNAL_LISTEN the address of the internal listener, for calls from other cells. Not
+//!                          set means none, and then only transfers within this cell can be made
+//!   LEDGER_INTERNAL_AUTH_FILE  a JSON list of `{token, cell, tenants}`: the cells that may call it
+//!   LEDGER_CELLS_FILE      a JSON object of other cells' names to `{url, token}`, for transfers to
+//!                          accounts homed there
+//!   LEDGER_TLS_CERT_FILE, LEDGER_TLS_KEY_FILE   this cell's certificate chain and key, in PEM
+//!   LEDGER_TLS_CA_FILE     the authority that signs every cell's certificate, in PEM
+//!
+//! A listener on any address but loopback needs TLS, and the internal listener needs mutual TLS:
+//! the service refuses to start otherwise. It also refuses to start if the retired
+//! `LEDGER_PEERS_FILE` is set, because a cell never connects to another cell's database.
 //!   LEDGER_ETCD_ENDPOINTS  comma-separated etcd client URLs
 //!   LEDGER_ETCD_PREFIX     the control plane's key prefix, default `/ledger`
 //!   LEDGER_LEASE_*         the lease guard's timings (see `control_plane::GuardConfig`)
@@ -23,8 +31,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use control_plane::{EtcdConfig, EtcdControlPlane, GuardConfig, LeaseGuard, NodeId, SystemClock};
-use ledger_api::auth::StaticTokens;
-use ledger_api::{AppState, router};
+use ledger_api::auth::{PeerTokens, StaticTokens};
+use ledger_api::peer::PeerClient;
+use ledger_api::tls::{self, TlsFiles, TlsListener};
+use ledger_api::{AppState, internal_router, router};
 use tokio_postgres::{Client, Config, NoTls};
 
 fn var(name: &str) -> Result<String, String> {
@@ -60,6 +70,33 @@ async fn connect(conn: &str, tls: bool) -> Result<Client, String> {
     }
 }
 
+/// Binds an address and serves `app` on it, with TLS when a config is given, until `stopped`.
+async fn serve(
+    addr: std::net::SocketAddr,
+    app: axum::Router,
+    config: Option<Arc<rustls::ServerConfig>>,
+    mut stopped: tokio::sync::watch::Receiver<bool>,
+    servers: &mut tokio::task::JoinSet<std::io::Result<()>>,
+) -> Result<(), String> {
+    let tcp = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| format!("cannot listen on {addr}: {e}"))?;
+    let end = async move {
+        let _ = stopped.wait_for(|s| *s).await;
+    };
+    match config {
+        Some(config) => {
+            let listener = TlsListener::new(tcp, config).map_err(|e| e.to_string())?;
+            servers
+                .spawn(async move { axum::serve(listener, app).with_graceful_shutdown(end).await });
+        }
+        None => {
+            servers.spawn(async move { axum::serve(tcp, app).with_graceful_shutdown(end).await });
+        }
+    }
+    Ok(())
+}
+
 async fn run() -> Result<(), String> {
     let node: NodeId = var("LEDGER_NODE")?
         .parse()
@@ -79,6 +116,52 @@ async fn run() -> Result<(), String> {
         .collect();
     let prefix = std::env::var("LEDGER_ETCD_PREFIX").unwrap_or_else(|_| "/ledger".to_owned());
 
+    if std::env::var_os("LEDGER_PEERS_FILE").is_some() {
+        return Err(
+            "LEDGER_PEERS_FILE is retired: a cell no longer connects to another cell's database. \
+             Use LEDGER_CELLS_FILE and LEDGER_INTERNAL_LISTEN"
+                .to_owned(),
+        );
+    }
+    let files = TlsFiles {
+        cert: std::env::var("LEDGER_TLS_CERT_FILE").ok(),
+        key: std::env::var("LEDGER_TLS_KEY_FILE").ok(),
+        ca: std::env::var("LEDGER_TLS_CA_FILE").ok(),
+    };
+    let have_pair = files.cert.is_some() && files.key.is_some();
+    let public_addr: std::net::SocketAddr = listen
+        .parse()
+        .map_err(|_| "LEDGER_LISTEN: not an address and port".to_owned())?;
+    tls::check_bind(&public_addr, have_pair, "LEDGER_LISTEN")?;
+    let public_tls = if have_pair {
+        Some(tls::server_config(&files).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    let internal = match std::env::var("LEDGER_INTERNAL_LISTEN") {
+        Ok(addr) => {
+            let addr: std::net::SocketAddr = addr
+                .parse()
+                .map_err(|_| "LEDGER_INTERNAL_LISTEN: not an address and port".to_owned())?;
+            let mutual = have_pair && files.ca.is_some();
+            tls::check_bind(&addr, mutual, "LEDGER_INTERNAL_LISTEN")?;
+            let config = if mutual {
+                Some(tls::mutual_server_config(&files).map_err(|e| e.to_string())?)
+            } else {
+                None
+            };
+            Some((addr, config))
+        }
+        Err(_) => None,
+    };
+    let peer_auth = if internal.is_some() {
+        Some(
+            PeerTokens::from_json(&file("LEDGER_INTERNAL_AUTH_FILE")?)
+                .map_err(|e| e.to_string())?,
+        )
+    } else {
+        None
+    };
     let db = connect(&file("LEDGER_DB_FILE")?, tls).await?;
     // Fail at start, not at the first request, if the schema this needs is not there.
     ledger_store::validate_schema_name(&schema).map_err(|e| e.to_string())?;
@@ -101,16 +184,29 @@ async fn run() -> Result<(), String> {
         guard,
         Arc::new(tokens),
     );
-    if std::env::var_os("LEDGER_PEERS_FILE").is_some() {
-        let peers: std::collections::BTreeMap<String, String> =
-            serde_json::from_str(&file("LEDGER_PEERS_FILE")?)
-                .map_err(|_| "LEDGER_PEERS_FILE: not a JSON object of strings".to_owned())?;
-        for (cell, conn) in peers {
-            let peer = connect(&conn, tls)
-                .await
-                .map_err(|_| format!("cannot connect to the database of cell {cell}"))?;
-            state = state.with_peer(&cell, peer);
+    if std::env::var_os("LEDGER_CELLS_FILE").is_some() {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Cell {
+            url: String,
+            token: String,
         }
+        let cells: std::collections::BTreeMap<String, Cell> =
+            serde_json::from_str(&file("LEDGER_CELLS_FILE")?)
+                .map_err(|_| "LEDGER_CELLS_FILE: not a JSON object of cells".to_owned())?;
+        let client_tls = if have_pair && files.ca.is_some() {
+            Some(tls::client_config(&files).map_err(|e| e.to_string())?)
+        } else {
+            None
+        };
+        for (cell, c) in cells {
+            let client = PeerClient::new(&c.url, &c.token, client_tls.clone())
+                .map_err(|e| format!("LEDGER_CELLS_FILE: cell {cell}: {e}"))?;
+            state = state.with_peer(&cell, client);
+        }
+    }
+    if let Some(auth) = peer_auth {
+        state = state.with_peer_auth(Arc::new(auth));
     }
 
     // A healthy cell renews the leases of the accounts homed here, on a timer.
@@ -125,23 +221,43 @@ async fn run() -> Result<(), String> {
         }
     });
 
-    let listener = tokio::net::TcpListener::bind(&listen)
-        .await
-        .map_err(|e| format!("cannot listen on {listen}: {e}"))?;
-    eprintln!("ledger-api: cell {node} listening on {listen}");
-    let admission = state.clone();
-    axum::serve(listener, router(state))
-        .with_graceful_shutdown(async move {
-            let _ = tokio::signal::ctrl_c().await;
-            // Stop taking new requests, then give those in flight a moment.
-            admission.admission().set_draining(true);
-            admission
-                .admission()
-                .wait_idle(std::time::Duration::from_secs(10))
-                .await;
-        })
-        .await
-        .map_err(|e| e.to_string())
+    let (stop, stopped) = tokio::sync::watch::channel(false);
+    let mut servers = tokio::task::JoinSet::new();
+    serve(
+        public_addr,
+        router(state.clone()),
+        public_tls,
+        stopped.clone(),
+        &mut servers,
+    )
+    .await?;
+    eprintln!("ledger-api: cell {node} listening on {public_addr}");
+    if let Some((addr, config)) = internal {
+        serve(
+            addr,
+            internal_router(state.clone()),
+            config,
+            stopped.clone(),
+            &mut servers,
+        )
+        .await?;
+        eprintln!("ledger-api: cell {node} listening for other cells on {addr}");
+    }
+
+    let _ = tokio::signal::ctrl_c().await;
+    // Stop taking new requests, then give those in flight a moment.
+    state.admission().set_draining(true);
+    state
+        .admission()
+        .wait_idle(std::time::Duration::from_secs(10))
+        .await;
+    let _ = stop.send(true);
+    while let Some(done) = servers.join_next().await {
+        if let Ok(Err(e)) = done {
+            return Err(e.to_string());
+        }
+    }
+    Ok(())
 }
 
 #[tokio::main]

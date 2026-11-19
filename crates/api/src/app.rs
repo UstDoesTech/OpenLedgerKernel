@@ -20,15 +20,17 @@ use ledger_store::holds;
 use ledger_store::requests::{self, Claim, Kind, Request};
 use ledger_store::same_cell::{self, SameCell};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio_postgres::Client;
 
-use crate::auth::{Authenticator, Principal};
+use crate::auth::{Authenticator, PeerAuthenticator, Principal};
 use crate::error::ApiError;
+use crate::peer::{PeerClient, PeerError};
 
 /// Everything a handler needs. Cheap to clone: it is one shared pointer.
 pub struct AppState<C> {
-    inner: Arc<Inner<C>>,
+    pub(crate) inner: Arc<Inner<C>>,
 }
 
 impl<C> Clone for AppState<C> {
@@ -39,19 +41,21 @@ impl<C> Clone for AppState<C> {
     }
 }
 
-struct Inner<C> {
+pub(crate) struct Inner<C> {
     /// The cell this service runs next to.
-    node: NodeId,
-    schema: String,
-    db: Client,
-    cp: Arc<C>,
-    guard: LeaseGuard,
-    auth: Arc<dyn Authenticator>,
-    admission: Admission,
-    /// Connections to the other cells, for transfers that end there.
-    peers: HashMap<String, Client>,
+    pub(crate) node: NodeId,
+    pub(crate) schema: String,
+    pub(crate) db: Client,
+    pub(crate) cp: Arc<C>,
+    pub(crate) guard: LeaseGuard,
+    pub(crate) auth: Arc<dyn Authenticator>,
+    pub(crate) admission: Admission,
+    /// How to call the other cells' services, for transfers that end there.
+    pub(crate) peers: HashMap<String, PeerClient>,
+    /// Who may call this cell's internal endpoints. None means nobody may.
+    pub(crate) peer_auth: Option<Arc<dyn PeerAuthenticator>>,
     /// The pairs of cells already made ready for in-transit value, so each is done once.
-    prepared: Mutex<HashSet<(String, String, String, String)>>,
+    pub(crate) prepared: Mutex<HashSet<(String, String, String, String)>>,
 }
 
 impl<C: ControlPlane> AppState<C> {
@@ -75,19 +79,29 @@ impl<C: ControlPlane> AppState<C> {
                 auth,
                 admission: Admission::new(),
                 peers: HashMap::new(),
+                peer_auth: None,
                 prepared: Mutex::new(HashSet::new()),
             }),
         }
     }
 
-    /// Adds a connection to another cell's database, for transfers to accounts homed there. Call it
+    /// Adds how to call another cell's service, for transfers to accounts homed there. Call it
     /// before the state is shared.
     #[must_use]
-    pub fn with_peer(mut self, cell: &str, db: Client) -> Self {
+    pub fn with_peer(mut self, cell: &str, client: PeerClient) -> Self {
         Arc::get_mut(&mut self.inner)
             .expect("peers are added before the state is shared")
             .peers
-            .insert(cell.to_owned(), db);
+            .insert(cell.to_owned(), client);
+        self
+    }
+
+    /// Says who may call this cell's internal endpoints. Without it, none may be called.
+    #[must_use]
+    pub fn with_peer_auth(mut self, auth: Arc<dyn PeerAuthenticator>) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("peer credentials are set before the state is shared")
+            .peer_auth = Some(auth);
         self
     }
 
@@ -577,7 +591,7 @@ async fn run_transfer<C: ControlPlane + 'static>(
     }
     let payer_epoch = i.guard.check(&*i.cp, payer).await?;
 
-    let (payee_home, payee_epoch) = match i.cp.home(payee).await {
+    let (payee_home, _) = match i.cp.home(payee).await {
         Ok(h) => h,
         Err(ControlError::UnknownAccount(_)) => return Err(ApiError::not_found()),
         Err(e) => return Err(e.into()),
@@ -618,58 +632,31 @@ async fn run_transfer<C: ControlPlane + 'static>(
         ));
     }
 
-    // The payee is homed at another cell. Both cells must be reachable before anything is
-    // written, and the payee must exist there, so the first half is never stranded.
+    // The payee is homed at another cell. Ask that cell's service to check the payee first, so
+    // nothing is written here unless the second half can be done.
     let peer = i
         .peers
         .get(payee_home.as_str())
         .ok_or_else(|| ApiError::home_unavailable("this cell has no route to the payee's cell"))?;
-    let payee_record = accounts::get(peer, &i.schema, &caller.tenant, payee)
-        .await?
-        .ok_or_else(ApiError::not_found)?;
-    if payee_record.currency != currency {
-        return Err(ApiError::invalid(
-            "the payee's account is in another currency",
-        ));
-    }
-    let pair = Pair {
-        tenant: caller.tenant.clone(),
-        from_cell: i.node.to_string(),
-        to_cell: payee_home.to_string(),
-        currency: currency.clone(),
-        sending: derived_in_transit(
-            "send",
-            caller,
-            &i.node.to_string(),
-            payee_home.as_str(),
-            &currency,
-        )?,
-        receiving: derived_in_transit(
-            "recv",
-            caller,
-            &i.node.to_string(),
-            payee_home.as_str(),
-            &currency,
-        )?,
-    };
-    let marker = (
-        caller.tenant.to_string(),
-        pair.from_cell.clone(),
-        pair.to_cell.clone(),
-        currency,
-    );
-    let known = i
-        .prepared
-        .lock()
-        .map(|p| p.contains(&marker))
-        .unwrap_or(false);
-    if !known {
-        cross_cell::prepare(&i.db, &i.schema, &pair, &pair.from_cell).await?;
-        cross_cell::prepare(peer, &i.schema, &pair, &pair.to_cell).await?;
-        if let Ok(mut p) = i.prepared.lock() {
-            p.insert(marker);
-        }
-    }
+    let pair = in_transit_pair(
+        &caller.tenant,
+        i.node.as_str(),
+        payee_home.as_str(),
+        &currency,
+    )?;
+    ensure_prepared(i, &pair, i.node.as_str()).await?;
+    peer_call(
+        peer,
+        "POST",
+        "/internal/v1/transfers/prepare",
+        &caller.tenant,
+        Some(json!({
+            "journal_id": journal.to_string(),
+            "payee_account_id": payee.to_string(),
+            "amount": amount,
+        })),
+    )
+    .await?;
 
     let t = cross_cell::Transfer {
         tenant: caller.tenant.clone(),
@@ -685,12 +672,28 @@ async fn run_transfer<C: ControlPlane + 'static>(
         payer_epoch: payer_epoch.0 as i64,
         sending_epoch: 1,
         receiving_epoch: 1,
-        payee_epoch: payee_epoch.0 as i64,
+        payee_epoch: 0,
     };
     let sent = cross_cell::send(&i.db, &i.schema, &t).await?;
     *wrote = true;
-    let received = cross_cell::receive(peer, &i.schema, &t).await?;
+    let received = peer_call(
+        peer,
+        "POST",
+        "/internal/v1/transfers/receive",
+        &caller.tenant,
+        Some(json!({
+            "journal_id": journal.to_string(),
+            "payer_account_id": payer.to_string(),
+            "payee_account_id": payee.to_string(),
+            "amount": amount,
+        })),
+    )
+    .await?;
     cross_cell::settle(&i.db, &i.schema, &caller.tenant, journal).await?;
+    let their_watermark = received["watermark"]
+        .as_i64()
+        .ok_or_else(ApiError::internal)?;
+    let their_replay = received["replayed"].as_bool().unwrap_or(false);
     Ok((
         vec![
             Watermark {
@@ -699,34 +702,100 @@ async fn run_transfer<C: ControlPlane + 'static>(
             },
             Watermark {
                 cell: pair.to_cell,
-                watermark: received.watermark,
+                watermark: their_watermark,
             },
         ],
-        sent.replayed && received.replayed,
+        sent.replayed && their_replay,
     ))
 }
 
-/// The id of one in-transit account for a pair of cells and a currency, the same on both cells.
-fn derived_in_transit(
-    side: &str,
-    caller: &Principal,
+/// The in-transit accounts for an ordered pair of cells and a currency. Ids are derived, so both
+/// cells name the same accounts without asking each other.
+pub(crate) fn in_transit_pair(
+    tenant: &TenantId,
     from: &str,
     to: &str,
     currency: &str,
-) -> Result<AccountId, ApiError> {
-    derived_id(
-        "acc_",
-        &[
-            "in-transit",
-            side,
-            caller.tenant.as_str(),
-            from,
-            to,
-            currency,
-        ],
-    )
-    .parse()
-    .map_err(|_| ApiError::internal())
+) -> Result<Pair, ApiError> {
+    let id = |side: &str| -> Result<AccountId, ApiError> {
+        derived_id(
+            "acc_",
+            &["in-transit", side, tenant.as_str(), from, to, currency],
+        )
+        .parse()
+        .map_err(|_| ApiError::internal())
+    };
+    Ok(Pair {
+        tenant: tenant.clone(),
+        from_cell: from.to_owned(),
+        to_cell: to.to_owned(),
+        currency: currency.to_owned(),
+        sending: id("send")?,
+        receiving: id("recv")?,
+    })
+}
+
+/// Makes this cell ready to carry value for the pair, once per pair for the life of the process.
+/// `here` is this cell. It only ever touches this cell's own database.
+pub(crate) async fn ensure_prepared<C>(
+    i: &Inner<C>,
+    pair: &Pair,
+    here: &str,
+) -> Result<(), ApiError> {
+    let marker = (
+        pair.tenant.to_string(),
+        pair.from_cell.clone(),
+        pair.to_cell.clone(),
+        pair.currency.clone(),
+    );
+    let known = i
+        .prepared
+        .lock()
+        .map(|p| p.contains(&marker))
+        .unwrap_or(false);
+    if !known {
+        cross_cell::prepare(&i.db, &i.schema, pair, here).await?;
+        if let Ok(mut p) = i.prepared.lock() {
+            p.insert(marker);
+        }
+    }
+    Ok(())
+}
+
+/// Calls a peer and turns what comes back into this cell's own errors. A peer that does not answer
+/// is `home_unavailable`, which the caller may retry with the same key.
+pub(crate) async fn peer_call(
+    peer: &PeerClient,
+    method: &str,
+    path: &str,
+    tenant: &TenantId,
+    body: Option<Value>,
+) -> Result<Value, ApiError> {
+    let (status, answer) = match peer.call(method, path, tenant, body.as_ref()).await {
+        Ok(r) => r,
+        Err(PeerError::Unreachable(_)) => {
+            return Err(ApiError::home_unavailable(
+                "the payee's cell did not answer",
+            ));
+        }
+    };
+    if status.is_success() {
+        return Ok(answer);
+    }
+    Err(match status {
+        StatusCode::NOT_FOUND => ApiError::not_found(),
+        StatusCode::BAD_REQUEST => ApiError::invalid(
+            answer["detail"]
+                .as_str()
+                .unwrap_or("the payee's cell refused the transfer")
+                .to_owned(),
+        ),
+        StatusCode::MISDIRECTED_REQUEST => match answer["home"].as_str() {
+            Some(home) => ApiError::wrong_home(home),
+            None => ApiError::home_unavailable("the payee's cell is not home for the payee"),
+        },
+        _ => ApiError::home_unavailable("the payee's cell could not complete the transfer"),
+    })
 }
 
 /// The payer is not at this cell. If it is the caller's own account, homed at a cell this one can
@@ -741,10 +810,14 @@ async fn payer_elsewhere<C: ControlPlane + 'static>(
     if let Ok((home, _)) = i.cp.home(payer).await
         && home != i.node
         && let Some(peer) = i.peers.get(home.as_str())
-        && matches!(
-            accounts::get(peer, &i.schema, tenant, payer).await,
-            Ok(Some(_))
+        && let Ok(_) = peer_call(
+            peer,
+            "GET",
+            &format!("/internal/v1/accounts/{payer}"),
+            tenant,
+            None,
         )
+        .await
     {
         return ApiError::wrong_home(home.as_str());
     }

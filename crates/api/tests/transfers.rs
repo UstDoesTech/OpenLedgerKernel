@@ -12,8 +12,9 @@ use control_plane::{
     ControlPlane, GuardConfig, InMemoryControlPlane, LeaseGuard, NodeId, SystemClock,
 };
 use http_body_util::BodyExt;
-use ledger_api::auth::StaticTokens;
-use ledger_api::{AppState, ROUTES, router};
+use ledger_api::auth::{PeerTokens, StaticTokens};
+use ledger_api::peer::PeerClient;
+use ledger_api::{AppState, ROUTES, internal_router, router};
 use ledger_check::{Options, check_cell};
 use ledger_core::{AccountId, TenantId};
 use ledger_store::cross_cell;
@@ -24,6 +25,8 @@ use tower::ServiceExt;
 
 const ACME: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const ZED: &str = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+const CELL_A: &str = "cccccccccccccccccccccccccccccccccccccccc";
+const CELL_B: &str = "dddddddddddddddddddddddddddddddddddddddd";
 const A: u16 = 5431;
 const B: u16 = 5432;
 
@@ -45,6 +48,11 @@ async fn connect(port: u16) -> Client {
 struct Pair {
     a: Router,
     b: Router,
+    /// Cell b's state and internal port, so a test can stop its internal listener and start it again.
+    state_b: AppState<InMemoryControlPlane>,
+    port_b: u16,
+    server_a: tokio::task::JoinHandle<()>,
+    server_b: std::sync::Mutex<tokio::task::JoinHandle<()>>,
     cp: Arc<InMemoryControlPlane>,
     db_a: Client,
     db_b: Client,
@@ -79,12 +87,38 @@ impl Pair {
                     .unwrap(),
             )
         };
-        let service = |node: &str, port: u16| {
+        let peer_tokens = || {
+            Arc::new(
+                PeerTokens::new()
+                    .with(
+                        CELL_A,
+                        "cell-a",
+                        vec!["ten_acme".parse().unwrap(), "ten_zed".parse().unwrap()],
+                    )
+                    .unwrap()
+                    .with(
+                        CELL_B,
+                        "cell-b",
+                        vec!["ten_acme".parse().unwrap(), "ten_zed".parse().unwrap()],
+                    )
+                    .unwrap(),
+            )
+        };
+        let listener_a = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener_b = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (port_a, port_b) = (
+            listener_a.local_addr().unwrap().port(),
+            listener_b.local_addr().unwrap().port(),
+        );
+        // Each cell's service knows how to call the other one, and who may call it.
+        let service = |node: &str, port: u16, other: &str, other_port: u16, token: &'static str| {
             let clock = clock.clone();
             let cp = cp.clone();
             let schema = schema.clone();
             let tokens = tokens();
             let node: NodeId = node.parse().unwrap();
+            let other = other.to_owned();
+            let peer_tokens = peer_tokens();
             async move {
                 let guard = LeaseGuard::new(
                     node.clone(),
@@ -93,22 +127,61 @@ impl Pair {
                 )
                 .unwrap();
                 AppState::new(node, &schema, connect(port).await, cp, guard, tokens)
+                    .with_peer(
+                        &other,
+                        PeerClient::new(&format!("http://127.0.0.1:{other_port}"), token, None)
+                            .unwrap(),
+                    )
+                    .with_peer_auth(peer_tokens)
             }
         };
-        let a = service("cell-a", A)
-            .await
-            .with_peer("cell-b", connect(B).await);
-        let b = service("cell-b", B)
-            .await
-            .with_peer("cell-a", connect(A).await);
+        let state_a = service("cell-a", A, "cell-b", port_b, CELL_A).await;
+        let state_b = service("cell-b", B, "cell-a", port_a, CELL_B).await;
+        let server_a = tokio::spawn({
+            let app = internal_router(state_a.clone());
+            async move {
+                let _ = axum::serve(listener_a, app).await;
+            }
+        });
+        let server_b = tokio::spawn({
+            let app = internal_router(state_b.clone());
+            async move {
+                let _ = axum::serve(listener_b, app).await;
+            }
+        });
         Pair {
-            a: router(a),
-            b: router(b),
+            a: router(state_a),
+            b: router(state_b.clone()),
+            state_b,
+            port_b,
+            server_a,
+            server_b: std::sync::Mutex::new(server_b),
             cp,
             db_a,
             db_b,
             schema,
         }
+    }
+
+    /// Stops cell b's internal listener, as if its service were down or unreachable.
+    async fn stop_b(&self) {
+        let old = {
+            let mut handle = self.server_b.lock().unwrap();
+            std::mem::replace(&mut *handle, tokio::spawn(async {}))
+        };
+        old.abort();
+        let _ = old.await;
+    }
+
+    /// Starts it again on the same port.
+    async fn start_b(&self) {
+        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", self.port_b))
+            .await
+            .unwrap();
+        let app = internal_router(self.state_b.clone());
+        *self.server_b.lock().unwrap() = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
     }
 
     async fn call(
@@ -213,6 +286,8 @@ impl Pair {
     }
 
     async fn drop(&self) {
+        self.server_a.abort();
+        self.server_b.lock().unwrap().abort();
         for db in [&self.db_a, &self.db_b] {
             db.batch_execute(&format!("drop schema if exists {} cascade", self.schema))
                 .await
@@ -324,7 +399,7 @@ async fn a_crash_between_the_legs_is_finished_exactly_once() {
         .await
         .unwrap();
     let (status, _, body) = p.transfer("pay-1", &payer, &payee, 300).await;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
     assert_eq!(
         p.balance(false, &payer).await,
         -300,
@@ -385,7 +460,7 @@ async fn a_retry_after_a_crash_finishes_the_transfer_without_recovery() {
         .await
         .unwrap();
     let (status, _, _) = p.transfer("pay-1", &payer, &payee, 300).await;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     p.db_b
         .batch_execute(&format!("drop trigger refuse on {}.entry", p.schema))
         .await
@@ -615,5 +690,72 @@ async fn every_route_in_the_list_is_served_and_wants_a_token() {
             Pair::call(&p.a, &method.to_uppercase(), &uri, None, Some("k"), None).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}: {body}");
     }
+    p.drop().await;
+}
+
+#[tokio::test]
+#[ignore = "needs Postgres on ports 5431 and 5432"]
+async fn a_payee_cell_that_is_down_stops_the_transfer_before_anything_is_written() {
+    let p = Pair::start("down").await;
+    let payer = p.open(false, "open-1", 1_000).await;
+    let payee = p.open(true, "open-2", 0).await;
+    p.stop_b().await;
+
+    let (status, _, body) = p.transfer("pay-1", &payer, &payee, 100).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    assert_eq!(code(&body), "home_unavailable");
+    assert_eq!(p.count(&p.db_a, "entry").await, 0);
+    assert_eq!(p.count(&p.db_a, "journal").await, 0);
+    assert_eq!(p.balance(false, &payer).await, 0);
+
+    // It comes back. The same key now works, because the decline gave it back.
+    p.start_b().await;
+    let (status, _, body) = p.transfer("pay-1", &payer, &payee, 100).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(p.balance(true, &payee).await, 100);
+    p.invariants_hold().await;
+    p.drop().await;
+}
+
+#[tokio::test]
+#[ignore = "needs Postgres on ports 5431 and 5432"]
+async fn a_payee_cell_that_goes_down_between_the_halves_is_finished_when_it_returns() {
+    let p = Pair::start("between").await;
+    let payer = p.open(false, "open-1", 1_000).await;
+    let payee = p.open(true, "open-2", 0).await;
+    // Refuse the second half at cell b's database, so the first half is written and then it stops.
+    p.db_b
+        .batch_execute(&format!(
+            "create function {s}.refuse() returns trigger language plpgsql as $$ begin
+               raise exception 'refused for the test'; end $$;
+             create trigger refuse before insert on {s}.entry
+               for each row when (new.account_id = '{payee}') execute function {s}.refuse();",
+            s = p.schema
+        ))
+        .await
+        .unwrap();
+    let (status, _, _) = p.transfer("pay-1", &payer, &payee, 100).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(p.balance(false, &payer).await, -100);
+    p.stop_b().await;
+    p.db_b
+        .batch_execute(&format!("drop trigger refuse on {}.entry", p.schema))
+        .await
+        .unwrap();
+    // While it is down the retry cannot finish, and writes nothing more.
+    let (status, _, _) = p.transfer("pay-1", &payer, &payee, 100).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(p.balance(false, &payer).await, -100);
+    p.start_b().await;
+    let (status, _, body) = p.transfer("pay-1", &payer, &payee, 100).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(
+        (
+            p.balance(false, &payer).await,
+            p.balance(true, &payee).await
+        ),
+        (-100, 100)
+    );
+    p.invariants_hold().await;
     p.drop().await;
 }
