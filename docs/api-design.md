@@ -222,12 +222,14 @@ Errors use problem details (`application/problem+json`, RFC 9457) with a stable 
 | HTTP | `code` | Meaning | Retry with same key |
 | --- | --- | --- | --- |
 | 400 | `invalid_payload` | Fails the command's schema | No; fix the payload |
+| 401 | `unauthenticated` | No valid bearer token | No; send a valid token |
 | 403 | `policy_denied` | Policy refuses this instance | No |
 | 403 | `limit_exceeded` | Over a value or rate limit; body gives limit and reset time | After reset, or hand off |
 | 404 | `not_found` | Missing, or in another tenant | No |
 | 409 | `effect_changed` | The world moved since simulation | No; simulate again |
 | 409 | `idempotency_conflict` | Key reused with a different body | No |
 | 422 | `insufficient_funds` | Available balance too low | No |
+| 421 | `wrong_home` | This cell is not home for the account; `home` names the cell that is | No; send it to the home cell |
 | 429 | `rate_limited` | Too many requests | Yes, after `Retry-After` |
 | 503 | `home_unavailable` | Home cell failing over and the command cannot be queued | Yes, after `Retry-After` |
 | 504 | `durability_not_met` | Committed at home, strong acknowledgement missing | Yes; the retry completes the acknowledgement and never double-posts |

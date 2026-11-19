@@ -85,6 +85,8 @@ jobs:
         run: make up
       - name: Integration tests
         run: cargo test -p conformance -p control-plane --features conformance/etcd -- --ignored
+      - name: API integration tests
+        run: cargo test -p api -- --ignored --test-threads=1
       - name: Mutation check (the conformance suite must fail without fencing or the row lock)
         run: scripts/mutation_check.sh
       - name: Show container logs on failure
