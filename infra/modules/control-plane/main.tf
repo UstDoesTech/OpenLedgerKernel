@@ -73,8 +73,6 @@ module "aws_members" {
   security_group_ids        = var.aws.security_group_ids
   kms_key_arn               = var.aws.kms_key_arn
   tags                      = local.tags
-
-  depends_on = [terraform_data.inputs]
 }
 
 module "azure_members" {
@@ -98,8 +96,6 @@ module "azure_members" {
   key_vault_id                 = var.azure.key_vault_id
   administrator_ssh_public_key = var.azure.administrator_ssh_public_key
   tags                         = local.tags
-
-  depends_on = [terraform_data.inputs]
 }
 
 module "gcp_members" {
@@ -118,6 +114,4 @@ module "gcp_members" {
   subnet_ids             = var.gcp.subnet_ids
   kms_key_id             = var.gcp.kms_key_id
   labels                 = local.tags
-
-  depends_on = [terraform_data.inputs]
 }

@@ -70,8 +70,6 @@ module "aws_managed" {
   backup_retention_days = var.backup_retention_days
   deletion_protection   = var.deletion_protection
   tags                  = local.tags
-
-  depends_on = [terraform_data.inputs]
 }
 
 module "azure_managed" {
@@ -90,8 +88,6 @@ module "azure_managed" {
   administrator         = var.azure.administrator
   backup_retention_days = var.backup_retention_days
   tags                  = local.tags
-
-  depends_on = [terraform_data.inputs]
 }
 
 module "gcp_managed" {
@@ -109,8 +105,6 @@ module "gcp_managed" {
   backup_retention_days = var.backup_retention_days
   deletion_protection   = var.deletion_protection
   labels                = local.tags
-
-  depends_on = [terraform_data.inputs]
 }
 
 module "lakebase" {
@@ -121,8 +115,6 @@ module "lakebase" {
   compute_units                = local.size.lakebase_cu
   administrator_application_id = var.databricks.administrator_application_id
   deletion_protection          = var.deletion_protection
-
-  depends_on = [terraform_data.inputs]
 }
 
 module "aws_self_hosted" {
@@ -145,8 +137,6 @@ module "aws_self_hosted" {
   kms_key_arn               = var.aws.kms_key_arn
   reuse_private_access      = var.reuse_private_access
   tags                      = local.tags
-
-  depends_on = [terraform_data.inputs]
 }
 
 module "azure_self_hosted" {
@@ -171,8 +161,6 @@ module "azure_self_hosted" {
   administrator_ssh_public_key = var.azure.administrator_ssh_public_key
   reuse_private_access         = var.reuse_private_access
   tags                         = local.tags
-
-  depends_on = [terraform_data.inputs]
 }
 
 module "gcp_self_hosted" {
@@ -193,6 +181,4 @@ module "gcp_self_hosted" {
   kms_key_id             = var.gcp.kms_key_id
   reuse_private_access   = var.reuse_private_access
   labels                 = local.tags
-
-  depends_on = [terraform_data.inputs]
 }
