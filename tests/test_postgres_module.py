@@ -86,7 +86,10 @@ def test_storage_is_encrypted_with_the_tenant_key_in_every_form_that_holds_it():
     assert "kms_key_id                          = var.kms_key_arn" in body(MODULE / "aws-managed")
     assert "customer_managed_key" in body(MODULE / "azure-managed")
     assert "encryption_key_name = var.kms_key_id" in body(MODULE / "gcp-managed")
-    assert "encrypted   = true" in body(MODULE / "aws-self-hosted")
+    aws = body(MODULE / "aws-self-hosted")
+    assert "encrypted  = true" in aws  # the root disk
+    volume = aws.split('resource "aws_ebs_volume" "data"')[1].split("\nresource ")[0]
+    assert re.search(r"encrypted\s+= true", volume) and "kms_key_id        = var.kms_key_arn" in volume
     assert body(MODULE / "aws-self-hosted").count("var.kms_key_arn") >= 4
     assert "disk_encryption_set_id" in body(MODULE / "azure-self-hosted")
     assert "kms_key_self_link = var.kms_key_id" in body(MODULE / "gcp-self-hosted")
@@ -136,3 +139,19 @@ def test_tenant_comes_from_a_validated_prefix():
 def test_each_form_pins_only_its_own_provider(form):
     text = code(MODULE / form / "versions.tf")
     assert len(re.findall(r"source\s*=", text)) == 1
+
+
+def test_every_self_hosted_form_keeps_its_data_disk_as_its_own_resource():
+    # A machine is replaced to roll a new node image (docs/runbooks/rolling-the-node-image.md).
+    # An inline disk is deleted with its machine on AWS, so each cloud holds the disk apart.
+    disks = {
+        "aws-self-hosted": ("aws_ebs_volume", "aws_volume_attachment"),
+        "azure-self-hosted": ("azurerm_managed_disk", "azurerm_virtual_machine_data_disk_attachment"),
+        "gcp-self-hosted": ("google_compute_disk", None),
+    }
+    for form, (disk, attachment) in disks.items():
+        s = body(MODULE / form)
+        assert f'resource "{disk}" "data"' in s, form
+        if attachment:
+            assert f'resource "{attachment}" "data"' in s, form
+    assert "ebs_block_device" not in body(MODULE / "aws-self-hosted")
