@@ -30,6 +30,7 @@ A failed plan changes nothing. Do not apply while a plan is failing.
 | `could not remove the runner's address from the Key Vault's firewall` (a warning) | The last step could not close the firewall rule. | Remove the address by hand: `az keyvault network-rule remove`. |
 | A job is skipped, or `Waiting` for ever | The `if:` guard (`main` only, repository owner only) is not met, or the environment's reviewer has not approved. | Dispatch from `main`, as the owner, and approve `infra-apply`. |
 | A `<= read` data source "will be read during apply" in a plan with `0 to change` | A `check` block makes OpenTofu reload the configuration. | Nothing. It is a read, not a change. |
+| An apply fails with `AttachVolume ... Attachment point /dev/sdf is already in use` on `aws_volume_attachment.data` | The machines were created with the data disk inline, and removing that from the code does not detach it: the provider ignores a removed inline disk. The new volumes were created but cannot take the device the old disk holds. | While a cell holds no data worth keeping: stop each machine, detach and delete the old disk (the one attached at `/dev/sdf`), run the apply again so the attachments are made, then start the machines. See [Moving an AWS data disk out of the machine](#moving-an-aws-data-disk-out-of-the-machine). If it holds data, stop and take a snapshot first. |
 
 ## Things that look like problems and are not
 
@@ -43,3 +44,14 @@ A secret shows as `***`. A variable shows in full. If an account, tenant, subscr
 ## When a key was shown
 
 If a pre-shared key, a token or a `TF_VAR_` value appeared in a log, a chat or a terminal that others can see, treat it as exposed and replace it. For VPN keys, see [Rotating the VPN pre-shared key](rotating-vpn-key.md).
+
+## Moving an AWS data disk out of the machine
+
+Needed once, for a cell whose AWS machines were made before the data disk became its own resource (the Postgres nodes in the `cells` layer, the etcd members in the `control-plane` layer). Only while the cell holds no data worth keeping: this deletes the old disks.
+
+1. Stop one machine, then find the volume attached to it at `/dev/sdf` (the root disk is attached at `/dev/xvda` or `/dev/sda1`, and the new volume is not attached yet).
+2. Detach that volume, wait until it is `available`, and delete it. Check the id before deleting. It is the one at `/dev/sdf`, and the machine's other disk is never touched.
+3. Do the same for each machine of the layer.
+4. Plan the layer again. Expect one attachment to create per machine and nothing else. Apply it.
+5. Start the machines. Each finds its new, empty disk by size, formats it and starts the node.
+6. Plan once more and expect `0 to change`.
