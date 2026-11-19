@@ -32,6 +32,7 @@ check:  ## the checks CONTRIBUTING.md asks for, without the environment
 	cargo clippy -p conformance --all-targets --features etcd -- -D warnings
 	cargo test
 	cargo test -p ledgerctl --features failover
+	python plan/render.py --check
 	pytest -q
 
 image:  ## build the Postgres node image
