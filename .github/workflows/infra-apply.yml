@@ -33,6 +33,11 @@ on:
         description: "Layer under that environment, such as network (infra/envs/<env>/<layer>)"
         required: true
         type: string
+      replace:
+        description: "Optional. Replace one machine (a node or member, with its index), keeping its data disk. Leave empty for a normal run."
+        required: false
+        default: ""
+        type: string
       action:
         description: "plan shows the counts. apply plans, waits for approval, then applies."
         required: true
@@ -67,6 +72,7 @@ jobs:
     env:
       INPUT_ENV: ${{ inputs.env }}
       INPUT_LAYER: ${{ inputs.layer }}
+      INPUT_REPLACE: ${{ inputs.replace }}
       STATE_KEY_NAME: ${{ vars.TOFU_STATE_KEY_NAME || 'key' }}
       BACKEND_CONFIG: ${{ secrets.TOFU_BACKEND_CONFIG }}
       PLAN_STORE: ${{ secrets.PLAN_STORE }}
@@ -84,6 +90,7 @@ jobs:
           re='^[a-z][a-z0-9-]{0,30}$'
           [[ "$INPUT_ENV" =~ $re ]] || { echo "::error::env must match $re"; exit 1; }
           [[ "$INPUT_LAYER" =~ $re ]] || { echo "::error::layer must match $re"; exit 1; }
+          if [ -n "$INPUT_REPLACE" ]; then python3 scripts/replace_guard.py address "$INPUT_REPLACE"; fi
           dir="infra/envs/$INPUT_ENV/$INPUT_LAYER"
           [ -d "$dir" ] || { echo "::error::$dir does not exist"; exit 1; }
           [ -f "infra/envs/$INPUT_ENV/deployment.json" ] || { echo "::error::infra/envs/$INPUT_ENV/deployment.json is missing"; exit 1; }
@@ -159,9 +166,12 @@ jobs:
         run: |
           set -euo pipefail
           # Read-only: no state lock. Nothing tofu says reaches this log.
-          scripts/quiet.sh plan tofu -chdir="$ROOT" plan -no-color -input=false -lock=false -out="$RUNNER_TEMP/tfplan"
+          replace_args=()
+          if [ -n "$INPUT_REPLACE" ]; then replace_args+=("-replace=$INPUT_REPLACE"); fi
+          scripts/quiet.sh plan tofu -chdir="$ROOT" plan -no-color -input=false -lock=false -out="$RUNNER_TEMP/tfplan" "${replace_args[@]}"
           scripts/quiet.sh plan-text bash -c 'tofu -chdir="$ROOT" show -no-color "$RUNNER_TEMP/tfplan" > "$LOG_DIR/plan.txt"'
           scripts/quiet.sh plan-json bash -c 'tofu -chdir="$ROOT" show -json "$RUNNER_TEMP/tfplan" > "$RUNNER_TEMP/plan.json"'
+          if [ -n "$INPUT_REPLACE" ]; then python3 scripts/replace_guard.py plan "$INPUT_REPLACE" "$RUNNER_TEMP/plan.json"; fi
           sha=$(sha256sum "$LOG_DIR/plan.txt" | cut -d' ' -f1)
           echo "plan_sha=$sha" >> "$GITHUB_OUTPUT"
           {
@@ -199,6 +209,7 @@ jobs:
     env:
       INPUT_ENV: ${{ inputs.env }}
       INPUT_LAYER: ${{ inputs.layer }}
+      INPUT_REPLACE: ${{ inputs.replace }}
       STATE_KEY_NAME: ${{ vars.TOFU_STATE_KEY_NAME || 'key' }}
       BACKEND_CONFIG: ${{ secrets.TOFU_BACKEND_CONFIG }}
       PLAN_STORE: ${{ secrets.PLAN_STORE }}
@@ -217,6 +228,7 @@ jobs:
           re='^[a-z][a-z0-9-]{0,30}$'
           [[ "$INPUT_ENV" =~ $re ]] || { echo "::error::env must match $re"; exit 1; }
           [[ "$INPUT_LAYER" =~ $re ]] || { echo "::error::layer must match $re"; exit 1; }
+          if [ -n "$INPUT_REPLACE" ]; then python3 scripts/replace_guard.py address "$INPUT_REPLACE"; fi
           dir="infra/envs/$INPUT_ENV/$INPUT_LAYER"
           [ -d "$dir" ] || { echo "::error::$dir does not exist"; exit 1; }
           [ -f "infra/envs/$INPUT_ENV/deployment.json" ] || { echo "::error::infra/envs/$INPUT_ENV/deployment.json is missing"; exit 1; }
@@ -291,7 +303,9 @@ jobs:
       - name: Plan again and check it is the plan that was shown
         run: |
           set -euo pipefail
-          scripts/quiet.sh replan tofu -chdir="$ROOT" plan -no-color -input=false -out="$RUNNER_TEMP/tfplan"
+          replace_args=()
+          if [ -n "$INPUT_REPLACE" ]; then replace_args+=("-replace=$INPUT_REPLACE"); fi
+          scripts/quiet.sh replan tofu -chdir="$ROOT" plan -no-color -input=false -out="$RUNNER_TEMP/tfplan" "${replace_args[@]}"
           scripts/quiet.sh replan-text bash -c 'tofu -chdir="$ROOT" show -no-color "$RUNNER_TEMP/tfplan" > "$LOG_DIR/plan.txt"'
           sha=$(sha256sum "$LOG_DIR/plan.txt" | cut -d' ' -f1)
           if [ "$sha" != "$REVIEWED_PLAN_SHA" ]; then
