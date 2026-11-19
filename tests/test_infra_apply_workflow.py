@@ -11,6 +11,16 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 PATH = ROOT / ".github" / "workflows" / "infra-apply.yml"
+
+# Values that identify the estate. They are secrets, so the public log shows them masked: GitHub
+# prints each step's env and each action's inputs, and prints a variable in full.
+IDENTIFYING = {
+    "AWS_ROLE_ARN", "AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID",
+    "GCP_WORKLOAD_IDENTITY_PROVIDER", "GCP_SERVICE_ACCOUNT", "TOFU_BACKEND_CONFIG", "PLAN_STORE",
+    "AZURE_KEY_VAULT_NAME", "AZURE_KEY_VAULT_RESOURCE_GROUP",
+}
+# The only variables: public anyway (infra/geos.json and the docs).
+PLAIN_VARIABLES = {"AWS_REGION", "TOFU_STATE_KEY_NAME"}
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 
@@ -88,7 +98,8 @@ def test_nothing_is_uploaded_and_no_cloud_secret_is_stored():
     )
     code = re.sub(r"(?m)^\s*#.*$", "", text)
     # Federation only: variables name the identity, secrets hold only TF_VAR_ inputs.
-    assert "secrets." not in code, "secrets reach the job only through the TF_VAR_ step"
+    used = set(re.findall(r"secrets\.(\w+)", code))
+    assert used <= IDENTIFYING, "other secrets reach the job only through the TF_VAR_ step"
     for bad in ("AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "client-secret", "credentials_json", "creds:"):
         assert bad not in code, bad
 
@@ -145,7 +156,7 @@ def test_the_key_vault_is_opened_for_the_run_only_and_closed_again_even_after_a_
         assert order.index("Azure (federated)") < order.index(opener["name"]) < order.index("Initialise")
         assert steps(job)[-1] is closer, name
         # Only when the Azure identity and the vault are set; the address is removed whatever happened.
-        assert "vars.AZURE_CLIENT_ID" in opener["if"] and "vars.AZURE_KEY_VAULT_NAME" in opener["if"]
+        assert "env.HAS_AZURE" in opener["if"] and "env.HAS_VAULT" in opener["if"]
         assert "always()" in closer["if"] and "steps.keyvault.outputs.ip" in closer["if"]
         # The address is a single host, from this runner, never a range and never a standing rule.
         assert '"$ip/32"' in opener["run"] and '"$RUNNER_IP/32"' in closer["run"]
@@ -236,7 +247,7 @@ def test_the_plan_store_is_required_and_must_be_s3():
         check = next(s for s in steps(job) if s.get("name") == "Check the inputs")["run"]
         assert "^s3://[a-z0-9.-]+(/[A-Za-z0-9._/-]*)?$" in check
         assert "AWS_ROLE_ARN" in check
-        assert job["env"]["PLAN_STORE"] == "${{ vars.PLAN_STORE }}"
+        assert job["env"]["PLAN_STORE"] == "${{ secrets.PLAN_STORE }}"
 
 
 def test_azure_commands_that_print_settings_have_their_output_dropped():
@@ -276,3 +287,20 @@ def test_the_runbook_names_the_exact_trust_subjects_and_allows_no_wildcard():
     assert "assertion.repository == 'UstDoesTech/OpenLedgerKernel'" in doc
     assert not re.search(r"repo:UstDoesTech/OpenLedgerKernel:(\*|ref:|pull_request)", doc)
     assert "environment:*" not in doc and "repo:*" not in doc
+
+
+def test_values_that_identify_the_estate_are_secrets_never_variables():
+    for path in (PATH, WORKFLOWS / "publish-images.yml"):
+        code = re.sub(r"(?m)^\s*#.*$", "", path.read_text())
+        assert set(re.findall(r"vars\.(\w+)", code)) <= PLAIN_VARIABLES, path.name
+        for name in IDENTIFYING:
+            assert f"vars.{name}" not in code, f"{path.name}: {name} must be a secret"
+
+
+def test_secrets_are_not_used_in_conditions_they_cannot_reach():
+    # A step's `if:` cannot read the secrets context, so conditions use job-level flags.
+    for job in load()["jobs"].values():
+        for s in steps(job):
+            assert "secrets." not in str(s.get("if", "")), s.get("name")
+        for flag in ("HAS_AZURE", "HAS_GCP", "HAS_VAULT"):
+            assert job["env"][flag].startswith("${{ secrets.") and job["env"][flag].endswith("!= '' }}")
