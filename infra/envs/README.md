@@ -127,5 +127,17 @@ To publish the Postgres node image: run `publish-postgres-image` (it prints the 
 
 `europe/cells` makes one self-hosted PostgreSQL cell in each cloud for the tenant that `cell-first` is for: three nodes in three zones, running the node image as a container. Apply it after `cell-first`, once the Postgres image is published to the tenant's repositories (`publish-images` with `image` set to `postgres`). It makes no key, repository or identity: it uses the tenant's own from `cell-first`, and the private endpoints and DNS zones from `private-access` (`reuse_private_access`). It stops with a message if `cell-first` holds a different image digest from `infra/images.json`.
 
-Its sizes are proving sizes (shared-CPU: `t3.medium`, `Standard_B2s`, `e2-medium`) to keep the bill low. Delete the `machine_sizes` lines to use the module's own size table in production. Its outputs give each cell's private host, port and where its administrator's credential is held, never the credential. Managed cells (I-01vb) and Lakebase (I-01vc) follow.
+Its sizes are proving sizes (shared-CPU: `t3.medium`, `Standard_B2s`, `e2-medium`) to keep the bill low. Delete the `machine_sizes` lines to use the module's own size table in production. Its outputs give each cell's private host, port and where its administrator's credential is held, never the credential. A Lakebase form follows.
+
+### Managed cells
+
+Set `cell_kind` to `managed` to run each cloud's cell as the cloud's own PostgreSQL service instead (RDS Multi-AZ cluster, Azure zone-redundant flexible server, Cloud SQL regional instance). The default, `self_hosted`, leaves an applied layer unchanged. Changing the kind **replaces** each cell: the old form is destroyed and the new one made, and no data is carried across. Plan first and read it. The machine sizes above apply to self-hosted cells only. The managed services have no burstable form with standby (a Multi-AZ cluster, zone-redundant high availability and a regional instance all need general-purpose sizes), so a managed cell costs noticeably more than the self-hosted one. Pause or destroy it when you are not using it.
+
+Two things come with the managed kind. The layer makes Azure's private DNS zone for flexible servers (`modules/postgres/azure-dns`), and it lets Cloud SQL's service agent use the tenant's own key. The agent has to exist first. Create it once:
+
+```
+gcloud beta services identity create --service=sqladmin.googleapis.com --project=<project>
+```
+
+`deletion_protection` (true by default) stops a managed database being deleted. To destroy a proving environment, set it to `false`, apply, and then destroy.
 
