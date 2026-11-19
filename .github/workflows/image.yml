@@ -44,7 +44,7 @@ jobs:
   postgres:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the image
         run: docker build -f images/postgres/Dockerfile -t ledger-postgres:ci .
       - name: Scan the image for secrets
@@ -53,7 +53,7 @@ jobs:
           python3 scripts/scan_image_layers.py "$RUNNER_TEMP/image.tar"
       - name: Install the pinned toolchain
         run: rustup show active-toolchain || rustup toolchain install
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
