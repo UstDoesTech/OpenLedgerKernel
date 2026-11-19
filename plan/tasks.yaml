@@ -579,21 +579,23 @@ tasks:
   phase: P1
   workstream: K
   size: M
-  status: todo
+  status: in_progress
   depends_on:
   - K-14
   - S-05
   deliverables:
   - images/api
   - infra/modules/api
+  - infra/modules/api-boot
   - scripts/smoke_write.sh
   - docs/runbooks/first-entry.md
   acceptance:
   - An API image is built and published from the public repository by digest, by a workflow with the same
     guards as the Postgres image, and recorded in infra/images.json.
   - An infrastructure module runs the API next to each cell on all three clouds, private only, with a
-    machine identity that can read only its cell's database secret and nothing else, and tofu validate
-    passes in CI.
+    machine identity that can read only its cell's one API secret, which holds the database connection
+    string and the service's other secrets, decrypt with the tenant's key and pull the API image, and
+    nothing else, and tofu validate passes in CI.
   - scripts/smoke_write.sh opens two accounts, makes a transfer, repeats it and reads both balances back,
     and prints counts only, never an identifier or a balance.
   - docs/runbooks/first-entry.md takes a person from an applied environment to a first entry, and says

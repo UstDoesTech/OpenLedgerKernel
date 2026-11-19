@@ -253,7 +253,7 @@ flowchart LR
 | **K-11** Write path skeleton, the API service and opening accounts | Ledger kernel | K-03, K-08 | None | M | Agent | Done |
 | **K-12** Write path skeleton, transfers over HTTP | Ledger kernel | K-11, K-04, K-05 | None | M | Agent | Done |
 | **K-14** Write path skeleton, cells call each other for cross-cell transfers | Ledger kernel | K-12 | None | M | Agent | Done |
-| **K-13** Write path skeleton, run the API next to each cell | Ledger kernel | K-14, S-05 | None | M | Agent | To do |
+| **K-13** Write path skeleton, run the API next to each cell | Ledger kernel | K-14, S-05 | None | M | Agent | In progress |
 | **T-03** Randomised fault testing | Testing and fault injection | T-02 | None | M | Agent | Done |
 | **I-01a** Infrastructure code scaffold, CI checks and UK-region guard | Infrastructure | F-01 | None | M | Agent | Done |
 | **I-01g** Geo-aware region policy, starting with the UK geo | Infrastructure | I-01a | None | S | Agent | Done |
