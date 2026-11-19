@@ -478,7 +478,7 @@ tasks:
   phase: P1
   workstream: K
   size: M
-  status: todo
+  status: done
   depends_on:
   - K-03
   - K-08
@@ -490,8 +490,8 @@ tasks:
   - Every request carries a bearer token and the tenant comes only from the token, through an Authenticator
     trait with an in-memory implementation for tests and the proving environment. A tenant in a path or
     body is refused, and a token for one tenant never reads or writes another's accounts.
-  - POST /v1/accounts opens an account for the token's tenant with a currency, a kind and an overdraft
-    allowance, at its home cell and current epoch, and is safe to repeat with the same Idempotency-Key.
+  - POST /v1/accounts opens an account for the token's tenant with a currency and an overdraft
+    allowance (every account opened here is a customer account; kinds arrive with the product work), at its home cell and current epoch, and is safe to repeat with the same Idempotency-Key.
   - Errors are problem+json with a stable code for each refusal the kernel can give.
   - The service refuses to serve an account whose home is another cell or whose lease the guard cannot
     confirm, and says which, so a caller can go to the right place.
