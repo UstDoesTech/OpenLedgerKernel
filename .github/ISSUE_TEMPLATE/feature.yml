@@ -1,0 +1,18 @@
+name: Proposal
+description: A change you would like to see
+labels: [proposal]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public. No identifiers, plan output, keys or personal data. Changes must not weaken the guarantees in `CONTRIBUTING.md`: append-only entries, epoch fencing, idempotency, tenant isolation, no personal data in the ledger.
+  - type: textarea
+    id: need
+    attributes:
+      label: What you need to do, and why the kernel cannot do it now
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would change
