@@ -2,7 +2,7 @@ name: publish-postgres-image
 
 # Builds the Postgres node image from images/postgres and keeps it as a private package in
 # GitHub's container registry (docs/infrastructure.md). A person dispatches it from
-# main. It prints the image's digest, which then goes into infra/images.json (task I-01u).
+# main. It prints the image's digest, which then goes into infra/images.json.
 #
 # - It uses only the run's own token. No cloud credential, no stored key, and nothing is
 #   applied: it never touches a cloud and never runs tofu.

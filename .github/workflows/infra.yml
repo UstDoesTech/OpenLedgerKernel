@@ -1,8 +1,8 @@
 name: infra
 
 # Checks the OpenTofu code. It holds no cloud credentials and never runs tofu apply or tofu
-# plan against a real account: agents never apply, a person does (task I-01f), by hand or through
-# the separate, gated infra-apply.yml (task I-01m).
+# plan against a real account: agents never apply, a person does, by hand or through
+# the separate, gated infra-apply.yml (docs/credentialed-workflows.md).
 
 # Runs when the OpenTofu code or the region guard changes, once per change.
 on:

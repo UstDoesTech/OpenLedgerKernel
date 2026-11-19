@@ -1,0 +1,222 @@
+name: publish-images
+
+# Copies a container image named in infra/images.json into the clouds' private registries
+# (docs/credentialed-workflows.md). The image input says which: etcd (for the control plane) or
+# postgres (for the tenant's cells). Only the repository's owner may dispatch it, from main, and
+# a person must approve the `infra-apply` environment. Agents never dispatch it.
+#
+# This repository is public, so anyone can read this workflow's log. The registries' addresses
+# hold account and project identifiers, so each is masked before anything can print it, and the
+# commands that would print them have their output dropped.
+#
+# - etcd comes from upstream by its pinned digest. It is kept as a private package in GitHub's
+#   container registry. postgres is already that package (publish-postgres-image builds it).
+#   Either way it is copied from there to AWS, Azure and Google Cloud. Every copy
+#   keeps the digest, and the run fails unless each registry gives back exactly the pinned digest.
+# - No cloud secret is stored. Each cloud trusts GitHub's identity token for the environment.
+# - The Azure registry is private. For the run, this runner's own address is added to its firewall
+#   and the registry is made reachable, and a last step that always runs closes it again.
+# - It never runs tofu apply. It reads the repositories' addresses from a layer's state (outputs
+#   only): the registries layer for etcd, the cell layer for postgres.
+#
+# Third-party actions are pinned to a commit (the tag is in the comment).
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment under infra/envs whose registries layer has been applied"
+        required: true
+        type: string
+        default: europe
+      image:
+        description: "Which image to publish"
+        required: true
+        type: choice
+        options: [etcd, postgres]
+        default: etcd
+
+permissions:
+  contents: read
+
+# One run at a time. Never cancel a copy part-way.
+concurrency:
+  group: publish-images
+  cancel-in-progress: false
+
+env:
+  TOFU_VERSION: "1.10.0"
+
+jobs:
+  publish:
+    name: publish (needs approval)
+    if: github.ref == 'refs/heads/main' && github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: infra-apply
+    permissions:
+      contents: read
+      id-token: write # to ask GitHub for the identity token each cloud trusts
+      packages: write # to keep the private copy in GitHub's container registry
+    env:
+      INPUT_ENV: ${{ inputs.env }}
+      INPUT_IMAGE: ${{ inputs.image }}
+      STATE_KEY_NAME: ${{ vars.TOFU_STATE_KEY_NAME || 'key' }}
+      BACKEND_CONFIG: ${{ vars.TOFU_BACKEND_CONFIG }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check the inputs and read the manifest
+        run: |
+          set -euo pipefail
+          re='^[a-z][a-z0-9-]{0,30}$'
+          [[ "$INPUT_ENV" =~ $re ]] || { echo "::error::env must match $re"; exit 1; }
+          case "$INPUT_IMAGE" in
+            etcd)     layer=registries; output=etcd_repositories ;;
+            postgres) layer=cell-first; output=postgres_repositories ;;
+            *) echo "::error::image must be etcd or postgres"; exit 1 ;;
+          esac
+          [ -d "infra/envs/$INPUT_ENV/$layer" ] || { echo "::error::infra/envs/$INPUT_ENV/$layer does not exist"; exit 1; }
+          [ -n "$BACKEND_CONFIG" ] || { echo "::error::the variable TOFU_BACKEND_CONFIG is not set on this environment"; exit 1; }
+          {
+            echo "IMAGE_NAME=$INPUT_IMAGE"
+            echo "LAYER=$layer"
+            echo "OUTPUT_NAME=$output"
+          } >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import json, os, re
+          name = os.environ["INPUT_IMAGE"]
+          image = json.load(open("infra/images.json"))[name]
+          assert re.fullmatch(r"sha256:[0-9a-f]{64}", image["digest"]), "digest"
+          assert re.fullmatch(r"[a-z0-9.\-]+(:[0-9]+)?(/[a-z0-9._\-]+)+", image["source"]), "source"
+          if name == "etcd":
+              assert re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", image["tag"]), "tag"
+              tag = image["tag"]
+          else:
+              # Built here and kept in this repository's own package. No tag selects it.
+              assert set(image) == {"source", "digest"}, "postgres has a source and a digest only"
+              assert image["source"] == "ghcr.io/" + os.environ["GITHUB_REPOSITORY"].lower() + "/postgres", "source"
+              tag = "sha-" + image["digest"][len("sha256:"):][:12]
+          with open(os.environ["GITHUB_ENV"], "a") as out:
+              out.write(f"SOURCE={image['source']}\nTAG={tag}\nDIGEST={image['digest']}\n")
+          PY
+      - uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - name: AWS (federated)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 3600
+      - name: Azure (federated)
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Google Cloud (federated)
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - name: Find the repositories
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$BACKEND_CONFIG" > "$RUNNER_TEMP/backend.hcl"
+          printf '%s = "%s/%s"\n' "$STATE_KEY_NAME" "$INPUT_ENV" "$LAYER" >> "$RUNNER_TEMP/backend.hcl"
+          # Nothing tofu says reaches this log: it would show state paths and addresses.
+          tofu -chdir="infra/envs/$INPUT_ENV/$LAYER" init -no-color -input=false -backend-config="$RUNNER_TEMP/backend.hcl" > /dev/null 2>&1 \
+            || { echo "::error::tofu init failed. Run it by hand to see why."; exit 1; }
+          tofu -chdir="infra/envs/$INPUT_ENV/$LAYER" output -json "$OUTPUT_NAME" > "$RUNNER_TEMP/repositories.json" 2> /dev/null \
+            || { echo "::error::could not read the repositories from the layer's outputs"; exit 1; }
+          python3 - <<'PY'
+          import json, os, re
+          repos = json.load(open(os.environ["RUNNER_TEMP"] + "/repositories.json"))
+          pattern = r"[a-z0-9.\-]+(:[0-9]+)?(/[A-Za-z0-9._\-]+)+"
+          for cloud in ("aws", "azure", "gcp"):
+              assert re.fullmatch(pattern, repos[cloud]), cloud
+          azure_host = repos["azure"].split("/")[0]
+          assert azure_host.endswith(".azurecr.io"), azure_host
+          # Mask every identifier in the addresses before anything else can print one: the
+          # addresses, their hosts, the AWS account number, the registry's name and the project.
+          aws_host = repos["aws"].split("/")[0]
+          masks = set(repos.values()) | {aws_host, azure_host, repos["gcp"].split("/")[0]}
+          masks |= {aws_host.split(".")[0], azure_host.split(".")[0], repos["gcp"].split("/")[1]}
+          for value in masks:
+              print(f"::add-mask::{value}")
+          with open(os.environ["GITHUB_ENV"], "a") as out:
+              out.write(f"AWS_REPO={repos['aws']}\nAZURE_REPO={repos['azure']}\nGCP_REPO={repos['gcp']}\n")
+              out.write(f"ACR_NAME={azure_host[:-len('.azurecr.io')]}\n")
+          PY
+      - name: Open the Azure registry to this run
+        id: registry
+        run: |
+          set -euo pipefail
+          # The registry is private. This run's own address is added for the run and taken away
+          # again at the end (the last step), even if the run fails. The address is written to
+          # the output first, so a half-finished step is still closed.
+          ip=$(curl -fsS --max-time 20 https://api.ipify.org)
+          [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "::error::could not find this runner's address"; exit 1; }
+          echo "ip=$ip" >> "$GITHUB_OUTPUT"
+          az acr update --name "$ACR_NAME" --public-network-enabled true --default-action Deny --only-show-errors -o none
+          az acr network-rule add --name "$ACR_NAME" --ip-address "$ip/32" --only-show-errors -o none
+          sleep 45 # the firewall takes a short while to apply
+      - name: Copy the image and check every copy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AWS_REGION_NAME: ${{ vars.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          command -v skopeo >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+
+          GHCR="ghcr.io/${GITHUB_REPOSITORY,,}/$IMAGE_NAME"
+
+          printf '%s' "$GITHUB_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin > /dev/null
+          aws ecr get-login-password --region "$AWS_REGION_NAME" | skopeo login "${AWS_REPO%%/*}" -u AWS --password-stdin > /dev/null
+          token=$(az acr login --name "$ACR_NAME" --expose-token --output tsv --query accessToken)
+          echo "::add-mask::$token"
+          printf '%s' "$token" | skopeo login "${AZURE_REPO%%/*}" -u 00000000-0000-0000-0000-000000000000 --password-stdin > /dev/null
+          token=$(gcloud auth print-access-token)
+          echo "::add-mask::$token"
+          printf '%s' "$token" | skopeo login "${GCP_REPO%%/*}" -u oauth2accesstoken --password-stdin > /dev/null
+
+          # The digest of a manifest is the hash of its bytes, so it can be checked anywhere.
+          digest_of() { skopeo inspect --raw "docker://$1" | sha256sum | awk '{print "sha256:" $1}'; }
+
+          # The source must give back exactly the pinned digest.
+          [ "$(digest_of "$SOURCE@$DIGEST")" = "$DIGEST" ] || { echo "::error::the source does not match the pinned digest"; exit 1; }
+
+          copy() { # copy <from, by digest> <to, without tag>
+            local to="$2:$TAG"
+            if skopeo inspect --raw "docker://$to" > "$RUNNER_TEMP/existing.json" 2>/dev/null; then
+              have="sha256:$(sha256sum "$RUNNER_TEMP/existing.json" | cut -d' ' -f1)"
+              [ "$have" = "$DIGEST" ] || { echo "::error::$to already holds $have, not $DIGEST. Tags cannot change; bump the version in infra/images.json."; exit 1; }
+              echo "$to already holds the pinned digest"
+            else
+              skopeo copy --all --preserve-digests "docker://$1" "docker://$to" > /dev/null
+            fi
+            [ "$(digest_of "$to")" = "$DIGEST" ] || { echo "::error::$to does not hold the pinned digest"; exit 1; }
+          }
+
+          # etcd comes from upstream and is kept in our package first. postgres is that package.
+          if [ "$IMAGE_NAME" = etcd ]; then
+            copy "$SOURCE@$DIGEST" "$GHCR"
+          else
+            [ "$SOURCE" = "$GHCR" ] || { echo "::error::the postgres source must be $GHCR"; exit 1; }
+          fi
+          for dest in "$AWS_REPO" "$AZURE_REPO" "$GCP_REPO"; do
+            copy "$GHCR@$DIGEST" "$dest"
+          done
+          echo "All registries hold $SOURCE:$TAG at $DIGEST"
+      - name: Close the Azure registry again
+        if: always() && steps.registry.outputs.ip != ''
+        env:
+          RUNNER_IP: ${{ steps.registry.outputs.ip }}
+        run: |
+          az acr network-rule remove --name "$ACR_NAME" --ip-address "$RUNNER_IP/32" --only-show-errors -o none \
+            || echo "::warning::could not remove $RUNNER_IP from the registry's firewall. Remove it by hand."
+          az acr update --name "$ACR_NAME" --public-network-enabled false --only-show-errors -o none \
+            || echo "::warning::could not make the registry private again. Do it by hand."
