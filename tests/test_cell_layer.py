@@ -16,7 +16,7 @@ def src():
 def test_the_layer_is_for_one_tenant_whose_id_is_written_once():
     s = src()
     ids = set(re.findall(r"ten_[0-9a-z]+", s))
-    assert ids == {"ten_example"}, ids
+    assert ids == {"ten_bankofmumanddad"}, ids
     assert re.search(r'tenant\s*=\s*"ten_[0-9a-z]{1,24}"', s)
     assert len(re.findall(r'"ten_[0-9a-z]+"', s)) == 1
 
