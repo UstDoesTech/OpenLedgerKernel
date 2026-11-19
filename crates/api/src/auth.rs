@@ -103,6 +103,79 @@ impl Authenticator for StaticTokens {
     }
 }
 
+/// A cell calling another cell: which cell, and the tenants its credential covers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Peer {
+    pub cell: String,
+    pub tenants: Vec<TenantId>,
+}
+
+/// Turns the bearer credential of a call between cells into the cell that made it. A tenant token
+/// is never a credential here, and a credential is never a tenant token.
+pub trait PeerAuthenticator: Send + Sync {
+    fn authenticate(&self, token: &str) -> Option<Peer>;
+}
+
+/// A fixed list of cell credentials, kept as hashes like [`StaticTokens`]. For tests and the
+/// proving environment; a real credential service replaces it behind the same trait.
+#[derive(Debug, Default)]
+pub struct PeerTokens {
+    by_hash: HashMap<[u8; 32], Peer>,
+}
+
+impl PeerTokens {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds the credential of a cell, for the tenants it may act for.
+    pub fn with(
+        mut self,
+        token: &str,
+        cell: &str,
+        tenants: Vec<TenantId>,
+    ) -> Result<Self, TokenError> {
+        if token.len() < 32 {
+            return Err(TokenError::TooShort);
+        }
+        if tenants.is_empty() {
+            return Err(TokenError::Invalid("a credential covers a tenant".into()));
+        }
+        self.by_hash.insert(
+            hash(token),
+            Peer {
+                cell: cell.to_owned(),
+                tenants,
+            },
+        );
+        Ok(self)
+    }
+
+    /// Reads `[{"token": "...", "cell": "aws-lon-03", "tenants": ["ten_x"]}, ...]`.
+    pub fn from_json(text: &str) -> Result<Self, TokenError> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Entry {
+            token: String,
+            cell: String,
+            tenants: Vec<TenantId>,
+        }
+        let entries: Vec<Entry> =
+            serde_json::from_str(text).map_err(|e| TokenError::Invalid(e.to_string()))?;
+        let mut peers = PeerTokens::new();
+        for e in entries {
+            peers = peers.with(&e.token, &e.cell, e.tenants)?;
+        }
+        Ok(peers)
+    }
+}
+
+impl PeerAuthenticator for PeerTokens {
+    fn authenticate(&self, token: &str) -> Option<Peer> {
+        self.by_hash.get(&hash(token)).cloned()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

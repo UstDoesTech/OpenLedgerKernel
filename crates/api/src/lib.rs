@@ -1,7 +1,8 @@
 //! The ledger's HTTP API, run next to its own cell.
 //!
-//! This is the thin write path (tasks K-11 to K-13): opening accounts and reading them back
-//! now, transfers next. It stands on the kernel (`ledger-store`) and the control plane, and it
+//! This is the thin write path (tasks K-11 to K-14): opening accounts, reading them back and
+//! transfers, within a cell and between cells. A cell never touches another cell's database: it
+//! asks that cell's service, on the internal listener. It stands on the kernel (`ledger-store`) and the control plane, and it
 //! stands in for the command API until the command catalogue, the simulate-and-commit engine and
 //! real sign-in (A-01 to A-06) replace its pieces one at a time.
 //!
@@ -18,5 +19,9 @@
 mod app;
 pub mod auth;
 pub mod error;
+mod internal;
+pub mod peer;
+pub mod tls;
 
 pub use app::{AppState, ROUTES, router};
+pub use internal::{INTERNAL_ROUTES, internal_router};
