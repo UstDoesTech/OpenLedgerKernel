@@ -187,15 +187,30 @@ resource "aws_instance" "node" {
     kms_key_id = var.kms_key_arn
   }
 
-  ebs_block_device {
-    device_name = "/dev/sdf"
-    volume_type = "gp3"
-    volume_size = var.storage_gb
-    encrypted   = true
-    kms_key_id  = var.kms_key_arn
-  }
-
   lifecycle {
     ignore_changes = [ami, user_data]
   }
+}
+
+# The data disk is its own resource, as on Azure and Google, so replacing a machine to roll a new
+# node image keeps the disk. The machine's boot finds it by size and mounts it; if the disk
+# arrives after the machine starts, the node's own restart picks it up.
+resource "aws_ebs_volume" "data" {
+  count = 3
+
+  availability_zone = aws_instance.node[count.index].availability_zone
+  type              = "gp3"
+  size              = var.storage_gb
+  encrypted         = true
+  kms_key_id        = var.kms_key_arn
+  tags              = merge(var.tags, { Name = "${local.names[count.index]}-data" })
+}
+
+resource "aws_volume_attachment" "data" {
+  count = 3
+
+  device_name                    = "/dev/sdf"
+  volume_id                      = aws_ebs_volume.data[count.index].id
+  instance_id                    = aws_instance.node[count.index].id
+  stop_instance_before_detaching = true
 }
