@@ -6,6 +6,7 @@ Step-by-step guides for running the infrastructure from this repository. They co
 | --- | --- |
 | [First run](first-run.md) | You are setting up a new environment, or a new person is taking over |
 | [Troubleshooting plans and applies](troubleshooting.md) | A run failed, or a plan shows something you did not expect |
+| [Rolling a new node image](rolling-the-node-image.md) | `infra/images.json` has a new digest and the running machines still use the old one |
 | [Pausing for cost](pausing-for-cost.md) | You want the proving environment to stop costing money for a while |
 | [Rotating the VPN pre-shared key](rotating-vpn-key.md) | A key was shown anywhere it should not have been, or on your own schedule |
 | [Credentialed workflows](../credentialed-workflows.md) | You need the settings, trust policies and roles in full |
