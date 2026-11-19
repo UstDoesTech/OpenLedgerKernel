@@ -133,21 +133,73 @@ def test_both_jobs_check_the_address_and_pass_it_through_the_environment_only():
     for name, job in jobs().items():
         assert job["env"]["INPUT_REPLACE"] == "${{ inputs.replace }}", name
         check = next(s for s in job["steps"] if s.get("name") == "Check the inputs")["run"]
-        assert 'replace_guard.py address "$INPUT_REPLACE"' in check, name
+        assert 'replace_guard.py addresses "$INPUT_REPLACE"' in check, name
 
 
 def test_both_plans_use_the_same_replace_argument():
     for name, key in (("plan", "Plan"), ("apply", "Plan again and check it is the plan that was shown")):
         run = next(s for s in jobs()[name]["steps"] if s.get("name") == key)["run"]
-        assert '-replace=$INPUT_REPLACE' in run and '"${replace_args[@]}"' in run, name
+        assert 'first="${INPUT_REPLACE%%,*}"' in run, name
+        assert '-replace=$first' in run and '"${replace_args[@]}"' in run, name
 
 
 def test_the_plan_is_checked_before_it_is_fingerprinted():
     run = next(s for s in jobs()["plan"]["steps"] if s.get("name") == "Plan")["run"]
-    guard_at = run.index('replace_guard.py plan "$INPUT_REPLACE" "$RUNNER_TEMP/plan.json"')
+    guard_at = run.index('replace_guard.py plan "$first" "$RUNNER_TEMP/plan.json"')
     assert run.index("plan-json") < guard_at < run.index("sha256sum")
 
 
 def test_the_owner_reviews_the_guard():
     owners = (ROOT / ".github" / "CODEOWNERS").read_text()
     assert re.search(r"(?m)^/scripts/replace_guard\.py\s+@UstDoesTech$", owners)
+
+
+# Rolling several machines.
+CELL = "module.cell_aws.module.aws_self_hosted[0]"
+
+
+def test_one_to_three_machines_of_one_cell_are_accepted():
+    for n in (1, 2, 3):
+        assert guard.valid_addresses(",".join(f"{CELL}.aws_instance.node[{i}]" for i in range(n)))
+
+
+@pytest.mark.parametrize("text", [
+    "",
+    ",",
+    f"{CELL}.aws_instance.node[0],{CELL}.aws_instance.node[0]",  # repeated
+    ",".join(f"{CELL}.aws_instance.node[{i}]" for i in range(4)),  # four
+    f"{CELL}.aws_instance.node[0],module.other.aws_instance.node[1]",  # two cells
+    f"{CELL}.aws_instance.node[0], {CELL}.aws_instance.node[1]",  # a space
+    f"{CELL}.aws_instance.node[0],aws_ebs_volume.data[1]",
+    f"{CELL}.aws_instance.node[0],{CELL}.aws_instance.node",
+])
+def test_other_lists_are_refused(text):
+    assert not guard.valid_addresses(text)
+
+
+def test_the_rolling_steps_are_in_the_workflow():
+    apply = {s["name"]: s for s in jobs()["apply"]["steps"] if "name" in s}
+    plan = {s["name"]: s for s in jobs()["plan"]["steps"] if "name" in s}
+    later = plan["Plan the rest of the roll"]
+    assert later["if"] == "contains(env.INPUT_REPLACE, ',')"
+    assert 'replace_guard.py plan "$a"' in later["run"]
+    assert jobs()["plan"]["outputs"]["later_shas"] == "${{ steps.later.outputs.later_shas }}"
+    roll = apply["Roll the remaining machines, one at a time"]["run"]
+    # Each later machine: plan again, compare with what was shown, check, apply, wait for health.
+    order = ['"replan-$n"', 'replace_guard.py plan "$a"', 'if [ "$sha" != "${reviewed[$((n - 1))]}" ]', '"apply-$n"', "roll_gate.py"]
+    positions = [roll.index(x) for x in order]
+    assert positions == sorted(positions)
+    assert "exit 1" in roll
+    first = apply["Wait for the machine to be healthy"]["run"]
+    assert "roll_gate.py" in first
+    names = list(apply)
+    assert names.index("Apply the saved plan") < names.index("Wait for the machine to be healthy") < names.index(
+        "Roll the remaining machines, one at a time") < names.index("Keep the logs in the plan store")
+
+
+def test_the_settle_time_is_a_small_whole_number_checked_before_use():
+    wf = yaml.safe_load(WORKFLOW.read_text())
+    assert wf.get("on", wf.get(True))["workflow_dispatch"]["inputs"]["settle_minutes"]["default"] == "10"
+    check = next(s for s in jobs()["apply"]["steps"] if s.get("name") == "Check the inputs")["run"]
+    assert '[[ "$INPUT_SETTLE" =~ ^[0-9]{1,2}$ ]]' in check and '-le 30' in check
+    assert jobs()["apply"]["env"]["INPUT_SETTLE"] == "${{ inputs.settle_minutes }}"

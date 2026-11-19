@@ -34,9 +34,14 @@ on:
         required: true
         type: string
       replace:
-        description: "Optional. Replace one machine (a node or member, with its index), keeping its data disk. Leave empty for a normal run."
+        description: "Optional. Roll up to three machines of one cell, in order, comma-separated (a node or member with its index), keeping their data disks. Leave empty for a normal run."
         required: false
         default: ""
+        type: string
+      settle_minutes:
+        description: "Minutes to wait after each rolled machine is healthy, before the next (0 to 30)."
+        required: false
+        default: "10"
         type: string
       action:
         description: "plan shows the counts. apply plans, waits for approval, then applies."
@@ -69,6 +74,7 @@ jobs:
       id-token: write # to ask GitHub for the identity token each cloud trusts
     outputs:
       plan_sha: ${{ steps.plan.outputs.plan_sha }}
+      later_shas: ${{ steps.later.outputs.later_shas }}
     env:
       INPUT_ENV: ${{ inputs.env }}
       INPUT_LAYER: ${{ inputs.layer }}
@@ -90,7 +96,7 @@ jobs:
           re='^[a-z][a-z0-9-]{0,30}$'
           [[ "$INPUT_ENV" =~ $re ]] || { echo "::error::env must match $re"; exit 1; }
           [[ "$INPUT_LAYER" =~ $re ]] || { echo "::error::layer must match $re"; exit 1; }
-          if [ -n "$INPUT_REPLACE" ]; then python3 scripts/replace_guard.py address "$INPUT_REPLACE"; fi
+          if [ -n "$INPUT_REPLACE" ]; then python3 scripts/replace_guard.py addresses "$INPUT_REPLACE"; fi
           dir="infra/envs/$INPUT_ENV/$INPUT_LAYER"
           [ -d "$dir" ] || { echo "::error::$dir does not exist"; exit 1; }
           [ -f "infra/envs/$INPUT_ENV/deployment.json" ] || { echo "::error::infra/envs/$INPUT_ENV/deployment.json is missing"; exit 1; }
@@ -166,12 +172,13 @@ jobs:
         run: |
           set -euo pipefail
           # Read-only: no state lock. Nothing tofu says reaches this log.
+          first="${INPUT_REPLACE%%,*}"
           replace_args=()
-          if [ -n "$INPUT_REPLACE" ]; then replace_args+=("-replace=$INPUT_REPLACE"); fi
+          if [ -n "$first" ]; then replace_args+=("-replace=$first"); fi
           scripts/quiet.sh plan tofu -chdir="$ROOT" plan -no-color -input=false -lock=false -out="$RUNNER_TEMP/tfplan" "${replace_args[@]}"
           scripts/quiet.sh plan-text bash -c 'tofu -chdir="$ROOT" show -no-color "$RUNNER_TEMP/tfplan" > "$LOG_DIR/plan.txt"'
           scripts/quiet.sh plan-json bash -c 'tofu -chdir="$ROOT" show -json "$RUNNER_TEMP/tfplan" > "$RUNNER_TEMP/plan.json"'
-          if [ -n "$INPUT_REPLACE" ]; then python3 scripts/replace_guard.py plan "$INPUT_REPLACE" "$RUNNER_TEMP/plan.json"; fi
+          if [ -n "$first" ]; then python3 scripts/replace_guard.py plan "$first" "$RUNNER_TEMP/plan.json"; fi
           sha=$(sha256sum "$LOG_DIR/plan.txt" | cut -d' ' -f1)
           echo "plan_sha=$sha" >> "$GITHUB_OUTPUT"
           {
@@ -183,6 +190,35 @@ jobs:
             echo
             echo "Run $GITHUB_RUN_ID. Read the plan in the private plan store, under this run's id, before you approve an apply."
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Plan the rest of the roll
+        id: later
+        if: contains(env.INPUT_REPLACE, ',')
+        run: |
+          set -euo pipefail
+          # Each later machine is planned now, against the state as it is, so the approver sees
+          # and fingerprints every step. The apply job plans each again, just before it applies it.
+          IFS=',' read -ra addrs <<< "$INPUT_REPLACE"
+          shas=""
+          for n in "${!addrs[@]}"; do
+            [ "$n" -ge 1 ] || continue
+            a="${addrs[$n]}"
+            export n
+            scripts/quiet.sh "plan-$n" tofu -chdir="$ROOT" plan -no-color -input=false -lock=false -out="$RUNNER_TEMP/tfplan-$n" "-replace=$a"
+            scripts/quiet.sh "plan-text-$n" bash -c 'tofu -chdir="$ROOT" show -no-color "$RUNNER_TEMP/tfplan-$n" > "$LOG_DIR/plan-$n.txt"'
+            scripts/quiet.sh "plan-json-$n" bash -c 'tofu -chdir="$ROOT" show -json "$RUNNER_TEMP/tfplan-$n" > "$RUNNER_TEMP/roll-$n.json"'
+            python3 scripts/replace_guard.py plan "$a" "$RUNNER_TEMP/roll-$n.json"
+            sha=$(sha256sum "$LOG_DIR/plan-$n.txt" | cut -d' ' -f1)
+            shas="${shas:+$shas,}$sha"
+            {
+              echo
+              echo "### Machine $((n + 1)) of ${#addrs[@]} in the roll"
+              echo
+              python3 scripts/plan_counts.py "$RUNNER_TEMP/roll-$n.json"
+              echo
+              echo "Plan fingerprint: \`$sha\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "later_shas=$shas" >> "$GITHUB_OUTPUT"
       - name: Keep the logs in the plan store
         if: always()
         run: scripts/keep_logs.sh plan
@@ -218,6 +254,8 @@ jobs:
       HAS_GCP: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
       HAS_VAULT: ${{ secrets.AZURE_KEY_VAULT_NAME != '' }}
       REVIEWED_PLAN_SHA: ${{ needs.plan.outputs.plan_sha }}
+      REVIEWED_LATER_SHAS: ${{ needs.plan.outputs.later_shas }}
+      INPUT_SETTLE: ${{ inputs.settle_minutes }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -228,7 +266,7 @@ jobs:
           re='^[a-z][a-z0-9-]{0,30}$'
           [[ "$INPUT_ENV" =~ $re ]] || { echo "::error::env must match $re"; exit 1; }
           [[ "$INPUT_LAYER" =~ $re ]] || { echo "::error::layer must match $re"; exit 1; }
-          if [ -n "$INPUT_REPLACE" ]; then python3 scripts/replace_guard.py address "$INPUT_REPLACE"; fi
+          if [ -n "$INPUT_REPLACE" ]; then python3 scripts/replace_guard.py addresses "$INPUT_REPLACE"; fi
           dir="infra/envs/$INPUT_ENV/$INPUT_LAYER"
           [ -d "$dir" ] || { echo "::error::$dir does not exist"; exit 1; }
           [ -f "infra/envs/$INPUT_ENV/deployment.json" ] || { echo "::error::infra/envs/$INPUT_ENV/deployment.json is missing"; exit 1; }
@@ -236,6 +274,7 @@ jobs:
           [[ "$PLAN_STORE" =~ ^s3://[a-z0-9.-]+(/[A-Za-z0-9._/-]*)?$ ]] || { echo "::error::the variable PLAN_STORE must be an s3:// address on this environment"; exit 1; }
           [ -n "$AWS_ROLE_ARN" ] || { echo "::error::the plan store is in AWS, so AWS_ROLE_ARN must be set on this environment"; exit 1; }
           [ -n "$REVIEWED_PLAN_SHA" ] || { echo "::error::the plan job gave no fingerprint"; exit 1; }
+          [[ "$INPUT_SETTLE" =~ ^[0-9]{1,2}$ ]] && [ "$INPUT_SETTLE" -le 30 ] || { echo "::error::settle_minutes must be a whole number from 0 to 30"; exit 1; }
           echo "ROOT=$dir" >> "$GITHUB_ENV"
           echo "LOG_DIR=$RUNNER_TEMP/logs" >> "$GITHUB_ENV"
       - name: Region guard
@@ -303,8 +342,9 @@ jobs:
       - name: Plan again and check it is the plan that was shown
         run: |
           set -euo pipefail
+          first="${INPUT_REPLACE%%,*}"
           replace_args=()
-          if [ -n "$INPUT_REPLACE" ]; then replace_args+=("-replace=$INPUT_REPLACE"); fi
+          if [ -n "$first" ]; then replace_args+=("-replace=$first"); fi
           scripts/quiet.sh replan tofu -chdir="$ROOT" plan -no-color -input=false -out="$RUNNER_TEMP/tfplan" "${replace_args[@]}"
           scripts/quiet.sh replan-text bash -c 'tofu -chdir="$ROOT" show -no-color "$RUNNER_TEMP/tfplan" > "$LOG_DIR/plan.txt"'
           sha=$(sha256sum "$LOG_DIR/plan.txt" | cut -d' ' -f1)
@@ -319,6 +359,38 @@ jobs:
           # final line, which is made of numbers, is printed.
           scripts/quiet.sh apply tofu -chdir="$ROOT" apply -no-color -input=false "$RUNNER_TEMP/tfplan"
           grep -m1 -E '^Apply complete! Resources: [0-9]+ added, [0-9]+ changed, [0-9]+ destroyed\.$' "$LOG_DIR/apply.log" || true
+      - name: Wait for the machine to be healthy
+        if: env.INPUT_REPLACE != ''
+        run: |
+          set -euo pipefail
+          first="${INPUT_REPLACE%%,*}"
+          scripts/quiet.sh state-json-0 bash -c 'tofu -chdir="$ROOT" show -json > "$RUNNER_TEMP/state.json"'
+          python3 scripts/roll_gate.py "$first" "$RUNNER_TEMP/state.json" --settle-minutes "$INPUT_SETTLE"
+      - name: Roll the remaining machines, one at a time
+        if: contains(env.INPUT_REPLACE, ',')
+        run: |
+          set -euo pipefail
+          # Each machine is planned again just before it is applied. If the plan is not the one
+          # the approver saw, or a machine is not healthy afterwards, the roll stops there.
+          IFS=',' read -ra addrs <<< "$INPUT_REPLACE"
+          IFS=',' read -ra reviewed <<< "$REVIEWED_LATER_SHAS"
+          for n in "${!addrs[@]}"; do
+            [ "$n" -ge 1 ] || continue
+            a="${addrs[$n]}"
+            export n
+            scripts/quiet.sh "replan-$n" tofu -chdir="$ROOT" plan -no-color -input=false -out="$RUNNER_TEMP/tfplan-$n" "-replace=$a"
+            scripts/quiet.sh "replan-text-$n" bash -c 'tofu -chdir="$ROOT" show -no-color "$RUNNER_TEMP/tfplan-$n" > "$LOG_DIR/plan-$n.txt"'
+            scripts/quiet.sh "replan-json-$n" bash -c 'tofu -chdir="$ROOT" show -json "$RUNNER_TEMP/tfplan-$n" > "$RUNNER_TEMP/roll-$n.json"'
+            python3 scripts/replace_guard.py plan "$a" "$RUNNER_TEMP/roll-$n.json"
+            sha=$(sha256sum "$LOG_DIR/plan-$n.txt" | cut -d' ' -f1)
+            if [ "$sha" != "${reviewed[$((n - 1))]}" ]; then
+              echo "::error::The plan for machine $((n + 1)) changed since it was shown. The roll stopped before it. Earlier machines were rolled and checked."
+              exit 1
+            fi
+            scripts/quiet.sh "apply-$n" tofu -chdir="$ROOT" apply -no-color -input=false "$RUNNER_TEMP/tfplan-$n"
+            scripts/quiet.sh "state-json-$n" bash -c 'tofu -chdir="$ROOT" show -json > "$RUNNER_TEMP/state.json"'
+            python3 scripts/roll_gate.py "$a" "$RUNNER_TEMP/state.json" --settle-minutes "$INPUT_SETTLE"
+          done
       - name: Keep the logs in the plan store
         if: always()
         run: scripts/keep_logs.sh apply

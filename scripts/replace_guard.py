@@ -2,6 +2,7 @@
 """Guards for replacing one machine through the infra-apply workflow.
 
   replace_guard.py address <address>   Is this the address of one machine, and nothing else?
+  replace_guard.py addresses <a,b,c>   Up to three machines of one cell, each one machine, no repeats.
   replace_guard.py plan <address> <plan.json>
                                        Does the plan replace that machine, keep every data disk
                                        and delete nothing else?
@@ -28,6 +29,16 @@ ADDRESS = re.compile(
 
 def valid_address(address: str) -> bool:
     return bool(ADDRESS.fullmatch(address))
+
+
+def valid_addresses(text: str) -> bool:
+    parts = text.split(",")
+    if not 1 <= len(parts) <= 3 or len(set(parts)) != len(parts):
+        return False
+    if not all(valid_address(a) for a in parts):
+        return False
+    # One cell per run: the machines share everything but their index.
+    return len({a.rsplit("[", 1)[0] for a in parts}) == 1
 
 
 def check_plan(address: str, plan: dict) -> str | None:
@@ -59,6 +70,12 @@ def main(argv: list) -> int:
             print("::error::the address to replace must be one machine: a node or member of an "
                   "instance or virtual machine resource, with its index")
             return 1
+        if len(argv) == 3 and argv[1] == "addresses":
+            if valid_addresses(argv[2]):
+                return 0
+            print("::error::replace takes one to three machines of one cell, separated by commas, "
+                  "each with its index and none repeated")
+            return 1
         if len(argv) == 4 and argv[1] == "plan":
             with open(argv[3], encoding="utf-8") as f:
                 reason = check_plan(argv[2], json.load(f))
@@ -69,7 +86,7 @@ def main(argv: list) -> int:
     except Exception:  # never echo the contents or the exception text
         print("::error::could not check the replacement plan")
         return 1
-    print("usage: replace_guard.py address <address> | plan <address> <plan.json>", file=sys.stderr)
+    print("usage: replace_guard.py address <address> | addresses <a,b,c> | plan <address> <plan.json>", file=sys.stderr)
     return 2
 
 

@@ -27,11 +27,14 @@ What the workflows cannot promise: the sign-in actions (`azure/login`, `google-g
 
 Agents never dispatch these workflows and never hold these roles.
 
-## Replacing one machine
+## Replacing machines
 
-`infra-apply` has an optional `replace` input for rolling a new node image (see [Rolling a new node image](runbooks/rolling-the-node-image.md)). It takes the address of **one** machine: a `node` or `member` of an instance or virtual machine resource, with its index, such as `module.<name>.aws_instance.node[1]`. A pattern, a list, a resource without an index or anything else is refused before tofu runs (`scripts/replace_guard.py`).
+`infra-apply` has an optional `replace` input for rolling a new node image (see [Rolling a new node image](runbooks/rolling-the-node-image.md)). It takes one to three machines of **one cell**, in order, separated by commas. Each is a `node` or `member` of an instance or virtual machine resource, with its index, such as `module.<name>.aws_instance.node[1]`. A pattern, a resource without an index, a repeat, machines of two cells, more than three, or anything else is refused before tofu runs (`scripts/replace_guard.py`).
 
-The plan job then refuses a plan that deletes a data disk, deletes anything except the machine and its disk attachment, or replaces any other machine. The approved fingerprint covers the replacement, and the apply job plans again with the same address and compares. A replacement of that kind is one apply: the disk is detached (on AWS the machine is stopped first), the machine is replaced, and the same disk is attached to the new machine. Replace one machine per run, and check the cell is healthy between runs.
+- Every machine is planned in the plan job, each plan is refused if it deletes a data disk, deletes anything except that machine and its disk attachment, or replaces any other machine, and each plan's fingerprint is in the summary.
+- One approval covers the roll. The apply job applies the first saved plan. Before each later machine it plans again with the same address and stops if the fingerprint is not the one shown.
+- After each machine, `scripts/roll_gate.py` asks the cloud whether it is running, passes the cloud's checks (AWS) and has its data disk attached, then waits `settle_minutes` (0 to 30, default 10). It stops the roll at the first failure.
+- The gate runs from a public runner, so it cannot see inside the private networks. It does not prove a node has caught up. Its output holds no identifiers.
 
 ## One-time setup
 

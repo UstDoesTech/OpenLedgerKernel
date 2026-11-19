@@ -8,23 +8,29 @@ A digest change plans one update, to `terraform_data.image`, and nothing else. T
 
 A plan to change a digest that shows machines or disks being **replaced** is wrong. Do not apply it. See [Troubleshooting](troubleshooting.md).
 
-## One thing is not ready yet
+## What the workflow does for you
 
-**The workflow cannot replace one machine.** `infra-apply` plans and applies a whole layer. There is no input for a single resource to replace, and an agent must never run `tofu` against a real account. Until an input is added (a change to a credentialed workflow, so it needs the owner's review), a rollout cannot be started from the workflow. Do not work around this by running `tofu apply -replace` from a laptop against shared state without the owner's say.
+`infra-apply` has a `replace` input. Give it one to three machines of **one cell**, in the order to roll them, separated by commas. Each is a node or member with its index, such as `module.<name>.aws_instance.node[1]`. (The address is in the plan you read for the layer. It is not secret, but do not paste it into public places.)
 
-The data disks are ready. On all three clouds, for both the Postgres nodes and the etcd members, the data disk is its own resource, so replacing a machine keeps it. If a cell was created before that change, apply the layer first and read the plan: the old inline AWS disks are destroyed and new volumes created, which is safe only while the cell holds no data worth keeping.
+- Every machine is planned and fingerprinted before you approve, and you approve the whole roll once.
+- Each machine is then replaced in turn: its disk is detached (on AWS the machine is stopped first), the machine is replaced, and the same disk is attached to the new machine. Just before each later machine, the plan is made again and must match the one you saw.
+- After each machine, the workflow asks the cloud whether it is running, passes the cloud's own checks (AWS) and has its data disk attached. Then it waits the `settle_minutes` you set (default 10, at most 30) before the next machine.
+- It stops at the first failure and says which step. Machines after that one are not touched.
 
-## When the workflow can replace a machine
+**What it cannot check.** The runners cannot reach the private networks, so the workflow does not know the node's service is running or has caught up with its peers. A longer settle time is not a proof of that. Until the nodes publish their own health, you check the cell yourself between roll runs, and roll **one machine per run** when a cell has anything to lose.
 
-Do one machine at a time, and one cloud at a time.
+The data disks are their own resource on all three clouds, for the Postgres nodes and the etcd members, so a replaced machine keeps its disk. A cell made before that change still has its old inline AWS disk: see [Moving an AWS data disk out of the machine](troubleshooting.md#moving-an-aws-data-disk-out-of-the-machine) first.
+
+## Rolling a cell
 
 1. Read the plan for the digest change. Expect `terraform_data.image` to update and nothing else. Apply it.
 2. Check the whole cell is healthy before you start: all three nodes up, replication caught up, no promotion under way. Stop if it is not.
-3. Replace the first machine only. Read the plan: one machine and its disk attachment replaced, and no disk deleted. The order is: detach the disk (on AWS the machine is stopped first), replace the machine, attach the same disk to the new one. On Google the disk is attached as part of the machine.
-4. Wait for the node to start the new image and to catch up. Check its running digest is the new one.
-5. Check the cell again, then move to the next machine. Never replace two machines of one cell together.
-6. After the last machine, plan the layer again and expect `0 to change`.
+3. Order the machines. Roll the standbys first and the primary last, and promote a standby before you roll the primary (promotion is manual, with no automatic failover). etcd members are equal: roll one at a time and keep two running.
+4. Dispatch `infra-apply` for the layer with `replace` and `settle_minutes`, action `plan`. Read the plan in the plan store. Each machine's counts are in the run summary: one machine and its disk attachment replaced, and no disk deleted.
+5. Dispatch it again with action `apply` and approve it.
+6. When it finishes, check the cell is healthy and that each node runs the new digest.
+7. Plan the layer again and expect `0 to change`.
 
 ## If something goes wrong
 
-Stop. Do not replace the next machine. A replaced node that does not recover is one of three, so the cell keeps working while you look. Keep logs out of public places, as everywhere else in these runbooks.
+Stop. The workflow has already stopped. Do not start the next machine by hand. A replaced node that does not recover is one of three, so the cell keeps working while you look. Keep logs out of public places, as everywhere else in these runbooks.
