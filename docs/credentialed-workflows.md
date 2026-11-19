@@ -100,6 +100,22 @@ The `infra-plan` role's last line ends `:environment:infra-plan`. **Check which 
 2. For each, Federated credentials, "GitHub Actions deploying Azure resources": organisation `UstDoesTech`, repository `OpenLedgerKernel`, entity type **Environment**, name `infra-plan` or `infra-apply`. The subject is `repo:UstDoesTech/OpenLedgerKernel:environment:infra-apply`. If the repository sends the immutable subject, choose "Other issuer" and type the subject by hand, as under AWS. The issuer is `https://token.actions.githubusercontent.com` and the audience `api://AzureADTokenExchange`.
 3. Role assignments on the subscription. `infra-plan`: `Reader` and `Storage Blob Data Reader` on the state container, plus `Storage Queue Data Reader` and `Storage Blob Data Reader` on the subscription (the `network` layer reads the flow-log storage account through Microsoft Entra ID, never with an account key, so the plan identity needs no `listKeys`). `infra-apply`: `Contributor`, `User Access Administrator` and `Storage Blob Data Contributor` on the state container, plus `Storage Queue Data Contributor` and `Storage Blob Data Contributor` on the subscription. For `publish-images`, the applying identity also needs `AcrPush` on the registry.
 
+#### The VPN shared key (the `interconnect` layer)
+
+Refreshing the VPN connections makes the provider read each connection's pre-shared key. A plain `Reader` is refused, and Azure answers with a 500 (`retrieving Shared Key for Connection ... InternalServerError`) rather than a 403. Give the `infra-plan` identity this narrow custom role on the resource group that holds the connections (the `infra-apply` identity's `Contributor` already covers it):
+
+```
+az role definition create --role-definition '{
+  "Name": "VPN shared key reader",
+  "Description": "Read VPN connection shared keys so tofu plan can refresh connections",
+  "Actions": ["Microsoft.Network/connections/sharedKey/action", "Microsoft.Network/connections/sharedKey/read"],
+  "AssignableScopes": ["/subscriptions/<subscription id>/resourceGroups/<resource group>"]}'
+az role assignment create --assignee <infra-plan client id> --role "VPN shared key reader" \
+  --scope /subscriptions/<subscription id>/resourceGroups/<resource group>
+```
+
+This lets the plan identity read the VPN keys, which the apply identity and the `TF_VAR_` secret already hold. The plan job runs only on `main`, only for the owner, in an environment limited to `main`. Role changes take a few minutes. Never paste `az network vpn-connection shared-key show` output anywhere public.
+
 #### The Azure Key Vault and the runs
 
 The Key Vault from `infra/envs/europe/private-access` keeps its firewall on **Deny**. A run adds its own address (one host, `/32`) to the vault's firewall, plans or applies, and a last step that always runs removes it, even after a failure. If the removal fails, the run warns, and you remove the address by hand (`az keyvault network-rule remove`). Give each identity these roles **on the vault only**:
