@@ -542,7 +542,7 @@ impl ControlPlane for EtcdControlPlane {
         for fence in history {
             let _ = tx.send(Ok(fence));
         }
-        let (watcher, mut stream) = self
+        let mut stream = self
             .client
             .clone()
             .watch(
@@ -556,7 +556,7 @@ impl ControlPlane for EtcdControlPlane {
             .await
             .map_err(unavailable)?;
         let task = tokio::spawn(async move {
-            let _watcher = watcher; // dropping it would cancel the watch
+            // The stream owns the watch: it lives as long as this task does.
             loop {
                 match stream.message().await {
                     Ok(Some(resp)) => {
