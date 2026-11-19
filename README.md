@@ -14,7 +14,7 @@ Each account has one home cell at a time, fenced by an epoch. Entries are append
 | `images/postgres/`, `infra/` | A Postgres node image, and OpenTofu modules and layers that build the three-cloud architecture: networks, encrypted links, a five-member control plane and a database cell on each cloud |
 | `deploy/`, `compose.yaml`, `dev/` | Local three-node environment with fault injection (`make up`) and Kubernetes manifests |
 
-Start with [`docs/design.md`](docs/design.md), then [`docs/api-design.md`](docs/api-design.md). To run it across three clouds, see [`docs/infrastructure.md`](docs/infrastructure.md).
+Start with [`docs/design.md`](docs/design.md), then [`docs/api-design.md`](docs/api-design.md). To run it across three clouds, see [`docs/infrastructure.md`](docs/infrastructure.md) and the [runbooks](docs/runbooks/README.md).
 
 ## How it hangs together
 

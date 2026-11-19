@@ -23,10 +23,12 @@ Destroy in the reverse order. The VPN gateways in `interconnect` and the private
 You need credentials for the three clouds, an S3 bucket for state, and the images published (see below). From a layer's directory:
 
 ```
-tofu init -backend-config="bucket=<state bucket>" -backend-config="key=<env>/<layer>.tfstate" -backend-config="region=<region>"
+tofu init -backend-config="bucket=<state bucket>" -backend-config="key=<env>/<layer>" -backend-config="region=<region>"
 tofu plan -out plan.tfplan
 tofu apply plan.tfplan
 ```
+
+The state path `<env>/<layer>` (no extension) is the one the `infra-apply` workflow uses, so state is the same whichever way you apply.
 
 Secrets (the VPN pre-shared key, the administrator's SSH key) are passed as `TF_VAR_*` environment variables and never written to files. Read the plan before you apply it. Changing the kind of a cell replaces it.
 
