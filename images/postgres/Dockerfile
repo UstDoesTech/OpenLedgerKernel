@@ -7,7 +7,7 @@
 # the agent at /usr/local/bin/ledger-node. What it never holds: a password, a key or a
 # certificate. Those are mounted when the container starts (see images/postgres/README.md).
 
-FROM rust:1.97-bookworm AS build
+FROM rust:1.100-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
