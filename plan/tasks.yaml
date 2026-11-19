@@ -508,7 +508,7 @@ tasks:
   phase: P1
   workstream: K
   size: M
-  status: todo
+  status: done
   depends_on:
   - K-11
   - K-04

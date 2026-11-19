@@ -24,6 +24,7 @@ dependencies = [
  "axum",
  "control-plane",
  "http-body-util",
+ "ledger-check",
  "ledger-core",
  "ledger-store",
  "native-tls",

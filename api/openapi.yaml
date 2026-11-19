@@ -31,6 +31,26 @@ tags:
   - name: Events
 
 paths:
+  /healthz:
+    get:
+      tags: [Operations]
+      operationId: health
+      summary: Whether this cell can serve
+      description: |
+        Needs no token and returns counts only, never an identifier. `status` is `ok`, `draining`,
+        `leases_missing` or `control_plane_unavailable`.
+      x-skeleton: true
+      responses:
+        '200':
+          description: The cell can serve
+          content:
+            application/json:
+              schema: { type: object }
+        '503':
+          description: The cell cannot serve
+          content:
+            application/json:
+              schema: { type: object }
   /v1/commands/{type}:simulate:
     post:
       tags: [Commands]
@@ -279,6 +299,71 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '421': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+
+  /v1/transfers:
+    post:
+      tags: [Commands]
+      operationId: postTransferSkeleton
+      summary: Move an amount between two accounts (write path skeleton)
+      description: |
+        A stand-in for the transfer command, until the command catalogue (A-01) and the simulate
+        and commit engine (A-02) replace it. It moves an amount between two of the token's
+        tenant's accounts. The payer's account must be homed at the cell that serves the request;
+        the payee's may be homed at another cell, and the transfer then goes through the in-transit
+        accounts. A repeat with the same Idempotency-Key and body returns the same result and
+        writes nothing. The same key with a different body is `idempotency_conflict`. A decline
+        writes nothing and gives the key back. There is no endpoint that updates or deletes an
+        entry: a correction is a new transfer.
+      x-skeleton: true
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payer_account_id, payee_account_id, amount]
+              additionalProperties: false
+              properties:
+                payer_account_id: { type: string }
+                payee_account_id: { type: string }
+                amount: { $ref: '#/components/schemas/Money' }
+      responses:
+        '201':
+          description: Posted, or the same result again on a repeat
+          headers:
+            Idempotent-Replayed:
+              schema: { type: string, enum: ['true'] }
+              description: Present on a repeat of an earlier request
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [journal_id, status, payer_account_id, payee_account_id, amount, watermarks, replayed]
+                properties:
+                  journal_id: { type: string }
+                  status: { type: string, enum: [posted] }
+                  payer_account_id: { type: string }
+                  payee_account_id: { type: string }
+                  amount: { $ref: '#/components/schemas/Money' }
+                  watermarks:
+                    type: array
+                    description: The watermark at each cell the transfer touched
+                    items:
+                      type: object
+                      required: [cell, watermark]
+                      properties:
+                        cell: { type: string }
+                        watermark: { type: integer }
+                  replayed: { type: boolean }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '421': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
 
   /v1/accounts/{accountId}:

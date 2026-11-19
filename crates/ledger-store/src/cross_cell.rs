@@ -75,7 +75,7 @@ pub struct Recovered {
 
 /// The id of the entry for a leg: the journal's own id and the leg number, so a retry always
 /// names the same entry.
-fn entry_id(journal: &JournalId, leg: u8) -> String {
+pub(crate) fn entry_id(journal: &JournalId, leg: u8) -> String {
     let suffix = journal.as_str().trim_start_matches("jr_");
     format!("ent_{suffix}{leg}")
 }
@@ -302,4 +302,42 @@ pub async fn recover(
         }
     }
     Ok(out)
+}
+
+/// The in-transit accounts for an ordered pair of cells, in one currency.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pair {
+    pub tenant: TenantId,
+    pub from_cell: String,
+    pub to_cell: String,
+    pub currency: String,
+    pub sending: AccountId,
+    pub receiving: AccountId,
+}
+
+/// Gets the cell `here` ready to carry value for the pair: registers both accounts and fences the
+/// one homed at `here`. Run it at both cells before the first transfer. Safe to repeat.
+pub async fn prepare(
+    client: &Client,
+    schema: &str,
+    pair: &Pair,
+    here: &str,
+) -> Result<(), LegError> {
+    validate_schema_name(schema)?;
+    client
+        .execute(
+            &format!("select {schema}.prepare_in_transit($1,$2,$3,$4,$5,$6,$7)"),
+            &[
+                &pair.tenant.as_str(),
+                &pair.from_cell,
+                &pair.to_cell,
+                &pair.currency,
+                &pair.sending.as_str(),
+                &pair.receiving.as_str(),
+                &here,
+            ],
+        )
+        .await
+        .map_err(classify)?;
+    Ok(())
 }

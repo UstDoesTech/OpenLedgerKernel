@@ -12,6 +12,7 @@ pub mod holds;
 mod leg;
 mod migrate;
 pub mod requests;
+pub mod same_cell;
 
 pub use leg::{Leg, LegError, LegWriter, Posted, Side};
 

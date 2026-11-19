@@ -46,6 +46,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "api",
         sql: include_str!("../migrations/0007_api.sql"),
     },
+    Migration {
+        version: 8,
+        name: "transfers",
+        sql: include_str!("../migrations/0008_transfers.sql"),
+    },
 ];
 
 #[derive(Debug, thiserror::Error)]
