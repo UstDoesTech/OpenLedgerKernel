@@ -7,7 +7,7 @@
 # variables with no default. Nothing in it is a secret.
 locals {
   geo    = jsondecode(file("${path.module}/../deployment.json")).geo
-  tenant = "ten_example"
+  tenant = "ten_bankofmumanddad"
 
   # The tenant id without its prefix, and the forms each cloud's naming rules allow.
   slug   = trimprefix(local.tenant, "ten_")

@@ -111,11 +111,11 @@ that uses it. Both the key and its role assignment need the apply identity's rol
 
 ## The first tenant's cell layer
 
-`europe/cell-first` is for one tenant, `ten_example` (an example customer), whose id is written in the layer's `main.tf`. Apply it after `control-plane`. It makes what that tenant's database cells need and that nothing else may share:
+`europe/cell-first` is for one tenant, `ten_bankofmumanddad` (an example customer), whose id is written in the layer's `main.tf`. Apply it after `control-plane`. It makes what that tenant's database cells need and that nothing else may share:
 
 | Cloud | Made |
 | --- | --- |
-| AWS | A KMS key and alias of the tenant's own, and an ECR repository `ten_example/postgres` (tags cannot change, scanned on push, encrypted with that key). |
+| AWS | A KMS key and alias of the tenant's own, and an ECR repository `ten_bankofmumanddad/postgres` (tags cannot change, scanned on push, encrypted with that key). |
 | Azure | A Key Vault key of the tenant's own in the platform vault, a user-assigned identity and a disk encryption set that may use that key and nothing else. The repository is made by the registry on first push. The administrator is the Entra group you name. |
 | Google Cloud | A key ring and key of the tenant's own, an Artifact Registry repository `ten-example-postgres` (tags cannot change), and an administrator service account. |
 
