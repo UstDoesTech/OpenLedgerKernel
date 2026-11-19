@@ -59,7 +59,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-49 of 61 tasks done.
+49 of 62 tasks done.
 
 ```mermaid
 flowchart LR
@@ -86,6 +86,7 @@ flowchart LR
   K_10["K-10<br/>Generalise the ledger kernel's vocabulary"]
   K_11["K-11<br/>Write path skeleton, the API service and opening accounts"]
   K_12["K-12<br/>Write path skeleton, transfers over HTTP"]
+  K_14["K-14<br/>Write path skeleton, cells call each other for cross-cell transfers"]
   K_13["K-13<br/>Write path skeleton, run the API next to each cell"]
   T_03["T-03<br/>Randomised fault testing"]
   I_01a["I-01a<br/>Infrastructure code scaffold, CI checks and UK-region guard"]
@@ -159,7 +160,8 @@ flowchart LR
   K_11 --> K_12
   K_04 --> K_12
   K_05 --> K_12
-  K_12 --> K_13
+  K_12 --> K_14
+  K_14 --> K_13
   S_05 --> K_13
   T_02 --> T_03
   F_01 --> I_01a
@@ -218,6 +220,7 @@ flowchart LR
   K_11 --> GATE_1
   K_12 --> GATE_1
   K_13 --> GATE_1
+  K_14 --> GATE_1
   S_04 --> S_05
   S_05 --> S_07
   classDef done fill:#E8F5EC,stroke:#166534,color:#14171C
@@ -249,7 +252,8 @@ flowchart LR
 | **K-10** Generalise the ledger kernel's vocabulary | Ledger kernel | T-03 | None | M | Agent | To do |
 | **K-11** Write path skeleton, the API service and opening accounts | Ledger kernel | K-03, K-08 | None | M | Agent | Done |
 | **K-12** Write path skeleton, transfers over HTTP | Ledger kernel | K-11, K-04, K-05 | None | M | Agent | Done |
-| **K-13** Write path skeleton, run the API next to each cell | Ledger kernel | K-12, S-05 | None | M | Agent | To do |
+| **K-14** Write path skeleton, cells call each other for cross-cell transfers | Ledger kernel | K-12 | None | M | Agent | To do |
+| **K-13** Write path skeleton, run the API next to each cell | Ledger kernel | K-14, S-05 | None | M | Agent | To do |
 | **T-03** Randomised fault testing | Testing and fault injection | T-02 | None | M | Agent | Done |
 | **I-01a** Infrastructure code scaffold, CI checks and UK-region guard | Infrastructure | F-01 | None | M | Agent | Done |
 | **I-01g** Geo-aware region policy, starting with the UK geo | Infrastructure | I-01a | None | S | Agent | Done |
@@ -283,7 +287,7 @@ flowchart LR
 | **I-01f** Apply the infrastructure to the three UK accounts | Infrastructure | I-01e, I-01l | None | S | Human | To do |
 | **I-02** Region-to-region latency measurement | Infrastructure | I-01f, K-04, R-03 | D-14 | S | Agent | To do |
 | **I-03** Failover drills on the UK clouds | Infrastructure | I-01f, T-01, C-02 | None | M | Agent | To do |
-| **GATE-1** Gate 1: stable open kernel | Gates | T-03, I-02, I-03, K-11, K-12, K-13 | None | S | Human | To do |
+| **GATE-1** Gate 1: stable open kernel | Gates | T-03, I-02, I-03, K-11, K-12, K-13, K-14 | None | S | Human | To do |
 | **S-04** Apache-2.0 licence for the repository | Security and compliance | None | None | S | Agent | Done |
 | **S-05** Publish the kernel and infrastructure to OpenLedgerKernel | Security and compliance | S-04 | None | M | Agent | Done |
 | **S-07** Credentialed workflows for the public repository | Security and compliance | S-05 | D-16 | M | Agent | To do |

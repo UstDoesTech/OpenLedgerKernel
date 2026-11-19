@@ -537,6 +537,40 @@ tasks:
   refs:
   - docs/design.md#journals-across-cells
   - docs/api-design.md#errors-idempotency-and-retries
+- id: K-14
+  title: Write path skeleton, cells call each other for cross-cell transfers
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-12
+  deliverables:
+  - crates/api
+  - api/internal.md
+  acceptance:
+  - A cross-cell transfer is made by the payer's service calling the payee cell's service for the second
+    half, over an internal endpoint, and never by connecting to another cell's database. The service
+    takes no connection string for any cell but its own, and refuses to start if LEDGER_PEERS_FILE
+    (added in K-12) is set.
+  - An internal call carries a credential that names the calling cell and the tenant, checked by an
+    Authenticator-style trait with an in-memory implementation for tests. A call without one, with one
+    for another cell, or naming a tenant the credential does not cover is refused, and a tenant token is
+    never accepted on an internal endpoint.
+  - The payee's cell prepares its own side of the in-transit pair, checks the payee exists for the
+    tenant and is in the amount's currency, and credits it. A decline there is returned to the payer's
+    cell before anything was written at either cell, so the first half is never stranded.
+  - Every K-12 behaviour still holds, proven by the same tests, with the peer database connections removed
+    from them. A crash between the legs is finished exactly once by a retry or by recovery, and the same
+    holds when the payee's cell is unreachable for a while.
+  - The internal endpoints are not in api/openapi.yaml. They are described in api/internal.md, and a
+    test fails if that file and the service disagree.
+  notes: Keeps one database secret per machine identity, so K-13 can give each API a role that reads its own
+    cell's secret and nothing else. The internal endpoints are private to the cells' network, which K-13
+    enforces. K-12 connects to peer databases directly, which is what this replaces.
+  refs:
+  - docs/design.md#journals-across-cells
+  - docs/api-design.md#identity-and-authorisation
 - id: K-13
   title: Write path skeleton, run the API next to each cell
   phase: P1
@@ -544,7 +578,7 @@ tasks:
   size: M
   status: todo
   depends_on:
-  - K-12
+  - K-14
   - S-05
   deliverables:
   - images/api
@@ -1430,6 +1464,7 @@ tasks:
   - K-11
   - K-12
   - K-13
+  - K-14
   deliverables:
   - docs/evidence/gate-1.md
   acceptance:
