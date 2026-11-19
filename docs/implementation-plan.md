@@ -59,7 +59,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-50 of 62 tasks done.
+50 of 63 tasks done.
 
 ```mermaid
 flowchart LR
@@ -87,6 +87,7 @@ flowchart LR
   K_11["K-11<br/>Write path skeleton, the API service and opening accounts"]
   K_12["K-12<br/>Write path skeleton, transfers over HTTP"]
   K_14["K-14<br/>Write path skeleton, cells call each other for cross-cell transfers"]
+  K_15["K-15<br/>The API reaches etcd over mutual TLS"]
   K_13["K-13<br/>Write path skeleton, run the API next to each cell"]
   T_03["T-03<br/>Randomised fault testing"]
   I_01a["I-01a<br/>Infrastructure code scaffold, CI checks and UK-region guard"]
@@ -161,7 +162,9 @@ flowchart LR
   K_04 --> K_12
   K_05 --> K_12
   K_12 --> K_14
+  K_14 --> K_15
   K_14 --> K_13
+  K_15 --> K_13
   S_05 --> K_13
   T_02 --> T_03
   F_01 --> I_01a
@@ -253,7 +256,8 @@ flowchart LR
 | **K-11** Write path skeleton, the API service and opening accounts | Ledger kernel | K-03, K-08 | None | M | Agent | Done |
 | **K-12** Write path skeleton, transfers over HTTP | Ledger kernel | K-11, K-04, K-05 | None | M | Agent | Done |
 | **K-14** Write path skeleton, cells call each other for cross-cell transfers | Ledger kernel | K-12 | None | M | Agent | Done |
-| **K-13** Write path skeleton, run the API next to each cell | Ledger kernel | K-14, S-05 | None | M | Agent | To do |
+| **K-15** The API reaches etcd over mutual TLS | Ledger kernel | K-14 | None | S | Agent | To do |
+| **K-13** Write path skeleton, run the API next to each cell | Ledger kernel | K-14, K-15, S-05 | None | M | Agent | To do |
 | **T-03** Randomised fault testing | Testing and fault injection | T-02 | None | M | Agent | Done |
 | **I-01a** Infrastructure code scaffold, CI checks and UK-region guard | Infrastructure | F-01 | None | M | Agent | Done |
 | **I-01g** Geo-aware region policy, starting with the UK geo | Infrastructure | I-01a | None | S | Agent | Done |

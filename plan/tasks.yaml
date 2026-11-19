@@ -574,6 +574,29 @@ tasks:
   refs:
   - docs/design.md#journals-across-cells
   - docs/api-design.md#identity-and-authorisation
+- id: K-15
+  title: The API reaches etcd over mutual TLS
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-14
+  deliverables:
+  - crates/control-plane
+  - crates/api
+  acceptance:
+  - The control plane's etcd client takes a certificate authority, a client certificate and a key, as files,
+    and the service reads them from LEDGER_ETCD_CA_FILE, LEDGER_ETCD_CERT_FILE and LEDGER_ETCD_KEY_FILE.
+  - The service refuses to start if an etcd endpoint is https and any of the three is missing, or if one is
+    set and an endpoint is plain http on a non-loopback address.
+  - A test starts etcd with --client-cert-auth and proves the service connects with a valid certificate and
+    is refused without one. The existing plain-http tests still pass on loopback.
+  notes: The etcd module requires client certificates and TLS 1.3, but the service has no way to present
+    one, so no API on an applied environment can reach etcd. K-13 cannot give a person a first entry
+    without this.
+  refs:
+  - docs/design.md#failover
 - id: K-13
   title: Write path skeleton, run the API next to each cell
   phase: P1
@@ -582,6 +605,7 @@ tasks:
   status: todo
   depends_on:
   - K-14
+  - K-15
   - S-05
   deliverables:
   - images/api
