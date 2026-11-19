@@ -30,6 +30,7 @@ native-tls = "0.2"
 postgres-native-tls = "0.5"
 
 [dev-dependencies]
+ledger-check = { path = "../ledger-check", version = "0.0.0" }
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 
