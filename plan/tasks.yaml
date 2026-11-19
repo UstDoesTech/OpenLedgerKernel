@@ -565,6 +565,9 @@ tasks:
     holds when the payee's cell is unreachable for a while.
   - The internal endpoints are not in api/openapi.yaml. They are described in api/internal.md, and a
     test fails if that file and the service disagree.
+  - Internal calls between cells use mutual TLS, so a peer is known by its certificate as well as its
+    credential. A test starts the service on a non-loopback address without TLS configured and expects
+    it to refuse.
   notes: Keeps one database secret per machine identity, so K-13 can give each API a role that reads its own
     cell's secret and nothing else. The internal endpoints are private to the cells' network, which K-13
     enforces. K-12 connects to peer databases directly, which is what this replaces.
@@ -596,6 +599,9 @@ tasks:
   - docs/runbooks/first-entry.md takes a person from an applied environment to a first entry, and says
     what each step proves.
   - The module does not apply anything. A person applies it through the infra-apply workflow.
+  - The public listener serves only TLS unless it is bound to loopback. The service refuses to listen on
+    any other address without a certificate and key, supplied as files like its other secrets, and a test
+    proves it. The module says whether TLS ends in the service or at a load balancer in front of it.
   notes: A person runs the smoke test against the proving environment, so this task cannot prove the last
     step by itself. Real money and real customer data are never used. The proving environment holds none.
   refs:
