@@ -49,4 +49,4 @@ Machine sizes in the layers are the module defaults. Pass smaller, burstable siz
 
 ## Who applies
 
-Applying changes real cloud accounts, so a person does it, from their own shell or a pipeline they control and approve. The repository's CI only formats, validates and lints (`.github/workflows/infra.yml`). It holds no cloud credentials.
+Applying changes real cloud accounts, so a person does it: from their own shell, or through the `infra-apply` workflow, which is guarded for a public repository and described in [`credentialed-workflows.md`](credentialed-workflows.md). The repository's other CI only formats, validates and lints (`.github/workflows/infra.yml`) and holds no cloud credentials.

@@ -1,0 +1,12 @@
+# Anything that holds, reaches or explains credentials needs the owner's review.
+#
+# This file only takes effect when the repository's ruleset for main requires a review from
+# the code owners. docs/credentialed-workflows.md lists that setting with the others.
+/.github/                         @UstDoesTech
+/scripts/quiet.sh                 @UstDoesTech
+/scripts/keep_logs.sh             @UstDoesTech
+/scripts/plan_counts.py           @UstDoesTech
+/infra/                           @UstDoesTech
+/docs/credentialed-workflows.md   @UstDoesTech
+/LICENSE                          @UstDoesTech
+/NOTICE                           @UstDoesTech
