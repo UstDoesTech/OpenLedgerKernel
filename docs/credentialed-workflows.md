@@ -27,6 +27,12 @@ What the workflows cannot promise: the sign-in actions (`azure/login`, `google-g
 
 Agents never dispatch these workflows and never hold these roles.
 
+## Replacing one machine
+
+`infra-apply` has an optional `replace` input for rolling a new node image (see [Rolling a new node image](runbooks/rolling-the-node-image.md)). It takes the address of **one** machine: a `node` or `member` of an instance or virtual machine resource, with its index, such as `module.<name>.aws_instance.node[1]`. A pattern, a list, a resource without an index or anything else is refused before tofu runs (`scripts/replace_guard.py`).
+
+The plan job then refuses a plan that deletes a data disk, deletes anything except the machine and its disk attachment, or replaces any other machine. The approved fingerprint covers the replacement, and the apply job plans again with the same address and compares. A replacement of that kind is one apply: the disk is detached (on AWS the machine is stopped first), the machine is replaced, and the same disk is attached to the new machine. Replace one machine per run, and check the cell is healthy between runs.
+
 ## One-time setup
 
 ### 1. GitHub

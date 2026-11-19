@@ -6,6 +6,7 @@
 /scripts/quiet.sh                 @UstDoesTech
 /scripts/keep_logs.sh             @UstDoesTech
 /scripts/plan_counts.py           @UstDoesTech
+/scripts/replace_guard.py         @UstDoesTech
 /infra/                           @UstDoesTech
 /docs/credentialed-workflows.md   @UstDoesTech
 /LICENSE                          @UstDoesTech
