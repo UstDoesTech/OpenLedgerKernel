@@ -74,6 +74,30 @@ decisions:
     but nobody can export. Certificates last 30 days and are re-issued every 10. Cell credentials are
     re-issued every 7 days, and when a cell is removed. Every cell trusts the authority's public certificate,
     so no cell calls AWS to check one. (Ust Oldfield, 2026-11-20)
+- id: D-18
+  title: How the rotation identities are made, and who may make them
+  status: decided
+  proposed: OpenTofu makes them, in a layer of its own applied by infra-apply. In AWS the role and its
+    policy, in Azure the app registration, its federated credential and the role assignments, and in Google
+    Cloud the service account, its provider binding and its roles. Each trust names this repository's
+    rotate-credentials environment only. The applying identity may create only these identities, bounded
+    by a permissions boundary in AWS, a custom role in Azure and a deny policy in Google Cloud, so it cannot
+    grant itself or the new identities more than the layer lists. Entering the values as the environment's
+    secrets stays a person's step, because OpenTofu holds no GitHub token.
+  outcome: OpenTofu makes the rotation identities, in a layer applied by infra-apply. The applying identity may
+    create only those identities, bounded by a permissions boundary in AWS, a custom role in Azure and a
+    deny policy in Google Cloud. Entering the outputs as the environment's secrets stays a person's step.
+    (Ust Oldfield, 2026-11-20)
+- id: D-19
+  title: Which database credential the API uses, and who writes it
+  status: decided
+  proposed: A dedicated application role per cell, made by the node agent on the primary's first start. The
+    agent writes that role's connection string into the cell's API secret itself, so neither the run nor a
+    person ever reads the administrator's credential. Until the agent does this, the run copies the
+    administrator's connection into db.conn, for proving environments only.
+  outcome: A dedicated application role per cell, made by the node agent on the primary's first start, which
+    writes that role's connection string into the cell's API secret. Until then the run copies the
+    administrator's connection into db.conn, for proving environments only. (Ust Oldfield, 2026-11-20)
 tasks:
 - id: F-01
   title: Rust workspace and CI
@@ -733,8 +757,8 @@ tasks:
     and may change an AWS or Azure role, so it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
-- id: K-19
-  title: Fill each API secret's database connection and the proving tenant's tokens
+- id: K-19a
+  title: Let the API trust a database CA, and make the first start say why it cannot connect
   phase: P1
   workstream: K
   size: S
@@ -742,21 +766,106 @@ tasks:
   depends_on:
   - K-17
   deliverables:
+  - crates/api
   - crates/pki
   - docs/runbooks/rotating-credentials.md
   acceptance:
-  - A run writes db.conn and tokens.json into each cell's API secret, so no entry of the secret is filled
-    by hand. The connection string names only that cell's own database, and no cell's secret holds another
-    cell's.
-  - The tokens are made fresh for the proving tenant by the run and are not in the repository, a log or the
-    state, with a test that fails if a step prints one.
-  - A token that was issued is refused once a later run no longer lists it, shown by a test against the
-    running service.
-  notes: Needs a decision on where each cell's database credentials live, so that the run may read them and
-    nothing else may. Until this task a person fills these two entries. Real sign-in replaces the tokens in
-    A-06. Edits a credentialed workflow, so it needs a person's review.
+  - The API reads an optional db-ca.crt entry from its secret and trusts that CA, as well as the system
+    roots, when it connects to its cell's database. A change to the file is picked up by the reload, with
+    no restart.
+  - A test against a Postgres node with TLS shows the connection works with the right CA, fails with
+    another, and that a refused change keeps the old connector.
+  - A start that cannot reach its database logs one line saying whether the cause was the name, the
+    certificate or the sign-in, and no host, user or password.
+  - The rotation writes db-ca.crt when the manifest gives one, and keeps it when it does not.
+  notes: The API checks the database certificate against the system roots only, and the cells' nodes use
+    their own CA, so the first real connection is expected to fail without this. Edits a credentialed
+    workflow's inputs, so it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
+- id: K-19b
+  title: Fill each API secret's database connection and the proving tenant's tokens
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-19a
+  decisions:
+  - D-19
+  deliverables:
+  - crates/pki
+  - scripts/rotation_manifest.py
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - A run writes db.conn and tokens.json into each cell's API secret when they are absent, and leaves them
+    alone when present, so no entry of the secret is filled by hand. The connection string names only that
+    cell's own database, and no cell's secret holds another cell's.
+  - The tokens are made fresh for the proving tenant by the run and are not in the repository, a log or the
+    state, with a test that fails if a step prints one. A person can read one with their own sign-in.
+  - The database credential comes from a trait. The only real source until K-19d is the administrator
+    copy, switched on by a manifest field that proving environments set and refused otherwise.
+  - A token that was issued is refused once a later run no longer lists it, shown by a test against the
+    running service.
+  notes: Until this task a person fills these two entries with the scripts in the first-entry runbook. Real
+    sign-in replaces the tokens in A-06. Edits a credentialed workflow and may add a read permission on
+    the cells' administrator secrets, so it needs a person's review.
+  refs:
+  - docs/credentialed-workflows.md
+- id: K-19c
+  title: Make the rotation identities with OpenTofu
+  phase: P1
+  workstream: I
+  size: M
+  status: todo
+  depends_on:
+  - K-17
+  decisions:
+  - D-18
+  deliverables:
+  - infra/envs/europe/identities
+  - infra/modules/rotation-identity
+  - docs/credentialed-workflows.md
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - A layer makes the rotate-credentials role in AWS, app registration in Azure and service account in
+    Google Cloud, each trusting only this repository's rotate-credentials environment, with exactly the
+    permissions the document lists, as tests over the plan.
+  - A test fails if a policy grants more than the list, grants an action on every resource, or lets the
+    identity change any identity or permission.
+  - The layer's outputs give the values a person enters as the environment's secrets, and no secret.
+  - The applying identities' extra rights are the smallest set that lets them make these identities, are
+    bounded as D-18 says, and are listed in the document with a test over the plan.
+  notes: Nothing here is applied by an agent. A person applies it through infra-apply. Entering the
+    outputs as GitHub environment secrets stays a person's step. Widens the applying identities, so it
+    needs a person's review.
+  refs:
+  - docs/credentialed-workflows.md
+- id: K-19d
+  title: Make each cell's application role in the node agent
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-19b
+  decisions:
+  - D-19
+  deliverables:
+  - crates/node-agent
+  - images/postgres
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - On first start the primary makes a role that can use only the ledger's own schema, with a generated
+    password, and writes its connection string into the API secret's db.conn, with a test against a real
+    node.
+  - The administrator's credential is no longer read by a run or a person, and a test fails if the run
+    still asks for it.
+  - A node that cannot write the API secret stops before it makes the role.
+  notes: Needs the machine's identity to write one API secret entry, and a new node image, which a person
+    publishes. Edits the image and a role, so it needs a person's review.
+  refs:
+  - images/postgres/README.md
 - id: T-03
   title: Randomised fault testing
   phase: P1
