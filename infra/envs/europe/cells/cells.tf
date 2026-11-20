@@ -72,7 +72,7 @@ module "cell_azure" {
   deletion_protection  = var.deletion_protection
   azure                = local.azure_input
   reuse_private_access = true
-  machine_sizes        = { azure = "Standard_B2s" }
+  machine_sizes        = { azure = "Standard_B1ms" }
 }
 
 module "cell_gcp" {

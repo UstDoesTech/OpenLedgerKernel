@@ -159,12 +159,12 @@ module "control_plane" {
   gcp   = local.gcp_input
 
   # Proving sizes, chosen to keep the bill low while the architecture is tested: shared-CPU
-  # machines with 2 vCPU and 4 GB. They run on CPU credits, so a long busy spell can slow etcd and
+  # machines with 2 vCPU and 4 GB, except Azure, which is 1 vCPU and 2 GB to fit the subscription's core quota. They run on CPU credits, so a long busy spell can slow etcd and
   # move its leader. Do not copy them into a production environment. The module's own defaults
   # (2 vCPU, 8 GB, steady CPU) are the production sizes, and this block is then deleted.
   machine_sizes = {
     aws   = "t3.medium"
-    azure = "Standard_B2s"
+    azure = "Standard_B1ms"
     gcp   = "e2-medium"
   }
 }

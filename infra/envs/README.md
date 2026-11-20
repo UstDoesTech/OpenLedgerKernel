@@ -129,7 +129,7 @@ To publish the Postgres node image: run `publish-postgres-image` (it prints the 
 
 `europe/cells` makes one self-hosted PostgreSQL cell in each cloud for the tenant that `cell-first` is for: three nodes in three zones, running the node image as a container. Apply it after `cell-first`, once the Postgres image is published to the tenant's repositories (`publish-images` with `image` set to `postgres`). It makes no key, repository or identity: it uses the tenant's own from `cell-first`, and the private endpoints and DNS zones from `private-access` (`reuse_private_access`). It stops with a message if `cell-first` holds a different image digest from `infra/images.json`.
 
-Its sizes are proving sizes (shared-CPU: `t3.medium`, `Standard_B2s`, `e2-medium`) to keep the bill low. Delete the `machine_sizes` lines to use the module's own size table in production. Its outputs give each cell's private host, port and where its administrator's credential is held, never the credential. A Lakebase form follows.
+Its sizes are proving sizes (shared-CPU: `t3.medium`, `Standard_B1ms` (one core, to fit the Azure core quota), `e2-medium`) to keep the bill low. Delete the `machine_sizes` lines to use the module's own size table in production. Its outputs give each cell's private host, port and where its administrator's credential is held, never the credential. A Lakebase form follows.
 
 ## The API machines
 
