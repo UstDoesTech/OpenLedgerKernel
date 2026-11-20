@@ -65,11 +65,15 @@ decisions:
     (Ust Oldfield, 2026-11-19)
 - id: D-17
   title: Where the certificate authority's key lives
-  status: open
+  status: decided
   proposed: One central authority, held in AWS. Its key is in a KMS that the signer can use but nobody can
     export. Certificates last 30 days and are re-issued every 10, so the signer can be down for about 20
     days without any cell losing the others. Cell credentials are re-issued every 7 days, and when a cell
     is removed. Every cell trusts the authority's public certificate, so no cell calls AWS to check one
+  outcome: One central authority, held in AWS, not one per cloud. Its key is in a KMS that the signer can use
+    but nobody can export. Certificates last 30 days and are re-issued every 10. Cell credentials are
+    re-issued every 7 days, and when a cell is removed. Every cell trusts the authority's public certificate,
+    so no cell calls AWS to check one. (Ust Oldfield, 2026-11-20)
 tasks:
 - id: F-01
   title: Rust workspace and CI
