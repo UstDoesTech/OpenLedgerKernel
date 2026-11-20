@@ -1,6 +1,6 @@
 # Credentialed workflows
 
-Two workflows hold cloud access: `infra-apply` plans and applies one layer of one environment, and `publish-images` copies a pinned container image into the three clouds' private registries. Applying by hand, as in [`infrastructure.md`](infrastructure.md), still works. Use one or the other for a layer, never both at once.
+Three workflows hold cloud access: `infra-apply` plans and applies one layer of one environment, `publish-images` copies a pinned container image into the three clouds' private registries, and `rotate-credentials` issues and rotates each API machine's certificates and cell credentials. Applying by hand, as in [`infrastructure.md`](infrastructure.md), still works. Use one or the other for a layer, never both at once.
 
 ## Why this repository needs more care
 
@@ -19,7 +19,7 @@ What the workflows cannot promise: the sign-in actions (`azure/login`, `google-g
 | --- | --- |
 | Started only by dispatch, never by a push, a pull request or `pull_request_target` | The workflows' `on:` |
 | Only from `main`, and only by the repository's owner | Each job's `if:` (`github.ref`, `github.actor == github.repository_owner`) |
-| A named person approves before an apply or a publish | The `infra-apply` environment's required reviewers |
+| A named person approves before an apply, a publish or a rotation | The `infra-apply` and `rotate-credentials` environments' required reviewers |
 | Only `main` can use the environments | The environments' deployment branches |
 | Each cloud trusts one environment of this repository only | The cloud trust policies below |
 | Changes to workflows, scripts and infrastructure need the owner's review | `.github/CODEOWNERS` and the ruleset for `main` |
@@ -37,12 +37,13 @@ The plan job then refuses a plan that deletes a data disk, deletes anything exce
 
 ### 1. GitHub
 
-**Settings, Environments.** Make two environments with exactly these names.
+**Settings, Environments.** Make these environments with exactly these names. `rotate-credentials` has its own section below, because its identities are different.
 
 | Environment | Required reviewers | Deployment branches | Holds |
 | --- | --- | --- | --- |
 | `infra-plan` | Optional | `main` only | Read-only identities |
 | `infra-apply` | **You** (and a second person when you have one, with "Prevent self-review") | `main` only | Applying identities |
+| `rotate-credentials` | **You** | `main` only | Identities that sign certificates and write the API secrets, and nothing else |
 
 **Settings, Rules, Rulesets.** A ruleset for `main`: require a pull request, require review from the code owners, block force pushes and deletion.
 
@@ -145,6 +146,25 @@ gcloud iam service-accounts add-iam-policy-binding infra-apply@<project>.iam.gse
 
 and the same for `infra-plan`.
 
+### 6. Rotating certificates and credentials (`rotate-credentials`)
+
+One central certificate authority signs every cell's certificates (decision D-17). Its key is an AWS KMS signing key made by the `authority` layer, which can sign and cannot be exported. The `rotate-credentials` workflow asks KMS to sign, and writes each cell's certificates and cell credentials into that cell's API secret as a new version. Its identities are separate from `infra-apply`, and each may do only this:
+
+| Cloud | What the `rotate-credentials` identity may do |
+| --- | --- |
+| AWS | `kms:Sign` and `kms:GetPublicKey` on the authority key. `secretsmanager:GetSecretValue`, `PutSecretValue` and `ListSecretVersionIds` on the authority's certificate secret and on the AWS API secret. Read on the state bucket for the `api` and `authority` layers, and `PutObject` on the plan store's prefix. Nothing else. |
+| Azure | `Key Vault Secrets Officer` on the vault, so it can read and write the Azure API secret. Nothing else. |
+| Google Cloud | `roles/secretmanager.secretVersionAdder`, `roles/secretmanager.secretAccessor` and `roles/secretmanager.viewer` on the Google Cloud API secret only. Nothing else. |
+
+Set it up like the other environments, with its own name:
+
+1. GitHub: the `rotate-credentials` environment, limited to `main`, with you as the required reviewer. It holds `AWS_ROLE_ARN`, `PLAN_STORE`, `TOFU_BACKEND_CONFIG` and, for the other clouds, the `AZURE_*` and `GCP_*` secrets of its own identities, exactly as in step 1.
+2. AWS: a role `rotate-credentials` with the trust policy of step 3 and the subject `repo:UstDoesTech/OpenLedgerKernel:environment:rotate-credentials`, and the permissions in the table. Maximum session: 2 hours.
+3. Azure: an app registration `rotate-credentials` with a federated credential for the `rotate-credentials` environment (the subject is `repo:UstDoesTech/OpenLedgerKernel:environment:rotate-credentials`) and the one role above on the vault. The run opens the vault's firewall for its own address, as in step 4.
+4. Google Cloud: widen the provider's attribute condition to `assertion.repository == 'UstDoesTech/OpenLedgerKernel' && assertion.environment in ['infra-plan','infra-apply','rotate-credentials']`, make a service account `rotate-credentials`, and let that environment act as it only, as in step 5.
+
+Then apply the `authority` layer with `infra-apply`. The first rotation makes the authority's certificate and keeps it in the layer's secret. The runbook is [Rotating certificates and credentials](runbooks/rotating-credentials.md).
+
 ## Running it
 
 **Actions, `infra-apply`, Run workflow**, on `main`. Start with `plan` on the first layer. The summary shows the counts and a fingerprint. **Read the plan** in the plan store:
@@ -158,6 +178,8 @@ Then run it again with `apply`: it plans a second time, you approve the environm
 If it says "the plan changed since it was shown", nothing was applied. Read why, then run it again. If a step fails, its output is not in the log. Read the step's log file from the plan store (`aws s3 cp s3://<plan store>/<run id>/plan/ - --recursive`, or `.../apply/`).
 
 `publish-images` copies one image (`etcd` or `postgres`) from `infra/images.json` to the three registries by digest, and fails unless each registry gives back exactly that digest. Publish `postgres` after the `cell-first` layer and `etcd` after the `registries` layer.
+
+`rotate-credentials` is run by a person, on `main`, and waits for the approval of its environment. It prints one line of counts and nothing else, so you read nothing from its log except whether it worked. See [Rotating certificates and credentials](runbooks/rotating-credentials.md).
 
 ## Revoking access
 

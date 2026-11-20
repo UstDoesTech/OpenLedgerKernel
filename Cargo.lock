@@ -1082,6 +1082,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
+name = "pki"
+version = "0.0.0"
+dependencies = [
+ "api",
+ "axum",
+ "base64 0.22.1",
+ "ledger-core",
+ "rcgen",
+ "ring",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+ "tokio",
+]
+
+[[package]]
 name = "postgres-native-tls"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -9,6 +9,7 @@ Step-by-step guides for running the infrastructure from this repository. They co
 | [First entry](first-entry.md) | The cells are applied and you want to make the first entry through the API |
 | [Rolling a new node image](rolling-the-node-image.md) | `infra/images.json` has a new digest and the running machines still use the old one |
 | [Pausing for cost](pausing-for-cost.md) | You want the proving environment to stop costing money for a while |
+| [Rotating certificates and credentials](rotating-credentials.md) | You are issuing the API machines' certificates and cell credentials, or renewing them (every 7 days), or removing a cell |
 | [Rotating the VPN pre-shared key](rotating-vpn-key.md) | A key was shown anywhere it should not have been, or on your own schedule |
 | [Credentialed workflows](../credentialed-workflows.md) | You need the settings, trust policies and roles in full |
 

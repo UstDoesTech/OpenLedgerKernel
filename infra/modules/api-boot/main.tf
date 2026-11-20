@@ -35,6 +35,10 @@ locals {
 
   secrets_dir = "/run/secrets/api"
 
+  # How often the machine reads its secret again. A rotation reaches the service within this and
+  # the service's own check (30 seconds). The rotation job waits for both before it goes on.
+  refresh_minutes = 5
+
   environment = {
     LEDGER_NODE               = var.cell
     LEDGER_DB_FILE            = "${local.secrets_dir}/db.conn"
@@ -93,6 +97,19 @@ locals {
             public_port           = var.public_port
             internal_port         = var.internal_port
             environment_arguments = join(" ", [for k, v in local.environment : "--env ${k}=${v}"])
+          })
+        },
+        {
+          name = "ledger-api-refresh.service"
+          contents = templatefile("${path.module}/files/ledger-api-refresh.service.tpl", {
+            secret_arguments = "${var.secret} ${join(" ", local.secret_files)}"
+          })
+        },
+        {
+          name    = "ledger-api-refresh.timer"
+          enabled = true
+          contents = templatefile("${path.module}/files/ledger-api-refresh.timer.tpl", {
+            every_minutes = local.refresh_minutes
           })
         },
         # The operating system's own updates need the internet. An API image is updated by

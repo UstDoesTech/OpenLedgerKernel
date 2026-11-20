@@ -41,6 +41,7 @@ use control_plane::{
 };
 use ledger_api::auth::{PeerTokens, StaticTokens};
 use ledger_api::peer::PeerClient;
+use ledger_api::reload::{self, Reloadable};
 use ledger_api::tls::{self, TlsFiles, TlsListener};
 use ledger_api::{AppState, internal_router, router};
 use tokio_postgres::{Client, Config, NoTls};
@@ -82,7 +83,7 @@ async fn connect(conn: &str, tls: bool) -> Result<Client, String> {
 async fn serve(
     addr: std::net::SocketAddr,
     app: axum::Router,
-    config: Option<Arc<rustls::ServerConfig>>,
+    config: Option<Reloadable<rustls::ServerConfig>>,
     mut stopped: tokio::sync::watch::Receiver<bool>,
     servers: &mut tokio::task::JoinSet<std::io::Result<()>>,
 ) -> Result<(), String> {
@@ -94,7 +95,7 @@ async fn serve(
     };
     match config {
         Some(config) => {
-            let listener = TlsListener::new(tcp, config).map_err(|e| e.to_string())?;
+            let listener = TlsListener::reloadable(tcp, config).map_err(|e| e.to_string())?;
             servers
                 .spawn(async move { axum::serve(listener, app).with_graceful_shutdown(end).await });
         }
@@ -103,6 +104,30 @@ async fn serve(
         }
     }
     Ok(())
+}
+
+/// Reads the list of other cells and builds a client for each, with this cell's certificate.
+fn load_cells(text: &str, files: &TlsFiles) -> Result<ledger_api::Peers, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Cell {
+        url: String,
+        token: String,
+    }
+    let cells: std::collections::BTreeMap<String, Cell> = serde_json::from_str(text)
+        .map_err(|_| "LEDGER_CELLS_FILE: not a JSON object of cells".to_owned())?;
+    let client_tls = if files.cert.is_some() && files.key.is_some() && files.ca.is_some() {
+        Some(tls::client_config(files).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    let mut peers = ledger_api::Peers::new();
+    for (cell, c) in cells {
+        let client = PeerClient::new(&c.url, &c.token, client_tls.clone())
+            .map_err(|e| format!("LEDGER_CELLS_FILE: cell {cell}: {e}"))?;
+        peers.insert(cell, Arc::new(client));
+    }
+    Ok(peers)
 }
 
 async fn run() -> Result<(), String> {
@@ -114,8 +139,16 @@ async fn run() -> Result<(), String> {
     let tls = std::env::var("LEDGER_DB_TLS")
         .map(|v| v != "off")
         .unwrap_or(true);
-    let tokens =
-        StaticTokens::from_json(&file("LEDGER_TOKENS_FILE")?).map_err(|e| e.to_string())?;
+    let reload_every = std::time::Duration::from_secs(
+        std::env::var("LEDGER_RELOAD_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|n| *n > 0)
+            .unwrap_or(30),
+    );
+    let tokens = Reloadable::new(
+        StaticTokens::from_json(&file("LEDGER_TOKENS_FILE")?).map_err(|e| e.to_string())?,
+    );
     let guard_config = GuardConfig::from_env().map_err(|e| e.to_string())?;
     let endpoints: Vec<String> = var("LEDGER_ETCD_ENDPOINTS")?
         .split(',')
@@ -156,7 +189,9 @@ async fn run() -> Result<(), String> {
         .map_err(|_| "LEDGER_LISTEN: not an address and port".to_owned())?;
     tls::check_bind(&public_addr, have_pair, "LEDGER_LISTEN")?;
     let public_tls = if have_pair {
-        Some(tls::server_config(&files).map_err(|e| e.to_string())?)
+        Some(Reloadable::from_arc(
+            tls::server_config(&files).map_err(|e| e.to_string())?,
+        ))
     } else {
         None
     };
@@ -168,7 +203,9 @@ async fn run() -> Result<(), String> {
             let mutual = have_pair && files.ca.is_some();
             tls::check_bind(&addr, mutual, "LEDGER_INTERNAL_LISTEN")?;
             let config = if mutual {
-                Some(tls::mutual_server_config(&files).map_err(|e| e.to_string())?)
+                Some(Reloadable::from_arc(
+                    tls::mutual_server_config(&files).map_err(|e| e.to_string())?,
+                ))
             } else {
                 None
             };
@@ -177,10 +214,10 @@ async fn run() -> Result<(), String> {
         Err(_) => None,
     };
     let peer_auth = if internal.is_some() {
-        Some(
+        Some(Reloadable::new(
             PeerTokens::from_json(&file("LEDGER_INTERNAL_AUTH_FILE")?)
                 .map_err(|e| e.to_string())?,
-        )
+        ))
     } else {
         None
     };
@@ -208,31 +245,108 @@ async fn run() -> Result<(), String> {
         db,
         Arc::new(cp),
         guard,
-        Arc::new(tokens),
+        Arc::new(tokens.clone()),
     );
     if std::env::var_os("LEDGER_CELLS_FILE").is_some() {
-        #[derive(serde::Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Cell {
-            url: String,
-            token: String,
-        }
-        let cells: std::collections::BTreeMap<String, Cell> =
-            serde_json::from_str(&file("LEDGER_CELLS_FILE")?)
-                .map_err(|_| "LEDGER_CELLS_FILE: not a JSON object of cells".to_owned())?;
-        let client_tls = if have_pair && files.ca.is_some() {
-            Some(tls::client_config(&files).map_err(|e| e.to_string())?)
-        } else {
-            None
-        };
-        for (cell, c) in cells {
-            let client = PeerClient::new(&c.url, &c.token, client_tls.clone())
-                .map_err(|e| format!("LEDGER_CELLS_FILE: cell {cell}: {e}"))?;
-            state = state.with_peer(&cell, client);
-        }
+        let peers = load_cells(&file("LEDGER_CELLS_FILE")?, &files)?;
+        state.peers_handle().set(Arc::new(peers));
     }
-    if let Some(auth) = peer_auth {
-        state = state.with_peer_auth(Arc::new(auth));
+    if let Some(auth) = &peer_auth {
+        state = state.with_peer_auth(Arc::new(auth.clone()));
+    }
+
+    // Certificates, tokens and the list of cells rotate while the service runs. Each is read
+    // again when its file changes. A file that cannot be used leaves what is in force alone.
+    let path = |name: &str| std::env::var(name).ok().map(std::path::PathBuf::from);
+    {
+        let (handle, from) = (
+            tokens.clone(),
+            path("LEDGER_TOKENS_FILE").into_iter().collect(),
+        );
+        reload::spawn_watch("tokens", from, reload_every, move || {
+            let Ok(text) = file("LEDGER_TOKENS_FILE") else {
+                return false;
+            };
+            match StaticTokens::from_json(&text) {
+                Ok(t) => {
+                    handle.set(Arc::new(t));
+                    true
+                }
+                Err(_) => false,
+            }
+        });
+    }
+    if let Some(handle) = peer_auth.clone() {
+        let from = path("LEDGER_INTERNAL_AUTH_FILE").into_iter().collect();
+        reload::spawn_watch("cell credentials", from, reload_every, move || {
+            let Ok(text) = file("LEDGER_INTERNAL_AUTH_FILE") else {
+                return false;
+            };
+            match PeerTokens::from_json(&text) {
+                Ok(t) => {
+                    handle.set(Arc::new(t));
+                    true
+                }
+                Err(_) => false,
+            }
+        });
+    }
+    if have_pair {
+        let mut from: Vec<_> = [
+            path("LEDGER_TLS_CERT_FILE"),
+            path("LEDGER_TLS_KEY_FILE"),
+            path("LEDGER_TLS_CA_FILE"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        from.sort();
+        let (public, internal_handle) = (
+            public_tls.clone(),
+            internal.as_ref().and_then(|(_, c)| c.clone()),
+        );
+        let peers = state.peers_handle();
+        let has_cells = std::env::var_os("LEDGER_CELLS_FILE").is_some();
+        if let Some(c) = path("LEDGER_CELLS_FILE") {
+            from.push(c);
+        }
+        let files = files.clone();
+        reload::spawn_watch("certificates", from, reload_every, move || {
+            // Everything is built first and swapped only if all of it is usable, so a certificate
+            // that does not match its key, or a half-written set, changes nothing.
+            let Ok(public_new) = tls::server_config(&files) else {
+                return false;
+            };
+            let internal_new = if internal_handle.is_some() {
+                match tls::mutual_server_config(&files) {
+                    Ok(c) => Some(c),
+                    Err(_) => return false,
+                }
+            } else {
+                None
+            };
+            let peers_new = if has_cells {
+                let Ok(text) = file("LEDGER_CELLS_FILE") else {
+                    return false;
+                };
+                match load_cells(&text, &files) {
+                    Ok(p) => Some(p),
+                    Err(_) => return false,
+                }
+            } else {
+                None
+            };
+            if let Some(p) = &public {
+                p.set(public_new);
+            }
+            if let (Some(h), Some(c)) = (&internal_handle, internal_new) {
+                h.set(c);
+            }
+            if let Some(p) = peers_new {
+                peers.set(Arc::new(p));
+            }
+            true
+        });
     }
 
     // A healthy cell renews the leases of the accounts homed here, on a timer.
