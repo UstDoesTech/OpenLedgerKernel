@@ -52,6 +52,7 @@ These are human decisions. A task that lists one can still be built up to its in
 | **D-03** Control plane technology across three clouds | Decided | etcd v3, five members spread over the three clouds by default. It must also run with a minimum of three members, because some geographies have only one region. (Ust Oldfield, 2026-11-14) | None |
 | **D-14** Latency budget - same-cell leg, cross-cell transfer and strong-tier acknowledgement, p50 and p95 | Open | None yet | I-02 |
 | **D-16** Where the credentialed workflows run once the code is public | Decided | The credentialed workflows run on the public repository. Its workflow logs are readable by anyone, so S-07's guards are required, not optional. That means no plan output or identifiers in a log, dispatch only from main, a named approver, and cloud trust pinned to that repository's environment. (Ust Oldfield, 2026-11-19) | None |
+| **D-17** Where the certificate authority's key lives | Open | One authority for the environment, its key in a KMS the signer can use but nobody can export, and short-lived certificates (24 hours) and credentials re-issued every 12 hours, so a lost one expires before anyone could use it | K-17 |
 <!-- /generated:decisions -->
 
 ## Tasks
@@ -59,7 +60,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-50 of 64 tasks done.
+50 of 65 tasks done.
 
 ```mermaid
 flowchart LR
@@ -90,6 +91,7 @@ flowchart LR
   K_15["K-15<br/>The API reaches etcd over mutual TLS"]
   K_13["K-13<br/>Write path skeleton, run the API next to each cell"]
   K_16["K-16<br/>Run the API machines in the Europe environment"]
+  K_17["K-17<br/>Issue and rotate the API's certificates and cell credentials"]
   T_03["T-03<br/>Randomised fault testing"]
   I_01a["I-01a<br/>Infrastructure code scaffold, CI checks and UK-region guard"]
   I_01g["I-01g<br/>Geo-aware region policy, starting with the UK geo"]
@@ -169,6 +171,8 @@ flowchart LR
   S_05 --> K_13
   K_13 --> K_16
   K_15 --> K_16
+  K_13 --> K_17
+  S_07 --> K_17
   T_02 --> T_03
   F_01 --> I_01a
   I_01a --> I_01g
@@ -229,6 +233,7 @@ flowchart LR
   K_14 --> GATE_1
   K_15 --> GATE_1
   K_16 --> GATE_1
+  K_17 --> GATE_1
   S_04 --> S_05
   S_05 --> S_07
   classDef done fill:#E8F5EC,stroke:#166534,color:#14171C
@@ -264,6 +269,7 @@ flowchart LR
 | **K-15** The API reaches etcd over mutual TLS | Ledger kernel | K-14 | None | S | Agent | To do |
 | **K-13** Write path skeleton, run the API next to each cell | Ledger kernel | K-14, K-15, S-05 | None | M | Agent | To do |
 | **K-16** Run the API machines in the Europe environment | Ledger kernel | K-13, K-15 | None | S | Agent | To do |
+| **K-17** Issue and rotate the API's certificates and cell credentials | Ledger kernel | K-13, S-07 | D-17 | M | Agent | To do |
 | **T-03** Randomised fault testing | Testing and fault injection | T-02 | None | M | Agent | Done |
 | **I-01a** Infrastructure code scaffold, CI checks and UK-region guard | Infrastructure | F-01 | None | M | Agent | Done |
 | **I-01g** Geo-aware region policy, starting with the UK geo | Infrastructure | I-01a | None | S | Agent | Done |
@@ -297,7 +303,7 @@ flowchart LR
 | **I-01f** Apply the infrastructure to the three UK accounts | Infrastructure | I-01e, I-01l | None | S | Human | To do |
 | **I-02** Region-to-region latency measurement | Infrastructure | I-01f, K-04, R-03 | D-14 | S | Agent | To do |
 | **I-03** Failover drills on the UK clouds | Infrastructure | I-01f, T-01, C-02 | None | M | Agent | To do |
-| **GATE-1** Gate 1: stable open kernel | Gates | T-03, I-02, I-03, K-11, K-12, K-13, K-14, K-15, K-16 | None | S | Human | To do |
+| **GATE-1** Gate 1: stable open kernel | Gates | T-03, I-02, I-03, K-11, K-12, K-13, K-14, K-15, K-16, K-17 | None | S | Human | To do |
 | **S-04** Apache-2.0 licence for the repository | Security and compliance | None | None | S | Agent | Done |
 | **S-05** Publish the kernel and infrastructure to OpenLedgerKernel | Security and compliance | S-04 | None | M | Agent | Done |
 | **S-07** Credentialed workflows for the public repository | Security and compliance | S-05 | D-16 | M | Agent | To do |
