@@ -60,7 +60,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-53 of 65 tasks done.
+54 of 65 tasks done.
 
 ```mermaid
 flowchart LR
@@ -237,7 +237,7 @@ flowchart LR
   S_04 --> S_05
   S_05 --> S_07
   classDef done fill:#E8F5EC,stroke:#166534,color:#14171C
-  class F_01,F_02,F_03,K_01,K_02,K_03,K_04,K_05,K_06,K_07,C_01,C_02,R_01,R_02,R_03,C_03,T_01,T_02,K_08,K_11,K_12,K_14,K_15,K_13,K_16,T_03,I_01a,I_01g,I_01h,I_01b,I_01c,I_01d,I_01e,I_01i,I_01j,I_01ka,I_01kb,I_01kc,I_01m,I_01n,I_01oa,I_01ob,I_01oca,I_01ocb,I_01occ,I_01p,I_01q,I_01r,I_01t,I_01u,I_01va,S_04,S_05 done
+  class F_01,F_02,F_03,K_01,K_02,K_03,K_04,K_05,K_06,K_07,C_01,C_02,R_01,R_02,R_03,C_03,T_01,T_02,K_08,K_11,K_12,K_14,K_15,K_13,K_16,T_03,I_01a,I_01g,I_01h,I_01b,I_01c,I_01d,I_01e,I_01i,I_01j,I_01ka,I_01kb,I_01kc,I_01m,I_01n,I_01oa,I_01ob,I_01oca,I_01ocb,I_01occ,I_01p,I_01q,I_01r,I_01t,I_01u,I_01va,S_04,S_05,S_07 done
 ```
 
 | Task | Workstream | Depends on | Decisions | Size | Owner | Status |
@@ -306,5 +306,5 @@ flowchart LR
 | **GATE-1** Gate 1: stable open kernel | Gates | T-03, I-02, I-03, K-11, K-12, K-13, K-14, K-15, K-16, K-17 | None | S | Human | To do |
 | **S-04** Apache-2.0 licence for the repository | Security and compliance | None | None | S | Agent | Done |
 | **S-05** Publish the kernel and infrastructure to OpenLedgerKernel | Security and compliance | S-04 | None | M | Agent | Done |
-| **S-07** Credentialed workflows for the public repository | Security and compliance | S-05 | D-16 | M | Agent | To do |
+| **S-07** Credentialed workflows for the public repository | Security and compliance | S-05 | D-16 | M | Agent | Done |
 <!-- /generated:phase-P1 -->
