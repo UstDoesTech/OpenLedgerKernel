@@ -1628,7 +1628,7 @@ tasks:
   phase: P1
   workstream: S
   size: M
-  status: todo
+  status: done
   depends_on:
   - S-05
   decisions:
