@@ -23,6 +23,11 @@
 //! `LEDGER_PEERS_FILE` is set, because a cell never connects to another cell's database.
 //!   LEDGER_ETCD_ENDPOINTS  comma-separated etcd client URLs
 //!   LEDGER_ETCD_PREFIX     the control plane's key prefix, default `/ledger`
+//!   LEDGER_ETCD_CA_FILE, LEDGER_ETCD_CERT_FILE, LEDGER_ETCD_KEY_FILE
+//!                          the authority that signed etcd's certificates, and the client certificate
+//!                          and key this cell presents. All three or none. An https endpoint needs
+//!                          all three, and so does any plain http endpoint that is not loopback, which
+//!                          is refused when they are set.
 //!   LEDGER_LEASE_*         the lease guard's timings (see `control_plane::GuardConfig`)
 //!
 //! Exit codes: 2 for a configuration or connection problem at start, 1 for a failure after.
@@ -30,7 +35,10 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use control_plane::{EtcdConfig, EtcdControlPlane, GuardConfig, LeaseGuard, NodeId, SystemClock};
+use control_plane::{
+    EtcdConfig, EtcdControlPlane, EtcdTls, GuardConfig, LeaseGuard, NodeId, SystemClock,
+    check_transport,
+};
 use ledger_api::auth::{PeerTokens, StaticTokens};
 use ledger_api::peer::PeerClient;
 use ledger_api::tls::{self, TlsFiles, TlsListener};
@@ -115,6 +123,20 @@ async fn run() -> Result<(), String> {
         .filter(|s| !s.is_empty())
         .collect();
     let prefix = std::env::var("LEDGER_ETCD_PREFIX").unwrap_or_else(|_| "/ledger".to_owned());
+    let etcd_files = [
+        std::env::var("LEDGER_ETCD_CA_FILE").ok(),
+        std::env::var("LEDGER_ETCD_CERT_FILE").ok(),
+        std::env::var("LEDGER_ETCD_KEY_FILE").ok(),
+    ];
+    check_transport(&endpoints, etcd_files.iter().flatten().count())?;
+    let etcd_tls = match etcd_files {
+        [Some(ca), Some(cert), Some(key)] => Some(EtcdTls {
+            ca: ca.into(),
+            cert: cert.into(),
+            key: key.into(),
+        }),
+        _ => None,
+    };
 
     if std::env::var_os("LEDGER_PEERS_FILE").is_some() {
         return Err(
@@ -171,7 +193,11 @@ async fn run() -> Result<(), String> {
             "the cell's database has no ledger schema at this version: migrate it first".to_owned()
         })?;
 
-    let cp = EtcdControlPlane::connect(EtcdConfig::new(endpoints, prefix, guard_config.lease_ttl))
+    let mut etcd_config = EtcdConfig::new(endpoints, prefix, guard_config.lease_ttl);
+    if let Some(tls) = etcd_tls {
+        etcd_config = etcd_config.with_tls(tls);
+    }
+    let cp = EtcdControlPlane::connect(etcd_config)
         .await
         .map_err(|e| format!("cannot reach the control plane: {e}"))?;
     let guard = LeaseGuard::new(node.clone(), guard_config, Arc::new(SystemClock::new()))

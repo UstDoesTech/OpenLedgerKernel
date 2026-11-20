@@ -20,6 +20,7 @@ docker build -f images/api/Dockerfile -t ledger-api .
 | `LEDGER_CELLS_FILE` | The other cells' addresses and the credential to call each. |
 | `LEDGER_TLS_CERT_FILE`, `LEDGER_TLS_KEY_FILE`, `LEDGER_TLS_CA_FILE` | This cell's certificate and key, and the authority for every cell. |
 | `LEDGER_ETCD_ENDPOINTS` | The etcd client addresses. |
+| `LEDGER_ETCD_CA_FILE`, `LEDGER_ETCD_CERT_FILE`, `LEDGER_ETCD_KEY_FILE` | The authority that signed etcd's certificates, and the client certificate and key this cell presents. All three or none. An https endpoint needs all three. |
 
 The full list, with defaults, is at the top of `crates/api/src/main.rs`. The service exits with
 code 2 for any configuration problem, and says which variable.

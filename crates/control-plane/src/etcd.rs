@@ -17,11 +17,12 @@
 //! the removal of any forced expiry in the same transaction.
 
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use etcd_client::{
-    Client, Compare, CompareOp, ConnectOptions, EventType, GetOptions, GetResponse, PutOptions,
-    Txn, TxnOp, TxnOpResponse, WatchOptions,
+    Certificate, Client, Compare, CompareOp, ConnectOptions, EventType, GetOptions, GetResponse,
+    Identity, PutOptions, TlsOptions, Txn, TxnOp, TxnOpResponse, WatchOptions,
 };
 use ledger_core::AccountId;
 use serde::{Deserialize, Serialize};
@@ -42,6 +43,63 @@ pub struct EtcdConfig {
     pub lease_ttl: Duration,
     /// How long one request may take before it counts as unavailable.
     pub request_timeout: Duration,
+    /// What the client presents and trusts when etcd requires TLS and client certificates.
+    pub tls: Option<EtcdTls>,
+}
+
+/// Where the files are, never what is in them. They are read when the client connects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EtcdTls {
+    /// The authority that signed etcd's own certificates.
+    pub ca: PathBuf,
+    /// The certificate this client presents, and its key.
+    pub cert: PathBuf,
+    pub key: PathBuf,
+}
+
+fn is_loopback(endpoint: &str) -> bool {
+    let rest = endpoint.split("://").nth(1).unwrap_or(endpoint);
+    let authority = rest.split('/').next().unwrap_or(rest);
+    let host = match authority.rsplit_once(':') {
+        Some((h, port)) if port.chars().all(|c| c.is_ascii_digit()) => h,
+        _ => authority,
+    };
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
+/// Refuses a combination that would send etcd traffic in the clear, or that cannot connect.
+/// Called before any connection, so a misconfigured service stops at start with a message that
+/// names the variable. `given` is how many of the CA, certificate and key were set (0 to 3).
+pub fn check_transport(endpoints: &[String], given: usize) -> Result<(), String> {
+    if given != 0 && given != 3 {
+        return Err(
+            "LEDGER_ETCD_CA_FILE, LEDGER_ETCD_CERT_FILE and LEDGER_ETCD_KEY_FILE go together: \
+             set all three or none"
+                .to_owned(),
+        );
+    }
+    for endpoint in endpoints {
+        let https = endpoint.starts_with("https://");
+        if https && given == 0 {
+            return Err(
+                "an etcd endpoint is https, so LEDGER_ETCD_CA_FILE, LEDGER_ETCD_CERT_FILE and \
+                 LEDGER_ETCD_KEY_FILE are needed"
+                    .to_owned(),
+            );
+        }
+        if !https && given == 3 && !is_loopback(endpoint) {
+            return Err(
+                "LEDGER_ETCD_*_FILE are set, but an etcd endpoint is plain http on a \
+                 non-loopback address: use https"
+                    .to_owned(),
+            );
+        }
+    }
+    Ok(())
 }
 
 impl EtcdConfig {
@@ -51,7 +109,14 @@ impl EtcdConfig {
             prefix: prefix.into().trim_end_matches('/').to_owned(),
             lease_ttl,
             request_timeout: Duration::from_secs(3),
+            tls: None,
         }
+    }
+
+    /// Present a client certificate to etcd and trust its authority.
+    pub fn with_tls(mut self, tls: EtcdTls) -> Self {
+        self.tls = Some(tls);
+        self
     }
 }
 
@@ -91,10 +156,21 @@ fn from_json<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, ControlErr
 
 impl EtcdControlPlane {
     pub async fn connect(config: EtcdConfig) -> Result<Self, ControlError> {
-        let options = ConnectOptions::new()
+        let mut options = ConnectOptions::new()
             .with_timeout(config.request_timeout)
             .with_connect_timeout(config.request_timeout)
             .with_keep_alive(Duration::from_secs(5), config.request_timeout);
+        if let Some(tls) = &config.tls {
+            let read = |path: &PathBuf| {
+                std::fs::read(path).map_err(|e| unavailable(format!("etcd TLS file: {e}")))
+            };
+            let identity = Identity::from_pem(read(&tls.cert)?, read(&tls.key)?);
+            options = options.with_tls(
+                TlsOptions::new()
+                    .ca_certificate(Certificate::from_pem(read(&tls.ca)?))
+                    .identity(identity),
+            );
+        }
         let client = Client::connect(config.endpoints, Some(options))
             .await
             .map_err(unavailable)?;
@@ -625,5 +701,58 @@ impl ControlPlane for EtcdControlPlane {
                     .map_err(|e| unavailable(format!("unreadable cell name: {e}")))
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn e(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn plain_http_on_loopback_needs_nothing() {
+        assert!(check_transport(&e(&["http://127.0.0.1:2379"]), 0).is_ok());
+        assert!(check_transport(&e(&["http://localhost:2379", "http://[::1]:2379"]), 0).is_ok());
+    }
+
+    #[test]
+    fn an_https_endpoint_needs_all_three_files() {
+        let https = e(&["https://10.0.0.1:2379"]);
+        assert!(check_transport(&https, 0).unwrap_err().contains("https"));
+        assert!(check_transport(&https, 3).is_ok());
+    }
+
+    #[test]
+    fn one_or_two_files_are_refused_and_the_message_names_them() {
+        for given in [1, 2] {
+            let err = check_transport(&e(&["https://10.0.0.1:2379"]), given).unwrap_err();
+            assert!(err.contains("LEDGER_ETCD_CA_FILE"), "{err}");
+            assert!(err.contains("LEDGER_ETCD_KEY_FILE"), "{err}");
+        }
+    }
+
+    #[test]
+    fn files_with_a_plain_http_endpoint_that_is_not_loopback_are_refused() {
+        let err = check_transport(&e(&["http://10.0.0.1:2379"]), 3).unwrap_err();
+        assert!(err.contains("plain http"), "{err}");
+        // One bad endpoint among good ones is still refused.
+        assert!(
+            check_transport(&e(&["https://10.0.0.1:2379", "http://10.0.0.2:2379"]), 3).is_err()
+        );
+    }
+
+    #[test]
+    fn files_with_plain_http_on_loopback_are_allowed() {
+        assert!(check_transport(&e(&["http://127.0.0.1:2379"]), 3).is_ok());
+    }
+
+    #[test]
+    fn a_host_that_only_starts_like_loopback_is_not_loopback() {
+        assert!(!is_loopback("http://127.0.0.1.example.com:2379"));
+        assert!(!is_loopback("http://localhost.example.com:2379"));
+        assert!(is_loopback("127.0.0.1:2379"));
     }
 }

@@ -83,6 +83,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Start the local environment
         run: make up
+      - name: Take the etcd binary from the local environment's image
+        # The TLS test starts its own etcd, with client certificates required.
+        run: |
+          id=$(docker compose ps -q etcd)
+          sudo docker cp "$id:/usr/local/bin/etcd" /usr/local/bin/etcd
+          etcd --version | head -n 1
       - name: Integration tests
         run: cargo test -p conformance -p control-plane --features conformance/etcd -- --ignored
       - name: API integration tests

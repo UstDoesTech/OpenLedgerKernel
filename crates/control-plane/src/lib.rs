@@ -31,7 +31,7 @@ pub use admission::{Admission, Draining, Ticket, sync_drain};
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use error::ControlError;
 #[cfg(feature = "etcd")]
-pub use etcd::{EtcdConfig, EtcdControlPlane};
+pub use etcd::{EtcdConfig, EtcdControlPlane, EtcdTls, check_transport};
 pub use failover::{Cell, CellError, FailoverError, Orchestrator, Promotion};
 pub use guard::{ConfigError, GuardConfig, GuardError, LeaseGuard};
 pub use memory::InMemoryControlPlane;
