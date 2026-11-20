@@ -656,7 +656,7 @@ fn a_failure_names_a_step_and_never_a_cell_a_secret_a_key_or_a_value() {
     s.fail_write_number(1);
     let err = run(&m, &s, signer(), Kind::All).unwrap_err();
     let shown = format!("{err} / {err:?}");
-    for secret in [
+    for (n, secret) in [
         "secret-cell-one",
         "secret-cell-two",
         "cell-one",
@@ -664,8 +664,15 @@ fn a_failure_names_a_step_and_never_a_cell_a_secret_a_key_or_a_value() {
         "key-id-that-must-not-be-printed",
         "host=db",
         AUTHORITY,
-    ] {
-        assert!(!shown.contains(secret), "a message names {secret}");
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // The message gives the position, never the text, so a failure does not print it.
+        assert!(
+            !shown.contains(secret),
+            "a message names forbidden text number {n}"
+        );
     }
     let r = recorder(vec![Err(PkiError::Command(255, "reading a secret"))]);
     let err = CliStore::new(Shared(r), std::env::temp_dir())
@@ -685,7 +692,7 @@ fn a_run_prints_one_line_of_counts() {
     let line = String::from_utf8(out.stdout).unwrap();
     assert_eq!(line.lines().count(), 1);
     let numbers = regex_free_counts(line.trim());
-    assert!(numbers, "{line}");
+    assert!(numbers, "the line is not made of counts");
     for forbidden in [
         "BEGIN", "PRIVATE", "cell-one", "10.0.0.1", "secret-", "token",
     ] {
@@ -725,7 +732,7 @@ fn the_binary_fails_loudly_and_says_nothing_about_what_it_was_given() {
     );
     assert!(
         !all.contains("SECRET-KEY-ID") && !all.contains("SECRET-REF"),
-        "{all}"
+        "the output named something it was given"
     );
     let _ = std::fs::remove_dir_all(dir);
 }
