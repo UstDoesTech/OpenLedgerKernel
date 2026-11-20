@@ -45,3 +45,29 @@ output "postgres_repositories" {
     gcp   = "${module.regions.gcp[0]}-docker.pkg.dev/${data.google_project.current.project_id}/${google_artifact_registry_repository.postgres.repository_id}/postgres"
   }
 }
+
+output "api" {
+  description = "What the API machines next to this tenant's cells take in each cloud: the repository they may read and the image address, by the digest in infra/images.json."
+  value = {
+    "aws" = {
+      registry_repository_arn = aws_ecr_repository.api.arn
+      image                   = "${aws_ecr_repository.api.repository_url}@${local.api_digest}"
+    }
+    "azure" = {
+      image = "${data.terraform_remote_state.private_access.outputs.azure_registry_login_server}/${local.tenant}/api@${local.api_digest}"
+    }
+    "gcp" = {
+      registry_repository_id = google_artifact_registry_repository.api.id
+      image                  = "${module.regions.gcp[0]}-docker.pkg.dev/${data.google_project.current.project_id}/${google_artifact_registry_repository.api.repository_id}/api@${local.api_digest}"
+    }
+  }
+}
+
+output "api_repositories" {
+  description = "Where to copy the API image to, in each cloud (no tag or digest)."
+  value = {
+    aws   = aws_ecr_repository.api.repository_url
+    azure = "${data.terraform_remote_state.private_access.outputs.azure_registry_login_server}/${local.tenant}/api"
+    gcp   = "${module.regions.gcp[0]}-docker.pkg.dev/${data.google_project.current.project_id}/${google_artifact_registry_repository.api.repository_id}/api"
+  }
+}

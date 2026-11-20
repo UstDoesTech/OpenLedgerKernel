@@ -29,3 +29,34 @@ resource "google_artifact_registry_repository" "postgres" {
     immutable_tags = true
   }
 }
+
+# The API image has repositories of the same kind, so the machines next to a tenant's cells pull
+# it from the tenant's own. Its digest is the manifest's (infra/images.json), so no variable
+# carries it and nothing can differ from what was published.
+resource "aws_ecr_repository" "api" {
+  name                 = "${local.tenant}/api"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = aws_kms_key.cell.arn
+  }
+
+  tags = local.tags
+}
+
+resource "google_artifact_registry_repository" "api" {
+  location      = module.regions.gcp[0]
+  repository_id = "${local.hyphen}-api"
+  format        = "DOCKER"
+  description   = "The API image for ${local.tenant}"
+  labels        = local.tags
+
+  docker_config {
+    immutable_tags = true
+  }
+}
