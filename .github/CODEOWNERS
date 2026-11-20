@@ -14,3 +14,5 @@
 /SECURITY.md                      @UstDoesTech
 /TRADEMARK.md                     @UstDoesTech
 /scripts/proving_power.sh         @UstDoesTech
+/scripts/rotation_manifest.py        @UstDoesTech
+/crates/pki/                      @UstDoesTech

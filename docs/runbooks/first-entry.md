@@ -28,21 +28,13 @@ Use the proving environment and a test tenant only. It holds no real money and n
 
 ## 3. Fill each cell's secret
 
-The secrets are made empty, on purpose: their contents never pass through OpenTofu or its state. Fill each one by hand, with your own cloud sign-in, as a single JSON object with these entries:
+The secrets are made empty, on purpose: their contents never pass through OpenTofu or its state. Two workflows fill them, and you fill two entries.
 
-| Entry | Holds |
-| --- | --- |
-| `db.conn` | The connection string for this cell's own Postgres, and no other cell's. |
-| `tokens.json` | The bearer tokens for the test tenant: token, tenant, principal. |
-| `internal-auth.json` | The cells that may call this one, each with a credential and the tenants it covers. |
-| `cells.json` | The other cells' private addresses and the credential this cell uses to call each. |
-| `server.crt`, `server.key` | This cell's certificate chain and key. |
-| `ca.crt` | The authority that signed every cell's certificate. |
-| `etcd-ca.crt`, `etcd-client.crt`, `etcd-client.key` | What this cell presents to etcd, and the authority that signed etcd's own certificates. |
+1. Apply `europe/authority` through **infra-apply**. It makes the authority's signing key in KMS.
+2. Fill `db.conn` and `tokens.json` in each cell's secret, with your own cloud sign-in. `db.conn` is the connection string for that cell's own Postgres, and no other cell's. `tokens.json` holds the bearer tokens for the test tenant: token, tenant, principal. Never put either in the repository, an issue, a pull request or a log.
+3. Run **rotate-credentials** with `kind` set to `all`, and approve its environment. It makes each cell's certificates and cell credentials and writes them into that cell's secret. See [Rotating certificates and credentials](rotating-credentials.md). The line it prints should end `cells still missing a file: 0`.
 
-The `apis` output of the `api` layer lists them, with where each secret is. Issue the certificates and credentials from an authority you control. There is no task yet for issuing and rotating them, so for the proving environment this is by hand. Never put one in the repository, an issue, a pull request or a log.
-
-Then restart each machine's service so it reads the secret. The service retries for a few minutes on its own, so a short wait may be enough.
+The `apis` output of the `api` layer says where each secret is. The machine reads its secret again every five minutes, so the files reach it without a restart, and the service starts as soon as every file is there.
 
 *What it proves:* the secret store, the machine's identity and the secret's contents agree.
 
@@ -103,7 +95,7 @@ In `docs/evidence/gate-1.md`, write the date, the commit you proved, the clouds,
 
 | What you see | What it usually is |
 | --- | --- |
-| The machine never serves | The secret is empty or is missing an entry. The service exits with code 2 and names the file. Fill it, then restart the service. |
+| The machine never serves | The secret is empty or is missing an entry. The service exits with code 2 and names the file. Run **rotate-credentials**, and fill `db.conn` and `tokens.json` if they are missing. The machine reads the secret again within five minutes. |
 | `control_plane_unavailable` | The machine cannot reach etcd: check the etcd addresses in the layer and that the client certificate was issued by etcd's authority. |
 | A status class of `4xx` on a step | The token, the tenant or the request is wrong. `401` is the token, `404` is an account that is not this tenant's. |
 | `5xx` on the cross-cell step only | The payee's cell cannot be reached from the payer's: check `cells.json`, the interconnect and that the payee's `internal-auth.json` names the payer's cell. |

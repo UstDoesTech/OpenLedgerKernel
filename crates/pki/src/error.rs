@@ -17,6 +17,8 @@ pub enum PkiError {
     Certificate(&'static str),
     #[error("a secret could not be {0}")]
     Secret(&'static str),
-    #[error("nothing was changed after step {step} because {why}")]
+    #[error(
+        "the run stopped at step {step} because {why}. What was written before it still works. Run it again"
+    )]
     Stopped { step: u8, why: &'static str },
 }
