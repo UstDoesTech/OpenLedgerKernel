@@ -23,7 +23,10 @@ use tokio::sync::mpsc;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::server::TlsStream;
 
-/// Where the certificate, key and authority are, as files. They are read once, at start.
+use crate::reload::Reloadable;
+
+/// Where the certificate, key and authority are, as files. They are read at start and read again
+/// when they change (see `crate::reload`), so a rotation needs no restart.
 #[derive(Debug, Clone, Default)]
 pub struct TlsFiles {
     /// This cell's certificate chain, in PEM.
@@ -153,8 +156,14 @@ pub struct TlsListener {
 
 impl TlsListener {
     pub fn new(tcp: TcpListener, config: Arc<ServerConfig>) -> io::Result<Self> {
+        Self::reloadable(tcp, Reloadable::from_arc(config))
+    }
+
+    /// Like [`TlsListener::new`], but each connection is accepted with whatever config is in force
+    /// when it arrives, so a new certificate serves from the next connection on. A connection
+    /// already open keeps the certificate it began with.
+    pub fn reloadable(tcp: TcpListener, config: Reloadable<ServerConfig>) -> io::Result<Self> {
         let local = tcp.local_addr()?;
-        let acceptor = TlsAcceptor::from(config);
         let (tx, rx) = mpsc::channel(64);
         tokio::spawn(async move {
             loop {
@@ -165,7 +174,8 @@ impl TlsListener {
                 if tx.is_closed() {
                     break;
                 }
-                let (acceptor, tx) = (acceptor.clone(), tx.clone());
+                let acceptor = TlsAcceptor::from(config.get());
+                let tx = tx.clone();
                 tokio::spawn(async move {
                     let shaken =
                         tokio::time::timeout(Duration::from_secs(10), acceptor.accept(stream))

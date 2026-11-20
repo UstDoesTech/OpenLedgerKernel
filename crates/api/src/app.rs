@@ -27,6 +27,7 @@ use tokio_postgres::Client;
 use crate::auth::{Authenticator, PeerAuthenticator, Principal};
 use crate::error::ApiError;
 use crate::peer::{PeerClient, PeerError};
+use crate::reload::Reloadable;
 
 /// Everything a handler needs. Cheap to clone: it is one shared pointer.
 pub struct AppState<C> {
@@ -41,6 +42,9 @@ impl<C> Clone for AppState<C> {
     }
 }
 
+/// The clients for the other cells, by cell name.
+pub type Peers = HashMap<String, Arc<PeerClient>>;
+
 pub(crate) struct Inner<C> {
     /// The cell this service runs next to.
     pub(crate) node: NodeId,
@@ -51,7 +55,7 @@ pub(crate) struct Inner<C> {
     pub(crate) auth: Arc<dyn Authenticator>,
     pub(crate) admission: Admission,
     /// How to call the other cells' services, for transfers that end there.
-    pub(crate) peers: HashMap<String, PeerClient>,
+    pub(crate) peers: Reloadable<Peers>,
     /// Who may call this cell's internal endpoints. None means nobody may.
     pub(crate) peer_auth: Option<Arc<dyn PeerAuthenticator>>,
     /// The pairs of cells already made ready for in-transit value, so each is done once.
@@ -78,7 +82,7 @@ impl<C: ControlPlane> AppState<C> {
                 guard,
                 auth,
                 admission: Admission::new(),
-                peers: HashMap::new(),
+                peers: Reloadable::new(HashMap::new()),
                 peer_auth: None,
                 prepared: Mutex::new(HashSet::new()),
             }),
@@ -88,12 +92,17 @@ impl<C: ControlPlane> AppState<C> {
     /// Adds how to call another cell's service, for transfers to accounts homed there. Call it
     /// before the state is shared.
     #[must_use]
-    pub fn with_peer(mut self, cell: &str, client: PeerClient) -> Self {
-        Arc::get_mut(&mut self.inner)
-            .expect("peers are added before the state is shared")
-            .peers
-            .insert(cell.to_owned(), client);
+    pub fn with_peer(self, cell: &str, client: PeerClient) -> Self {
+        let mut peers = (*self.inner.peers.get()).clone();
+        peers.insert(cell.to_owned(), Arc::new(client));
+        self.inner.peers.set(Arc::new(peers));
         self
+    }
+
+    /// The handle that swaps the clients for the other cells, for whatever re-reads the list of
+    /// cells while the service runs.
+    pub fn peers_handle(&self) -> Reloadable<Peers> {
+        self.inner.peers.clone()
     }
 
     /// Says who may call this cell's internal endpoints. Without it, none may be called.
@@ -634,8 +643,8 @@ async fn run_transfer<C: ControlPlane + 'static>(
 
     // The payee is homed at another cell. Ask that cell's service to check the payee first, so
     // nothing is written here unless the second half can be done.
-    let peer = i
-        .peers
+    let peers = i.peers.get();
+    let peer = peers
         .get(payee_home.as_str())
         .ok_or_else(|| ApiError::home_unavailable("this cell has no route to the payee's cell"))?;
     let pair = in_transit_pair(
@@ -807,9 +816,10 @@ async fn payer_elsewhere<C: ControlPlane + 'static>(
     payer: &AccountId,
 ) -> ApiError {
     let i = &s.inner;
+    let peers = i.peers.get();
     if let Ok((home, _)) = i.cp.home(payer).await
         && home != i.node
-        && let Some(peer) = i.peers.get(home.as_str())
+        && let Some(peer) = peers.get(home.as_str())
         && let Ok(_) = peer_call(
             peer,
             "GET",
