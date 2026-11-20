@@ -63,6 +63,13 @@ decisions:
     anyone, so S-07's guards are required, not optional. That means no plan output or identifiers in a
     log, dispatch only from main, a named approver, and cloud trust pinned to that repository's environment.
     (Ust Oldfield, 2026-11-19)
+- id: D-17
+  title: Where the certificate authority's key lives
+  status: open
+  proposed: One central authority, held in AWS. Its key is in a KMS that the signer can use but nobody can
+    export. Certificates last 30 days and are re-issued every 10, so the signer can be down for about 20
+    days without any cell losing the others. Cell credentials are re-issued every 7 days, and when a cell
+    is removed. Every cell trusts the authority's public certificate, so no cell calls AWS to check one
 tasks:
 - id: F-01
   title: Rust workspace and CI
@@ -655,6 +662,39 @@ tasks:
     passes in CI.
   notes: Needs the API image published and its digest in infra/images.json, which a person does after K-13's
     workflow merges. The proving environment holds no real money and no customer data.
+  refs:
+  - docs/credentialed-workflows.md
+- id: K-17
+  title: Issue and rotate the API's certificates and cell credentials
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-13
+  - S-07
+  decisions:
+  - D-17
+  deliverables:
+  - crates/pki
+  - .github/workflows/rotate-credentials.yml
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - One command, run by a credentialed workflow and never by hand, issues for each cell a server certificate,
+    a client certificate for etcd and the cell credentials, and writes them into that cell's API secret as
+    a new version. The files and entries are those listed by the API module's secret_files output.
+  - Certificates last 30 days and are re-issued every 10. Cell credentials are re-issued every 7 days and
+    on demand. The service reads its files again when they change, so a rotation needs no restart and
+    drops no request, shown by a test that rotates while transfers are running.
+  - A cell credential that the other side no longer lists is refused, and a removed cell stops being
+    accepted as soon as the lists are pushed, which an on-demand run does, each with a test.
+  - A run prints counts only, so no certificate, key, token or identifier reaches a log, with a test that
+    fails if a step prints one.
+  - If a rotation fails part-way the old files stay in force and the run fails loudly. The runbook says how
+    to recover.
+  notes: Edits a credentialed workflow, so it needs a person's review. Until D-17 is decided, the signer
+    sits behind a trait and the proposed default runs in memory. Needs the service to reload TLS files, which
+    is part of this task.
   refs:
   - docs/credentialed-workflows.md
 - id: T-03
@@ -1523,6 +1563,7 @@ tasks:
   - K-14
   - K-15
   - K-16
+  - K-17
   deliverables:
   - docs/evidence/gate-1.md
   acceptance:
