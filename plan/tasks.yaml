@@ -728,7 +728,7 @@ tasks:
     task, the members' certificates are made by hand from that authority. Edits a credentialed workflow
     and may change an AWS or Azure role, so it needs a person's review.
   refs:
-  - docs/runbooks/rotating-credentials.md
+  - docs/credentialed-workflows.md
 - id: K-19
   title: Fill each API secret's database connection and the proving tenant's tokens
   phase: P1
@@ -752,7 +752,7 @@ tasks:
     nothing else may. Until this task a person fills these two entries. Real sign-in replaces the tokens in
     A-06. Edits a credentialed workflow, so it needs a person's review.
   refs:
-  - docs/runbooks/rotating-credentials.md
+  - docs/credentialed-workflows.md
 - id: T-03
   title: Randomised fault testing
   phase: P1
