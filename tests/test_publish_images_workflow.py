@@ -106,14 +106,14 @@ def test_tokens_are_masked_and_the_ghcr_package_is_the_repositorys_own():
 def test_the_inputs_are_checked_before_anything_else_runs():
     first = named("Check the inputs")["run"]
     assert "^[a-z][a-z0-9-]{0,30}$" in first
-    assert "image must be etcd or postgres" in first
+    assert "image must be etcd, postgres or api" in first
     order = [s.get("name") or s.get("uses") for s in steps()]
     assert order.index(named("Check the inputs")["name"]) < order.index("AWS (federated)")
 
 
-def test_it_publishes_one_of_two_named_images_and_nothing_else():
+def test_it_publishes_one_of_three_named_images_and_nothing_else():
     inputs = load().get("on", load().get(True))["workflow_dispatch"]["inputs"]
-    assert inputs["image"]["type"] == "choice" and inputs["image"]["options"] == ["etcd", "postgres"]
+    assert inputs["image"]["type"] == "choice" and inputs["image"]["options"] == ["etcd", "postgres", "api"]
     first = named("Check the inputs")["run"]
     # The layer and the output come from the choice, never from the input text.
     assert "etcd)     layer=registries; output=etcd_repositories" in first
@@ -125,7 +125,8 @@ def test_it_publishes_one_of_two_named_images_and_nothing_else():
 def test_postgres_comes_from_our_own_package_by_digest_and_is_not_copied_in_from_outside():
     first = named("Check the inputs")["run"]
     assert 'set(image) == {"source", "digest"}' in first
-    assert '"ghcr.io/" + os.environ["GITHUB_REPOSITORY"].lower() + "/postgres"' in first
+    assert '"ghcr.io/" + os.environ["GITHUB_REPOSITORY"].lower() + "/" + name' in first
+    assert "api)      layer=cell-first; output=api_repositories" in first
     run = named("Copy the image")["run"]
     assert 'if [ "$IMAGE_NAME" = etcd ]; then' in run
     assert '[ "$SOURCE" = "$GHCR" ]' in run

@@ -1,8 +1,8 @@
 name: publish-images
 
 # Copies a container image named in infra/images.json into the clouds' private registries
-# (docs/credentialed-workflows.md). The image input says which: etcd (for the control plane) or
-# postgres (for the tenant's cells). Only the repository's owner may dispatch it, from main, and
+# (docs/credentialed-workflows.md). The image input says which: etcd (for the control plane),
+# postgres (for the tenant's cells) or api (for the machines next to them). Only the repository's owner may dispatch it, from main, and
 # a person must approve the `infra-apply` environment. Agents never dispatch it.
 #
 # This repository is public, so anyone can read this workflow's log. The registries' addresses
@@ -10,14 +10,15 @@ name: publish-images
 # commands that would print them have their output dropped.
 #
 # - etcd comes from upstream by its pinned digest. It is kept as a private package in GitHub's
-#   container registry. postgres is already that package (publish-postgres-image builds it).
+#   container registry. postgres and api are already that package (publish-postgres-image and
+#   publish-api-image build them).
 #   Either way it is copied from there to AWS, Azure and Google Cloud. Every copy
 #   keeps the digest, and the run fails unless each registry gives back exactly the pinned digest.
 # - No cloud secret is stored. Each cloud trusts GitHub's identity token for the environment.
 # - The Azure registry is private. For the run, this runner's own address is added to its firewall
 #   and the registry is made reachable, and a last step that always runs closes it again.
 # - It never runs tofu apply. It reads the repositories' addresses from a layer's state (outputs
-#   only): the registries layer for etcd, the cell layer for postgres.
+#   only): the registries layer for etcd, the cell-first layer for postgres and api.
 #
 # Third-party actions are pinned to a commit (the tag is in the comment).
 
@@ -33,7 +34,7 @@ on:
         description: "Which image to publish"
         required: true
         type: choice
-        options: [etcd, postgres]
+        options: [etcd, postgres, api]
         default: etcd
 
 permissions:
@@ -75,7 +76,8 @@ jobs:
           case "$INPUT_IMAGE" in
             etcd)     layer=registries; output=etcd_repositories ;;
             postgres) layer=cell-first; output=postgres_repositories ;;
-            *) echo "::error::image must be etcd or postgres"; exit 1 ;;
+            api)      layer=cell-first; output=api_repositories ;;
+            *) echo "::error::image must be etcd, postgres or api"; exit 1 ;;
           esac
           [ -d "infra/envs/$INPUT_ENV/$layer" ] || { echo "::error::infra/envs/$INPUT_ENV/$layer does not exist"; exit 1; }
           [ -n "$BACKEND_CONFIG" ] || { echo "::error::the variable TOFU_BACKEND_CONFIG is not set on this environment"; exit 1; }
@@ -95,8 +97,8 @@ jobs:
               tag = image["tag"]
           else:
               # Built here and kept in this repository's own package. No tag selects it.
-              assert set(image) == {"source", "digest"}, "postgres has a source and a digest only"
-              assert image["source"] == "ghcr.io/" + os.environ["GITHUB_REPOSITORY"].lower() + "/postgres", "source"
+              assert set(image) == {"source", "digest"}, "postgres and api have a source and a digest only"
+              assert image["source"] == "ghcr.io/" + os.environ["GITHUB_REPOSITORY"].lower() + "/" + name, "source"
               tag = "sha-" + image["digest"][len("sha256:"):][:12]
           with open(os.environ["GITHUB_ENV"], "a") as out:
               out.write(f"SOURCE={image['source']}\nTAG={tag}\nDIGEST={image['digest']}\n")
@@ -201,11 +203,11 @@ jobs:
             [ "$(digest_of "$to")" = "$DIGEST" ] || { echo "::error::$to does not hold the pinned digest"; exit 1; }
           }
 
-          # etcd comes from upstream and is kept in our package first. postgres is that package.
+          # etcd comes from upstream and is kept in our package first. postgres and api are that package.
           if [ "$IMAGE_NAME" = etcd ]; then
             copy "$SOURCE@$DIGEST" "$GHCR"
           else
-            [ "$SOURCE" = "$GHCR" ] || { echo "::error::the postgres source must be $GHCR"; exit 1; }
+            [ "$SOURCE" = "$GHCR" ] || { echo "::error::the $IMAGE_NAME source must be $GHCR"; exit 1; }
           fi
           for dest in "$AWS_REPO" "$AZURE_REPO" "$GCP_REPO"; do
             copy "$GHCR@$DIGEST" "$dest"
