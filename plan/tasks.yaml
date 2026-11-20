@@ -704,6 +704,55 @@ tasks:
     is part of this task.
   refs:
   - docs/credentialed-workflows.md
+- id: K-18
+  title: Issue the etcd members' certificates from the same authority
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-17
+  deliverables:
+  - crates/pki
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - A rotation issues each etcd member a server certificate and a peer certificate from the same authority
+    as the cells' certificates, naming the member's address, and writes them with the authority's
+    certificate into that member's secret as a new version. The files are those the etcd module lists.
+  - Members and cells trust the same authority, shown by a test in which a cell's etcd client certificate
+    from a K-17 rotation is accepted by an etcd member started with the certificates this task issues,
+    with client certificates required.
+  - A rotation that fails part-way leaves every member able to reach the others, and a run prints counts
+    only, each with a test.
+  notes: K-17 sets the cells' etcd-ca.crt to the authority's certificate, so etcd must trust it. Until this
+    task, the members' certificates are made by hand from that authority. Edits a credentialed workflow
+    and may change an AWS or Azure role, so it needs a person's review.
+  refs:
+  - docs/runbooks/rotating-credentials.md
+- id: K-19
+  title: Fill each API secret's database connection and the proving tenant's tokens
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-17
+  deliverables:
+  - crates/pki
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - A run writes db.conn and tokens.json into each cell's API secret, so no entry of the secret is filled
+    by hand. The connection string names only that cell's own database, and no cell's secret holds another
+    cell's.
+  - The tokens are made fresh for the proving tenant by the run and are not in the repository, a log or the
+    state, with a test that fails if a step prints one.
+  - A token that was issued is refused once a later run no longer lists it, shown by a test against the
+    running service.
+  notes: Needs a decision on where each cell's database credentials live, so that the run may read them and
+    nothing else may. Until this task a person fills these two entries. Real sign-in replaces the tokens in
+    A-06. Edits a credentialed workflow, so it needs a person's review.
+  refs:
+  - docs/runbooks/rotating-credentials.md
 - id: T-03
   title: Randomised fault testing
   phase: P1
