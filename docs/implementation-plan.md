@@ -53,6 +53,8 @@ These are human decisions. A task that lists one can still be built up to its in
 | **D-14** Latency budget - same-cell leg, cross-cell transfer and strong-tier acknowledgement, p50 and p95 | Open | None yet | I-02 |
 | **D-16** Where the credentialed workflows run once the code is public | Decided | The credentialed workflows run on the public repository. Its workflow logs are readable by anyone, so S-07's guards are required, not optional. That means no plan output or identifiers in a log, dispatch only from main, a named approver, and cloud trust pinned to that repository's environment. (Ust Oldfield, 2026-11-19) | None |
 | **D-17** Where the certificate authority's key lives | Decided | One central authority, held in AWS, not one per cloud. Its key is in a KMS that the signer can use but nobody can export. Certificates last 30 days and are re-issued every 10. Cell credentials are re-issued every 7 days, and when a cell is removed. Every cell trusts the authority's public certificate, so no cell calls AWS to check one. (Ust Oldfield, 2026-11-20) | None |
+| **D-18** How the rotation identities are made, and who may make them | Open | OpenTofu makes them, in a layer of its own applied by infra-apply. In AWS the role and its policy, in Azure the app registration, its federated credential and the role assignments, and in Google Cloud the service account, its provider binding and its roles. Each trust names this repository's rotate-credentials environment only. The applying identity may create only these identities, bounded by a permissions boundary in AWS, a custom role in Azure and a deny policy in Google Cloud, so it cannot grant itself or the new identities more than the layer lists. Entering the values as the environment's secrets stays a person's step, because OpenTofu holds no GitHub token. | K-19c |
+| **D-19** Which database credential the API uses, and who writes it | Open | A dedicated application role per cell, made by the node agent on the primary's first start. The agent writes that role's connection string into the cell's API secret itself, so neither the run nor a person ever reads the administrator's credential. Until the agent does this, the run copies the administrator's connection into db.conn, for proving environments only. | K-19b, K-19d |
 <!-- /generated:decisions -->
 
 ## Tasks
@@ -60,7 +62,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-55 of 67 tasks done.
+55 of 70 tasks done.
 
 ```mermaid
 flowchart LR
@@ -93,7 +95,10 @@ flowchart LR
   K_16["K-16<br/>Run the API machines in the Europe environment"]
   K_17["K-17<br/>Issue and rotate the API's certificates and cell credentials"]
   K_18["K-18<br/>Issue the etcd members' certificates from the same authority"]
-  K_19["K-19<br/>Fill each API secret's database connection and the proving tenant's tokens"]
+  K_19a["K-19a<br/>Let the API trust a database CA, and make the first start say why it cannot connect"]
+  K_19b["K-19b<br/>Fill each API secret's database connection and the proving tenant's tokens"]
+  K_19c["K-19c<br/>Make the rotation identities with OpenTofu"]
+  K_19d["K-19d<br/>Make each cell's application role in the node agent"]
   T_03["T-03<br/>Randomised fault testing"]
   I_01a["I-01a<br/>Infrastructure code scaffold, CI checks and UK-region guard"]
   I_01g["I-01g<br/>Geo-aware region policy, starting with the UK geo"]
@@ -176,7 +181,10 @@ flowchart LR
   K_13 --> K_17
   S_07 --> K_17
   K_17 --> K_18
-  K_17 --> K_19
+  K_17 --> K_19a
+  K_19a --> K_19b
+  K_17 --> K_19c
+  K_19b --> K_19d
   T_02 --> T_03
   F_01 --> I_01a
   I_01a --> I_01g
@@ -275,7 +283,10 @@ flowchart LR
 | **K-16** Run the API machines in the Europe environment | Ledger kernel | K-13, K-15 | None | S | Agent | Done |
 | **K-17** Issue and rotate the API's certificates and cell credentials | Ledger kernel | K-13, S-07 | D-17 | M | Agent | Done |
 | **K-18** Issue the etcd members' certificates from the same authority | Ledger kernel | K-17 | None | S | Agent | To do |
-| **K-19** Fill each API secret's database connection and the proving tenant's tokens | Ledger kernel | K-17 | None | S | Agent | To do |
+| **K-19a** Let the API trust a database CA, and make the first start say why it cannot connect | Ledger kernel | K-17 | None | S | Agent | To do |
+| **K-19b** Fill each API secret's database connection and the proving tenant's tokens | Ledger kernel | K-19a | D-19 | S | Agent | To do |
+| **K-19c** Make the rotation identities with OpenTofu | Infrastructure | K-17 | D-18 | M | Agent | To do |
+| **K-19d** Make each cell's application role in the node agent | Ledger kernel | K-19b | D-19 | M | Agent | To do |
 | **T-03** Randomised fault testing | Testing and fault injection | T-02 | None | M | Agent | Done |
 | **I-01a** Infrastructure code scaffold, CI checks and UK-region guard | Infrastructure | F-01 | None | M | Agent | Done |
 | **I-01g** Geo-aware region policy, starting with the UK geo | Infrastructure | I-01a | None | S | Agent | Done |
