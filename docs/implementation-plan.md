@@ -266,7 +266,7 @@ flowchart LR
 | **K-11** Write path skeleton, the API service and opening accounts | Ledger kernel | K-03, K-08 | None | M | Agent | Done |
 | **K-12** Write path skeleton, transfers over HTTP | Ledger kernel | K-11, K-04, K-05 | None | M | Agent | Done |
 | **K-14** Write path skeleton, cells call each other for cross-cell transfers | Ledger kernel | K-12 | None | M | Agent | Done |
-| **K-15** The API reaches etcd over mutual TLS | Ledger kernel | K-14 | None | S | Agent | To do |
+| **K-15** The API reaches etcd over mutual TLS | Ledger kernel | K-14 | None | S | Agent | In progress |
 | **K-13** Write path skeleton, run the API next to each cell | Ledger kernel | K-14, K-15, S-05 | None | M | Agent | In progress |
 | **K-16** Run the API machines in the Europe environment | Ledger kernel | K-13, K-15 | None | S | Agent | To do |
 | **K-17** Issue and rotate the API's certificates and cell credentials | Ledger kernel | K-13, S-07 | D-17 | M | Agent | To do |
