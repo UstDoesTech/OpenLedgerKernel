@@ -66,10 +66,10 @@ decisions:
 - id: D-17
   title: Where the certificate authority's key lives
   status: open
-  proposed: One authority for the environment, its key in a KMS the signer can use but nobody can export,
-    and short-lived certificates (24 hours) and credentials re-issued every 12 hours, so a lost one expires
-    before anyone could use it
-tasks:
+  proposed: One central authority, held in AWS. Its key is in a KMS that the signer can use but nobody can
+    export. Certificates last 30 days and are re-issued every 10, so the signer can be down for about 20
+    days without any cell losing the others. Cell credentials are re-issued every 7 days, and when a cell
+    is removed. Every cell trusts the authority's public certificate, so no cell calls AWS to check one
 - id: F-01
   title: Rust workspace and CI
   phase: P1
@@ -680,11 +680,11 @@ tasks:
   - One command, run by a credentialed workflow and never by hand, issues for each cell a server certificate,
     a client certificate for etcd and the cell credentials, and writes them into that cell's API secret as
     a new version. The files and entries are those listed by the API module's secret_files output.
-  - Certificates last 24 hours and credentials are re-issued every 12 hours. The service reads its files
-    again when they change, so a rotation needs no restart and drops no request, shown by a test that
-    rotates while transfers are running.
-  - A cell credential that the other side no longer lists is refused, and a revoked cell stops being
-    accepted within one rotation, each with a test.
+  - Certificates last 30 days and are re-issued every 10. Cell credentials are re-issued every 7 days and
+    on demand. The service reads its files again when they change, so a rotation needs no restart and
+    drops no request, shown by a test that rotates while transfers are running.
+  - A cell credential that the other side no longer lists is refused, and a removed cell stops being
+    accepted as soon as the lists are pushed, which an on-demand run does, each with a test.
   - A run prints counts only, so no certificate, key, token or identifier reaches a log, with a test that
     fails if a step prints one.
   - If a rotation fails part-way the old files stay in force and the run fails loudly. The runbook says how
