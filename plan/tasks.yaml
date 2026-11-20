@@ -609,7 +609,7 @@ tasks:
   phase: P1
   workstream: K
   size: M
-  status: in_progress
+  status: done
   depends_on:
   - K-14
   - K-15
