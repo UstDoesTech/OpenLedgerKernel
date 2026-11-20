@@ -76,7 +76,7 @@ decisions:
     so no cell calls AWS to check one. (Ust Oldfield, 2026-11-20)
 - id: D-18
   title: How the rotation identities are made, and who may make them
-  status: open
+  status: decided
   proposed: OpenTofu makes them, in a layer of its own applied by infra-apply. In AWS the role and its
     policy, in Azure the app registration, its federated credential and the role assignments, and in Google
     Cloud the service account, its provider binding and its roles. Each trust names this repository's
@@ -84,13 +84,20 @@ decisions:
     by a permissions boundary in AWS, a custom role in Azure and a deny policy in Google Cloud, so it cannot
     grant itself or the new identities more than the layer lists. Entering the values as the environment's
     secrets stays a person's step, because OpenTofu holds no GitHub token.
+  outcome: OpenTofu makes the rotation identities, in a layer applied by infra-apply. The applying identity may
+    create only those identities, bounded by a permissions boundary in AWS, a custom role in Azure and a
+    deny policy in Google Cloud. Entering the outputs as the environment's secrets stays a person's step.
+    (Ust Oldfield, 2026-11-20)
 - id: D-19
   title: Which database credential the API uses, and who writes it
-  status: open
+  status: decided
   proposed: A dedicated application role per cell, made by the node agent on the primary's first start. The
     agent writes that role's connection string into the cell's API secret itself, so neither the run nor a
     person ever reads the administrator's credential. Until the agent does this, the run copies the
     administrator's connection into db.conn, for proving environments only.
+  outcome: A dedicated application role per cell, made by the node agent on the primary's first start, which
+    writes that role's connection string into the cell's API secret. Until then the run copies the
+    administrator's connection into db.conn, for proving environments only. (Ust Oldfield, 2026-11-20)
 tasks:
 - id: F-01
   title: Rust workspace and CI
@@ -796,9 +803,8 @@ tasks:
     cell's own database, and no cell's secret holds another cell's.
   - The tokens are made fresh for the proving tenant by the run and are not in the repository, a log or the
     state, with a test that fails if a step prints one. A person can read one with their own sign-in.
-  - The database credential comes from a trait. Until D-19 is decided the proposed default is a
-    simulated source, and the administrator copy is the only real one, switched on by a manifest field
-    that proving environments set.
+  - The database credential comes from a trait. The only real source until K-19d is the administrator
+    copy, switched on by a manifest field that proving environments set and refused otherwise.
   - A token that was issued is refused once a later run no longer lists it, shown by a test against the
     running service.
   notes: Until this task a person fills these two entries with the scripts in the first-entry runbook. Real
