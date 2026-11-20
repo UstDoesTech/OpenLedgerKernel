@@ -153,14 +153,14 @@ One central certificate authority signs every cell's certificates (decision D-17
 | Cloud | What the `rotate-credentials` identity may do |
 | --- | --- |
 | AWS | `kms:Sign` and `kms:GetPublicKey` on the authority key. `secretsmanager:GetSecretValue`, `PutSecretValue` and `ListSecretVersionIds` on the authority's certificate secret and on the AWS API secret. Read on the state bucket for the `api` and `authority` layers, and `PutObject` on the plan store's prefix. Nothing else. |
-| Azure | `Key Vault Secrets Officer` on the vault, so it can read and write the Azure API secret. Nothing else. |
+| Azure | On the vault only: `Key Vault Secrets Officer`, so it can read and write the Azure API secret, and `Key Vault Contributor`, so the run can open the vault's firewall to its own address and close it again. Nothing else. |
 | Google Cloud | `roles/secretmanager.secretVersionAdder`, `roles/secretmanager.secretAccessor` and `roles/secretmanager.viewer` on the Google Cloud API secret only. Nothing else. |
 
 Set it up like the other environments, with its own name:
 
 1. GitHub: the `rotate-credentials` environment, limited to `main`, with you as the required reviewer. It holds `AWS_ROLE_ARN`, `PLAN_STORE`, `TOFU_BACKEND_CONFIG` and, for the other clouds, the `AZURE_*` and `GCP_*` secrets of its own identities, exactly as in step 1.
 2. AWS: a role `rotate-credentials` with the trust policy of step 3 and the subject `repo:UstDoesTech/OpenLedgerKernel:environment:rotate-credentials`, and the permissions in the table. Maximum session: 2 hours.
-3. Azure: an app registration `rotate-credentials` with a federated credential for the `rotate-credentials` environment (the subject is `repo:UstDoesTech/OpenLedgerKernel:environment:rotate-credentials`) and the one role above on the vault. The run opens the vault's firewall for its own address, as in step 4.
+3. Azure: an app registration `rotate-credentials` with a federated credential for the `rotate-credentials` environment (the subject is `repo:UstDoesTech/OpenLedgerKernel:environment:rotate-credentials`) and the two roles above on the vault. The run opens the vault's firewall for its own address, as in step 4.
 4. Google Cloud: widen the provider's attribute condition to `assertion.repository == 'UstDoesTech/OpenLedgerKernel' && assertion.environment in ['infra-plan','infra-apply','rotate-credentials']`, make a service account `rotate-credentials`, and let that environment act as it only, as in step 5.
 
 Then apply the `authority` layer with `infra-apply`. The first rotation makes the authority's certificate and keeps it in the layer's secret. The runbook is [Rotating certificates and credentials](runbooks/rotating-credentials.md).
