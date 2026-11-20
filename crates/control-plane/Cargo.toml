@@ -8,7 +8,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-etcd-client = { version = "0.21", optional = true }
+# `tls-ring`: rustls with the ring provider, because aws-lc is not on the licence allow list.
+etcd-client = { version = "0.21", optional = true, features = ["tls-ring"] }
 ledger-core = { path = "../ledger-core", version = "0.0.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -27,6 +28,7 @@ etcd = ["dep:etcd-client"]
 [dev-dependencies]
 ledger-store = { path = "../ledger-store", version = "0.0.0" }
 proptest = "1"
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
 tokio = { version = "1", features = ["rt", "macros", "time", "net", "io-util"] }
 
 [lints]

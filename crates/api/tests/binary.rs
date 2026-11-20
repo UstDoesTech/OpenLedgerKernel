@@ -213,6 +213,38 @@ fn it_refuses_the_retired_peer_database_setting() {
     assert!(said.contains("LEDGER_PEERS_FILE is retired"), "{said}");
 }
 
+#[test]
+fn it_refuses_an_https_etcd_endpoint_without_client_files() {
+    let (code, said) = refused(&[("LEDGER_ETCD_ENDPOINTS", "https://10.0.0.1:2379")]);
+    assert_eq!(code, Some(2));
+    assert!(
+        said.contains("https") && said.contains("LEDGER_ETCD_CA_FILE"),
+        "{said}"
+    );
+}
+
+#[test]
+fn it_refuses_some_but_not_all_of_the_etcd_files() {
+    let (code, said) = refused(&[
+        ("LEDGER_ETCD_ENDPOINTS", "https://10.0.0.1:2379"),
+        ("LEDGER_ETCD_CA_FILE", "/nonexistent/ca.crt"),
+    ]);
+    assert_eq!(code, Some(2));
+    assert!(said.contains("all three or none"), "{said}");
+}
+
+#[test]
+fn it_refuses_etcd_files_with_a_plain_http_endpoint_off_loopback() {
+    let (code, said) = refused(&[
+        ("LEDGER_ETCD_ENDPOINTS", "http://10.0.0.1:2379"),
+        ("LEDGER_ETCD_CA_FILE", "/nonexistent/ca.crt"),
+        ("LEDGER_ETCD_CERT_FILE", "/nonexistent/client.crt"),
+        ("LEDGER_ETCD_KEY_FILE", "/nonexistent/client.key"),
+    ]);
+    assert_eq!(code, Some(2));
+    assert!(said.contains("plain http"), "{said}");
+}
+
 /// One request to a TLS listener, checking its certificate against `ca`.
 async fn https(port: u16, ca_pem: &str, request: &str) -> Option<(u16, String)> {
     use rustls::crypto::ring::default_provider;
