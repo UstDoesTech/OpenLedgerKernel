@@ -15,6 +15,10 @@ locals {
   hyphen = replace(local.tenant, "_", "-")
 
   tags = { managed_by = "opentofu", component = "cell", tenant = local.tenant }
+
+  # The API image's digest is the manifest's, because the manifest is where a person records what
+  # was published.
+  api_digest = jsondecode(file("${path.module}/../../../images.json")).api.digest
 }
 
 resource "terraform_data" "tenant" {

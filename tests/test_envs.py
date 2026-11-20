@@ -12,7 +12,7 @@ GEOS = json.loads((INFRA / "geos.json").read_text())
 
 
 # The only secrets a layer may take, each as a sensitive variable with no default.
-SECRET_VARIABLES = {("interconnect", "preshared_keys"), ("control-plane", "administrator_ssh_public_key"), ("cells", "administrator_ssh_public_key")}
+SECRET_VARIABLES = {("interconnect", "preshared_keys"), ("control-plane", "administrator_ssh_public_key"), ("cells", "administrator_ssh_public_key"), ("api", "administrator_ssh_public_key")}
 
 
 def layers():

@@ -79,7 +79,7 @@ def test_tunnels_that_end_in_azure_use_the_addresses_azure_accepts_for_bgp():
 def test_the_flows_use_only_the_platform_ports_and_tcp():
     assert FLOWS["protocol"] == "tcp"
     ports = FLOWS["ports"]
-    assert {k: v for k, v in ports.items() if k != "relay"} == {"postgres": 5432, "etcd_client": 2379, "etcd_peer": 2380}
+    assert {k: v for k, v in ports.items() if k != "relay"} == {"postgres": 5432, "etcd_client": 2379, "etcd_peer": 2380, "api_internal": 8444}
     assert 1024 <= ports["relay"] <= 65535, "the relay port is a proposed default until R-01 fixes it"
     assert len(set(ports.values())) == len(ports)
 
@@ -108,9 +108,11 @@ def test_the_allowed_matrix_is_what_the_platform_needs_and_nothing_else():
     assert allowed("api", "control_plane") == {2379}
     assert allowed("cell", "control_plane") == {2379}
     assert allowed("control_plane", "control_plane") == {2380}
-    # Denied by omission: the control plane never initiates to cells or the API, nothing
-    # reaches the API tier, and the API never talks to itself.
-    for pair in (("control_plane", "cell"), ("control_plane", "api"), ("cell", "api"), ("api", "api")):
+    # The API machines call each other, one for each cell, on the internal port (K-14, K-16).
+    assert allowed("api", "api") == {8444}
+    # Denied by omission: the control plane never initiates to cells or the API, and nothing but
+    # the API tier itself reaches the API tier.
+    for pair in (("control_plane", "cell"), ("control_plane", "api"), ("cell", "api")):
         assert allowed(*pair) == set(), pair
 
 
@@ -187,7 +189,7 @@ def test_the_vpn_gateway_is_the_only_public_address_and_workloads_get_none():
 
 def test_rules_come_from_the_flow_file_and_no_port_is_written_by_hand():
     rules = code("rules.tf")
-    assert not re.search(r"\b(5432|2379|2380|8443)\b", all_code()), "ports live in flows.json"
+    assert not re.search(r"\b(5432|2379|2380|8443|8444)\b", all_code()), "ports live in flows.json"
     assert not re.search(r"port\w*\s*=\s*\"?\d", rules), "a literal port"
     assert not re.search(r"\b(from|to)_port\s*=\s*(0|-1|65535)\b", rules)
     # Every allow rule is built from a flow.

@@ -13,13 +13,16 @@ Use the proving environment and a test tenant only. It holds no real money and n
 ## 1. Publish the API image
 
 1. Run the **publish-api-image** workflow from `main`, and approve its environment. It builds `images/api`, scans every layer, pushes by digest and prints the digest.
-2. Put the digest in `infra/images.json` under `api` and open a pull request. The layers read the digest from there, and refuse an image that is not the one listed.
+2. Put the digest in `infra/images.json` under `api` and open a pull request.
+3. Apply `europe/cell-first` again. It makes the tenant's API repositories from the digest in the manifest.
+4. Run **publish-images** with `image` set to `api`. It copies the image to each cloud's private registry and checks every copy's digest.
 
 *What it proves:* the image the machines run is the one built from this repository, and nothing else.
 
 ## 2. Apply the API machines
 
-Run **infra-apply** for the `api` layer, read the plan, and approve it only if it makes machines, secrets, roles and nothing it should not. The plan makes, for each cell: one small machine with no public address, one empty secret, and one identity that may read that secret, decrypt with the tenant's key and pull the API image.
+1. Apply `europe/interconnect`, so the API machines may call each other on the internal port.
+2. Apply `europe/api` through **infra-apply**. Read the plan, and approve it only if it makes machines, secrets, roles and nothing it should not. For each cell it makes one small machine with no public address, one empty secret, and one identity that may read that secret, decrypt with the tenant's key and pull the API image. Set `client_cidrs` to the private range you will test from, or leave it empty and test from a machine in the `api` tier.
 
 *What it proves:* the machines exist, and each can read its own cell's secret and no other.
 
@@ -37,7 +40,7 @@ The secrets are made empty, on purpose: their contents never pass through OpenTo
 | `ca.crt` | The authority that signed every cell's certificate. |
 | `etcd-ca.crt`, `etcd-client.crt`, `etcd-client.key` | What this cell presents to etcd, and the authority that signed etcd's own certificates. |
 
-The module's `secret_files` output lists them. Issue the certificates and credentials from an authority you control. There is no task yet for issuing and rotating them, so for the proving environment this is by hand. Never put one in the repository, an issue, a pull request or a log.
+The `apis` output of the `api` layer lists them, with where each secret is. Issue the certificates and credentials from an authority you control. There is no task yet for issuing and rotating them, so for the proving environment this is by hand. Never put one in the repository, an issue, a pull request or a log.
 
 Then restart each machine's service so it reads the secret. The service retries for a few minutes on its own, so a short wait may be enough.
 

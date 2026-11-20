@@ -7,7 +7,7 @@ state, so the `infra-apply` workflow can plan and apply one layer at a time
 
 | Environment | Layers | Geo |
 | --- | --- | --- |
-| `europe` | `network` (I-01oa), `private-access` and `interconnect` (I-01ob), `registries` (I-01q) and `control-plane` (I-01ocb) `cell-first` (I-01occ), the first tenant's keys, repositories and administrators, and `cells` (I-01va), the tenant's self-hosted database cells. | `europe` |
+| `europe` | `network` (I-01oa), `private-access` and `interconnect` (I-01ob), `registries` (I-01q) and `control-plane` (I-01ocb) `cell-first` (I-01occ), the first tenant's keys, repositories and administrators, `cells` (I-01va), the tenant's self-hosted database cells, and `api` (K-16), the API machine next to each cell. | `europe` |
 
 Apply the layers in that order, except that `registries` comes before `control-plane` and the etcd image is published between them (see below). Each later layer reads the networks layer's outputs from its state (`europe/network`).
 
@@ -28,6 +28,8 @@ Secrets and identifiers a layer takes:
 | `europe/cell-first` | `postgres_image_digest` | `TF_VAR_postgres_image_digest` secret | The PostgreSQL node image's digest, `sha256:` and 64 hex digits. No tags. |
 | `europe/cell-first` | `azure_administrator_object_id`, `azure_administrator_name` | `TF_VAR_azure_administrator_object_id`, `TF_VAR_azure_administrator_name` secrets | The Entra group that administers the tenant's PostgreSQL servers. A person makes it (`docs/infrastructure.md`). A group's id and name are not credentials. |
 | `europe/cells` | `azure_subscription_id`, `state_bucket`, `azure_flatcar_image_id`, `administrator_ssh_public_key` | as for the control plane | The same secrets as the control plane. |
+| `europe/api` | `azure_subscription_id`, `state_bucket`, `azure_flatcar_image_id`, `administrator_ssh_public_key` | as for the control plane | The same secrets as the cells. |
+| `europe/api` | `client_cidrs` | a variable, not a secret | Private ranges that may call the API's public port, 8443. None by default. |
 | `europe/interconnect` | `preshared_keys` | `TF_VAR_preshared_keys` secret | The one real secret. A JSON map of tunnel name to key, below. |
 
 `TF_VAR_preshared_keys` holds one key for each of these names. Each key is 32 to 64 letters and
@@ -128,6 +130,20 @@ To publish the Postgres node image: run `publish-postgres-image` (it prints the 
 `europe/cells` makes one self-hosted PostgreSQL cell in each cloud for the tenant that `cell-first` is for: three nodes in three zones, running the node image as a container. Apply it after `cell-first`, once the Postgres image is published to the tenant's repositories (`publish-images` with `image` set to `postgres`). It makes no key, repository or identity: it uses the tenant's own from `cell-first`, and the private endpoints and DNS zones from `private-access` (`reuse_private_access`). It stops with a message if `cell-first` holds a different image digest from `infra/images.json`.
 
 Its sizes are proving sizes (shared-CPU: `t3.medium`, `Standard_B2s`, `e2-medium`) to keep the bill low. Delete the `machine_sizes` lines to use the module's own size table in production. Its outputs give each cell's private host, port and where its administrator's credential is held, never the credential. A Lakebase form follows.
+
+## The API machines
+
+`europe/api` makes one small machine next to each of the tenant's database cells, in each cloud, from `modules/api`. Each has a private address in the `api` tier and no public one, an empty secret and an identity that may read that secret, decrypt with the tenant's key and pull the API image, and nothing else. It stops with a message if `cell-first` holds a different API image digest from `infra/images.json`.
+
+Order, after the cells are applied:
+
+1. Apply `cell-first` again. It now also makes the API image's repositories, and takes the digest from `infra/images.json`, so it needs no variable.
+2. Run `publish-images` with `image` set to `api`.
+3. Apply `interconnect`, so the API tier may call itself on the internal port (`api-to-api-internal` in `infra/flows.json`). Nothing else moves between the tiers that did not before.
+4. Apply `api`. Set `client_cidrs` to the private range you will test from, or leave it empty and test from a machine in the `api` tier.
+5. Fill each machine's secret and follow `docs/runbooks/first-entry.md`.
+
+The layer's `apis` output says each machine's cell, private address, ports, where its secret is and which files it must hold. It never holds a secret's contents.
 
 ### Managed cells
 
