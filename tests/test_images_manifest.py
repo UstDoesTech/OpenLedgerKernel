@@ -27,7 +27,7 @@ def test_one_flatcar_release_is_pinned():
 
 
 def test_the_manifest_holds_only_what_it_should():
-    assert set(manifest()) == {"etcd", "flatcar", "postgres"}
+    assert set(manifest()) == {"api", "etcd", "flatcar", "postgres"}
     assert set(manifest()["postgres"]) == {"source", "digest"}
     assert set(manifest()["etcd"]) == {"source", "tag", "digest"}
     assert set(manifest()["flatcar"]) == {"channel", "version"}
@@ -51,3 +51,11 @@ def test_the_postgres_image_is_our_own_package_pinned_by_digest_with_no_tag():
     assert postgres["source"] == "ghcr.io/ustdoestech/openledgerkernel/postgres"
     assert "tag" not in postgres
 
+
+
+def test_the_api_image_is_our_own_package_pinned_by_digest_with_no_tag():
+    api = manifest()["api"]
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}", api["digest"])
+    # Built by publish-api-image into this repository's own package. No tag selects it.
+    assert api["source"] == "ghcr.io/ustdoestech/openledgerkernel/api"
+    assert "tag" not in api
