@@ -52,7 +52,7 @@ These are human decisions. A task that lists one can still be built up to its in
 | **D-03** Control plane technology across three clouds | Decided | etcd v3, five members spread over the three clouds by default. It must also run with a minimum of three members, because some geographies have only one region. (Ust Oldfield, 2026-11-14) | None |
 | **D-14** Latency budget - same-cell leg, cross-cell transfer and strong-tier acknowledgement, p50 and p95 | Open | None yet | I-02 |
 | **D-16** Where the credentialed workflows run once the code is public | Decided | The credentialed workflows run on the public repository. Its workflow logs are readable by anyone, so S-07's guards are required, not optional. That means no plan output or identifiers in a log, dispatch only from main, a named approver, and cloud trust pinned to that repository's environment. (Ust Oldfield, 2026-11-19) | None |
-| **D-17** Where the certificate authority's key lives | Open | One authority for the environment, its key in a KMS the signer can use but nobody can export, and short-lived certificates (24 hours) and credentials re-issued every 12 hours, so a lost one expires before anyone could use it | K-17 |
+| **D-17** Where the certificate authority's key lives | Open | One central authority, held in AWS. Its key is in a KMS that the signer can use but nobody can export. Certificates last 30 days and are re-issued every 10, so the signer can be down for about 20 days without any cell losing the others. Cell credentials are re-issued every 7 days, and when a cell is removed. Every cell trusts the authority's public certificate, so no cell calls AWS to check one | K-17 |
 <!-- /generated:decisions -->
 
 ## Tasks
