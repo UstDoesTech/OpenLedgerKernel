@@ -49,7 +49,7 @@ The second command prints the object id, which goes in `TF_VAR_azure_administrat
 
 ## Keeping the bill down
 
-Machine sizes in the layers are the module defaults. Pass smaller, burstable sizes for a proving environment (for example `t3.medium`, `Standard_B2s` and `e2-medium`), which are not for production because their CPU is shared. Stopping machines saves compute but not disks, gateways or endpoints.
+Machine sizes in the layers are the module defaults. Pass smaller, burstable sizes for a proving environment (for example `t3.medium`, `Standard_B1ms` and `e2-medium`), which are not for production because their CPU is shared. Stopping machines saves compute but not disks, gateways or endpoints.
 
 ## Who applies
 
