@@ -176,3 +176,28 @@ def test_the_boot_module_renders_a_configuration_with_no_credential(tmp_path):
     assert "LEDGER_TLS_CERT_FILE=/run/secrets/api/server.crt" in unit["contents"]
     masked = {u["name"] for u in ignition["systemd"]["units"] if u.get("mask")}
     assert masked == {"update-engine.service", "locksmithd.service"}
+
+
+def test_the_machine_reads_its_secret_again_so_a_rotation_reaches_the_service():
+    """K-17: the secret is read at boot and then on a timer, with the same reader and the same
+    entries. The service re-reads its files by itself, so nothing restarts."""
+    service = (BOOT / "files" / "ledger-api-refresh.service.tpl").read_text()
+    timer = (BOOT / "files" / "ledger-api-refresh.timer.tpl").read_text()
+    assert "Type=oneshot" in service
+    assert "ExecStart=/opt/ledger-api/fetch-secrets.sh ${secret_arguments}" in service
+    commands = "\n".join(l for l in service.splitlines() if l.startswith("Exec"))
+    for word in ("restart", "docker", "systemctl"):
+        assert word not in commands, "a refresh never restarts the service"
+    assert "OnUnitActiveSec=${every_minutes}min" in timer and "WantedBy=timers.target" in timer
+    main = code(BOOT / "main.tf")
+    assert re.search(r'name\s*=\s*"ledger-api-refresh.timer"', main)
+    assert re.search(r"refresh_minutes\s*=\s*5\b", main), "the rotation job's wait depends on this"
+
+
+def test_the_secret_writer_checks_every_entry_before_it_replaces_any_file():
+    """K-17: a rotation that is missing an entry leaves the old files in force."""
+    script = (BOOT / "files" / "write-secrets.sh").read_text()
+    check = script.index('has($n)')
+    first_write = script.index('mv "$target/$name.new"')
+    assert check < first_write
+    assert script.count("exit 1") >= 2

@@ -58,8 +58,9 @@ def test_europe_has_its_first_three_layers():
         assert (ENVS / "europe" / layer).is_dir()
 
 
-# The registries layer makes repositories only, before anything that needs a network.
-NO_NETWORK = {"network", "registries"}
+# The registries layer makes repositories only, before anything that needs a network. The authority
+# layer makes a key and a secret in AWS and needs no network.
+NO_NETWORK = {"network", "registries", "authority"}
 
 
 @pytest.mark.parametrize("layer", [l for l in layers() if l.name not in NO_NETWORK], ids=lambda p: f"{p.parent.name}/{p.name}")
@@ -147,3 +148,13 @@ def test_the_registries_layer_makes_immutable_repositories_and_no_secret():
     assert 'image_tag_mutability = "IMMUTABLE"' in src
     assert "immutable_tags = true" in src
     assert 'provider "azurerm"' not in src
+
+
+def test_the_authority_layer_makes_a_signing_key_that_cannot_be_exported_and_holds_no_value():
+    src = text(ENVS / "europe" / "authority")
+    assert 'key_usage                = "SIGN_VERIFY"' in src
+    assert 'customer_master_key_spec = "ECC_NIST_P256"' in src
+    # Nothing writes a secret's value, so an apply can never overwrite what the workflow wrote.
+    assert "aws_secretsmanager_secret_version" not in src
+    assert not re.search(r"secret_string|secret_binary", src)
+    assert "variable " not in src

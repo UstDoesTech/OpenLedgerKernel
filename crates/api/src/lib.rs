@@ -21,7 +21,8 @@ pub mod auth;
 pub mod error;
 mod internal;
 pub mod peer;
+pub mod reload;
 pub mod tls;
 
-pub use app::{AppState, ROUTES, router};
+pub use app::{AppState, Peers, ROUTES, router};
 pub use internal::{INTERNAL_ROUTES, internal_router};

@@ -46,11 +46,12 @@ def test_only_a_person_dispatching_it_starts_a_run():
 
 
 # The only workflows with cloud access. publish-images only copies images (tests in
-# test_publish_images_workflow.py); only infra-apply may apply.
-CLOUD_ACCESS = {PATH.name, "publish-images.yml"}
+# test_publish_images_workflow.py); rotate-credentials only signs and writes the API secrets
+# (tests in test_rotate_credentials_workflow.py); only infra-apply may apply.
+CLOUD_ACCESS = {PATH.name, "publish-images.yml", "rotate-credentials.yml"}
 
 
-def test_it_is_the_only_workflow_that_applies_and_only_two_have_cloud_access():
+def test_it_is_the_only_workflow_that_applies_and_only_three_have_cloud_access():
     for wf in WORKFLOWS.glob("*.yml"):
         text = wf.read_text()
         if wf.name != PATH.name:

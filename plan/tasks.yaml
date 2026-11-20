@@ -676,7 +676,7 @@ tasks:
   phase: P1
   workstream: K
   size: M
-  status: todo
+  status: done
   depends_on:
   - K-13
   - S-07
@@ -684,6 +684,9 @@ tasks:
   - D-17
   deliverables:
   - crates/pki
+  - crates/api/src/reload.rs
+  - infra/envs/europe/authority
+  - scripts/rotation_manifest.py
   - .github/workflows/rotate-credentials.yml
   - docs/runbooks/rotating-credentials.md
   acceptance:
@@ -699,9 +702,10 @@ tasks:
     fails if a step prints one.
   - If a rotation fails part-way the old files stay in force and the run fails loudly. The runbook says how
     to recover.
-  notes: Edits a credentialed workflow, so it needs a person's review. Until D-17 is decided, the signer
-    sits behind a trait and the proposed default runs in memory. Needs the service to reload TLS files, which
-    is part of this task.
+  notes: Edits a credentialed workflow, so it needs a person's review. D-17 is decided, so the signer is the
+    AWS KMS one, and the in-memory one is kept for tests and rehearsals. The run is started by a person, once a
+    week, because credentialed workflows run only by dispatch. One run makes both, so certificates are re-issued
+    every 7 days, inside the 10 days the decision allows.
   refs:
   - docs/credentialed-workflows.md
 - id: K-18
