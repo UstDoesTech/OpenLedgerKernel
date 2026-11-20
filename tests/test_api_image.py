@@ -49,4 +49,5 @@ def test_every_variable_the_readme_names_is_one_the_service_reads():
 def test_the_build_stage_has_the_protobuf_compiler_and_the_runtime_stage_does_not():
     build, runtime = code(DOCKERFILE).split("FROM debian:bookworm-slim")
     assert "protobuf-compiler" in build, "etcd-client needs protoc to build"
-    assert "protobuf-compiler" not in runtime
+    assert "libprotobuf-dev" in build, "protoc needs google/protobuf/*.proto, which this package holds"
+    assert "protobuf-compiler" not in runtime and "libprotobuf-dev" not in runtime
