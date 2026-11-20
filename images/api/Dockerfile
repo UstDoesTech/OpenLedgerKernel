@@ -9,6 +9,12 @@
 
 FROM rust:1.100-bookworm AS build
 WORKDIR /src
+
+# etcd-client compiles its protocol files while it builds, so it needs the protobuf compiler. The
+# build stage is thrown away, so this adds nothing to the image that runs.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends protobuf-compiler \
+ && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN cargo build --release --locked -p api
