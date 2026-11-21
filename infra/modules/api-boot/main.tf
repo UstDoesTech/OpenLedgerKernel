@@ -27,6 +27,14 @@ locals {
     "etcd-client.key",
   ]
 
+  # Entries the service reads when they are there and does without when they are not. The writer
+  # takes each as "optional:<name>", so a secret without one does not stop the start.
+  optional_secret_files = [
+    "db-ca.crt",
+  ]
+
+  secret_arguments = "${var.secret} ${join(" ", concat(local.secret_files, [for f in local.optional_secret_files : "optional:${f}"]))}"
+
   login_arguments = {
     aws   = "${coalesce(var.aws_region, "unset")} ${local.registry}"
     azure = "${local.registry} ${coalesce(var.azure_tenant_id, "unset")}"
@@ -42,6 +50,7 @@ locals {
   environment = {
     LEDGER_NODE               = var.cell
     LEDGER_DB_FILE            = "${local.secrets_dir}/db.conn"
+    LEDGER_DB_CA_FILE         = "${local.secrets_dir}/db-ca.crt"
     LEDGER_TOKENS_FILE        = "${local.secrets_dir}/tokens.json"
     LEDGER_LISTEN             = "0.0.0.0:${var.public_port}"
     LEDGER_INTERNAL_LISTEN    = "0.0.0.0:${var.internal_port}"
@@ -93,7 +102,7 @@ locals {
             name                  = var.name
             image                 = var.image
             login_arguments       = local.login_arguments
-            secret_arguments      = "${var.secret} ${join(" ", local.secret_files)}"
+            secret_arguments      = local.secret_arguments
             public_port           = var.public_port
             internal_port         = var.internal_port
             environment_arguments = join(" ", [for k, v in local.environment : "--env ${k}=${v}"])
@@ -102,7 +111,7 @@ locals {
         {
           name = "ledger-api-refresh.service"
           contents = templatefile("${path.module}/files/ledger-api-refresh.service.tpl", {
-            secret_arguments = "${var.secret} ${join(" ", local.secret_files)}"
+            secret_arguments = local.secret_arguments
           })
         },
         {

@@ -34,6 +34,10 @@ pub struct CellEntry {
     /// The machine's private IP address, which the certificate names.
     pub address: String,
     pub internal_port: u16,
+    /// The certificate of the authority that made this cell's database certificate, so the service
+    /// trusts it. It is public. Left out, the secret keeps whatever it already holds.
+    #[serde(default)]
+    pub db_ca: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -74,6 +78,14 @@ impl Manifest {
             }
             if c.name.is_empty() || c.secret.is_empty() {
                 return Err(PkiError::Manifest("a cell has a name and a secret"));
+            }
+            if let Some(ca) = &c.db_ca
+                && !(ca.contains("-----BEGIN CERTIFICATE-----")
+                    && ca.contains("-----END CERTIFICATE-----"))
+            {
+                return Err(PkiError::Manifest(
+                    "a cell's db_ca is a certificate in PEM form",
+                ));
             }
         }
         Ok(())

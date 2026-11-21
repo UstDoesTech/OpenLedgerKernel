@@ -189,6 +189,41 @@ fn refused(extra: &[(&str, &str)]) -> (Option<i32>, String) {
     )
 }
 
+/// K-19a: a start that cannot reach its database says which of four things was wrong, in one
+/// line, and nothing from the connection string.
+#[test]
+fn a_start_that_cannot_reach_its_database_says_so_in_one_line_without_the_connection_string() {
+    let (code, said) = refused(&[("LEDGER_DB_TLS", "on")]);
+    assert_eq!(code, Some(2));
+    assert_eq!(
+        said.trim_end(),
+        "ledger-api: cannot connect to the cell's database: nothing answered at the address in db.conn"
+    );
+    assert_eq!(said.lines().count(), 1, "{said}");
+    for leaked in ["127.0.0.1", "user", "port=1"] {
+        assert!(
+            !said.contains(leaked),
+            "the line must not carry the connection string"
+        );
+    }
+}
+
+#[test]
+fn a_database_authority_file_that_is_not_a_certificate_stops_the_start_without_its_text() {
+    let dir = std::env::temp_dir().join(format!("ledger-api-dbca-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let ca = dir.join("db-ca.crt");
+    std::fs::write(&ca, "text-that-must-not-be-echoed").unwrap();
+    let (code, said) = refused(&[
+        ("LEDGER_DB_TLS", "on"),
+        ("LEDGER_DB_CA_FILE", ca.to_str().unwrap()),
+    ]);
+    let _ = std::fs::remove_dir_all(dir);
+    assert_eq!(code, Some(2));
+    assert_eq!(said.trim_end(), "ledger-api: db-ca.crt: not a certificate");
+    assert!(!said.contains("must-not-be-echoed"));
+}
+
 #[test]
 fn it_refuses_a_public_listener_off_loopback_without_tls() {
     let (code, said) = refused(&[("LEDGER_LISTEN", "0.0.0.0:8080")]);
