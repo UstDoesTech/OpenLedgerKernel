@@ -821,7 +821,7 @@ tasks:
   phase: P1
   workstream: I
   size: M
-  status: todo
+  status: in_progress
   depends_on:
   - K-17
   decisions:

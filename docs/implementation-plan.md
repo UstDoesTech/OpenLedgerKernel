@@ -285,7 +285,7 @@ flowchart LR
 | **K-18** Issue the etcd members' certificates from the same authority | Ledger kernel | K-17 | None | S | Agent | To do |
 | **K-19a** Let the API trust a database CA, and make the first start say why it cannot connect | Ledger kernel | K-17 | None | S | Agent | Done |
 | **K-19b** Fill each API secret's database connection and the proving tenant's tokens | Ledger kernel | K-19a | D-19 | S | Agent | Done |
-| **K-19c** Make the rotation identities with OpenTofu | Infrastructure | K-17 | D-18 | M | Agent | To do |
+| **K-19c** Make the rotation identities with OpenTofu | Infrastructure | K-17 | D-18 | M | Agent | In progress |
 | **K-19d** Make each cell's application role in the node agent | Ledger kernel | K-19b | D-19 | M | Agent | To do |
 | **T-03** Randomised fault testing | Testing and fault injection | T-02 | None | M | Agent | Done |
 | **I-01a** Infrastructure code scaffold, CI checks and UK-region guard | Infrastructure | F-01 | None | M | Agent | Done |
