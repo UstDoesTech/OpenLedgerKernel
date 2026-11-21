@@ -11,7 +11,15 @@ use std::process::Command;
 use ledger_api::dbconn::{Cause, connect};
 use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair, KeyUsagePurpose};
 
-const PASSWORD: &str = "pw-for-this-test-only-9f3a1c";
+/// A password made for this run only, so no password is written in the source.
+fn random_secret() -> String {
+    use std::io::Read;
+    let mut bytes = [0u8; 16];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut bytes))
+        .expect("cannot read /dev/urandom");
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
 
 struct Authority {
     cert: rcgen::Certificate,
@@ -79,7 +87,7 @@ impl Drop for Node {
     }
 }
 
-fn start(ca: &Authority) -> Node {
+fn start(ca: &Authority, password: &str) -> Node {
     let port = {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         l.local_addr().unwrap().port()
@@ -97,7 +105,7 @@ fn start(ca: &Authority) -> Node {
     let cert = params.signed_by(&key, &ca.cert, &ca.key).unwrap();
     std::fs::write(dir.join("server.crt"), cert.pem()).unwrap();
     std::fs::write(dir.join("server.key"), key.serialize_pem()).unwrap();
-    std::fs::write(dir.join("pw"), PASSWORD).unwrap();
+    std::fs::write(dir.join("pw"), password).unwrap();
     std::fs::write(
         dir.join("hba.conf"),
         "hostssl all all 127.0.0.1/32 scram-sha-256\n",
@@ -176,13 +184,15 @@ fn said(cause: Cause) -> String {
 async fn the_service_trusts_the_authority_it_is_given_and_says_why_it_cannot() {
     let right = authority("The cell's authority");
     let other = authority("Some other authority");
-    let node = start(&right);
+    let password = random_secret();
+    let wrong = random_secret();
+    let node = start(&right, &password);
     let right_pem = right.cert.pem();
     let other_pem = other.cert.pem();
 
     // The right authority: it connects, and the connection works.
     let client = connect(
-        &conn("localhost", node.port, PASSWORD),
+        &conn("localhost", node.port, &password),
         true,
         Some(&right_pem),
     )
@@ -195,7 +205,7 @@ async fn the_service_trusts_the_authority_it_is_given_and_says_why_it_cannot() {
 
     // No authority, and another authority: the certificate is not trusted.
     for ca in [None, Some(other_pem.as_str())] {
-        let err = connect(&conn("localhost", node.port, PASSWORD), true, ca)
+        let err = connect(&conn("localhost", node.port, &password), true, ca)
             .await
             .expect_err("must not connect");
         assert_eq!(err, said(Cause::Certificate));
@@ -204,7 +214,7 @@ async fn the_service_trusts_the_authority_it_is_given_and_says_why_it_cannot() {
 
     // A name the certificate does not carry.
     let err = connect(
-        &conn("127.0.0.1", node.port, PASSWORD),
+        &conn("127.0.0.1", node.port, &password),
         true,
         Some(&right_pem),
     )
@@ -215,7 +225,7 @@ async fn the_service_trusts_the_authority_it_is_given_and_says_why_it_cannot() {
 
     // A wrong password.
     let err = connect(
-        &conn("localhost", node.port, "wrong-password-xyz"),
+        &conn("localhost", node.port, &wrong),
         true,
         Some(&right_pem),
     )
@@ -229,17 +239,21 @@ async fn the_service_trusts_the_authority_it_is_given_and_says_why_it_cannot() {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         l.local_addr().unwrap().port()
     };
-    let err = connect(&conn("localhost", closed, PASSWORD), true, Some(&right_pem))
-        .await
-        .expect_err("must not connect");
+    let err = connect(
+        &conn("localhost", closed, &password),
+        true,
+        Some(&right_pem),
+    )
+    .await
+    .expect_err("must not connect");
     assert_eq!(err, said(Cause::Unreachable));
     messages.push(err);
 
     // None of those messages carried the password, the user or the host.
     for m in &messages {
         for secret in [
-            PASSWORD,
-            "wrong-password-xyz",
+            password.as_str(),
+            wrong.as_str(),
             "ledger_admin",
             "localhost",
             "127.0.0.1",
@@ -255,7 +269,7 @@ async fn the_service_trusts_the_authority_it_is_given_and_says_why_it_cannot() {
 #[tokio::test]
 async fn a_file_that_is_not_a_certificate_is_refused_before_any_connection() {
     let err = connect(
-        &conn("localhost", 1, PASSWORD),
+        &conn("localhost", 1, &random_secret()),
         true,
         Some("not a certificate"),
     )
