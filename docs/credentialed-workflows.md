@@ -161,7 +161,7 @@ A run with `proving` on (decision D-19) may also read each cell's administrator 
 | Cloud | The extra rights for a proving run |
 | --- | --- |
 | AWS | Read on the state bucket for the `cells` layer, and `secretsmanager:GetSecretValue` on the AWS cell's administrator secret only. |
-| Azure | `Key Vault Secrets Officer` already reads a secret. If the Azure cell's administrator secret is in another vault, the same role on that vault, and its firewall opened the same way. |
+| Azure | `Key Vault Secrets Officer` already reads a secret. If the Azure cell's administrator secret is in another vault, `Key Vault Secrets User` and `Key Vault Contributor` on that vault (reading, and opening its firewall the same way). |
 | Google Cloud | `roles/secretmanager.secretAccessor` on the Google Cloud cell's administrator secret only. |
 
 Leave these off an environment that holds real money or customer data. K-19d replaces the copy: the node agent writes a dedicated role's connection string itself, so no run reads the administrator credential, and these rights go. K-19c makes all of the identities and their rights with OpenTofu.
