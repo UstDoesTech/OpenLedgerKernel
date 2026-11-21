@@ -283,7 +283,7 @@ flowchart LR
 | **K-16** Run the API machines in the Europe environment | Ledger kernel | K-13, K-15 | None | S | Agent | Done |
 | **K-17** Issue and rotate the API's certificates and cell credentials | Ledger kernel | K-13, S-07 | D-17 | M | Agent | Done |
 | **K-18** Issue the etcd members' certificates from the same authority | Ledger kernel | K-17 | None | S | Agent | To do |
-| **K-19a** Let the API trust a database CA, and make the first start say why it cannot connect | Ledger kernel | K-17 | None | S | Agent | To do |
+| **K-19a** Let the API trust a database CA, and make the first start say why it cannot connect | Ledger kernel | K-17 | None | S | Agent | In progress |
 | **K-19b** Fill each API secret's database connection and the proving tenant's tokens | Ledger kernel | K-19a | D-19 | S | Agent | To do |
 | **K-19c** Make the rotation identities with OpenTofu | Infrastructure | K-17 | D-18 | M | Agent | To do |
 | **K-19d** Make each cell's application role in the node agent | Ledger kernel | K-19b | D-19 | M | Agent | To do |
