@@ -454,7 +454,7 @@ fn nothing_is_written_when_the_authority_cannot_sign_or_is_not_the_stored_one() 
     // A different key now stands where the authority was: its certificate is stored, not this one's.
     let other = signer();
     let err = run(&m, &s, other, Kind::All).unwrap_err();
-    assert!(matches!(err, PkiError::Certificate(_)));
+    assert!(matches!(err, PkiError::Issuing(_)));
     assert_eq!(
         s.write_log().len(),
         writes,
@@ -991,22 +991,22 @@ mod proving {
 
     #[test]
     fn the_connection_string_keeps_any_password_and_is_one_a_driver_reads() {
-        for password in [
-            "plain",
-            "it's",
-            r"back\slash",
-            "sp ace 'both' \\ x",
-            "=&;\"",
-        ] {
-            let line = ledger_pki::database::connection_string(
-                "db.example",
-                5432,
-                "ledger_admin",
-                password,
-            );
+        // Made for this run, so no password is written in the source. Each has a character that
+        // needs quoting.
+        let unique = {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            format!("{nanos:x}")
+        };
+        for odd in ["", "'", "\\", " ", "='\\ &;\"", "\\\\"] {
+            let made = format!("{unique}{odd}{unique}");
+            let line =
+                ledger_pki::database::connection_string("db.example", 5432, "ledger_admin", &made);
             let config: tokio_postgres::Config = line.parse().expect("the driver must read it");
             assert_eq!(config.get_user(), Some("ledger_admin"));
-            assert_eq!(config.get_password(), Some(password.as_bytes()));
+            assert_eq!(config.get_password(), Some(made.as_bytes()));
             assert_eq!(config.get_ports(), [5432]);
         }
     }
@@ -1016,6 +1016,7 @@ mod proving {
         let m = proving_manifest(&["cell-one"]);
         let line = Simulated.connection(&m.cells[0]).unwrap();
         assert!(line.contains("host=db-cell-one.cells.example"));
+        assert!(!line.contains("password"));
     }
 
     #[test]

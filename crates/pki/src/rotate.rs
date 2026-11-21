@@ -167,13 +167,13 @@ impl<'a> Rotation<'a> {
         let key = key_pair(self.signer.clone())?;
         let cert = authority_params()
             .self_signed(&key)
-            .map_err(|_| PkiError::Certificate("the authority could not sign"))?;
+            .map_err(|_| PkiError::Issuing("the authority could not sign"))?;
         let a = &self.manifest.authority;
         let stored = self.store.read(Cloud::Aws, &a.certificate_secret)?;
         let pem = match stored.filter(|s| !s.trim().is_empty()) {
             Some(pem) => {
                 if !certificate_has_key(&pem, self.signer.public_key()) {
-                    return Err(PkiError::Certificate(
+                    return Err(PkiError::Issuing(
                         "the stored authority certificate is not for the signing key",
                     ));
                 }
@@ -197,10 +197,10 @@ impl<'a> Rotation<'a> {
         let ip: std::net::IpAddr = cell
             .address
             .parse()
-            .map_err(|_| PkiError::Certificate("a cell's address is not an IP address"))?;
+            .map_err(|_| PkiError::Issuing("a cell's address is not an IP address"))?;
         let make = |usages: Vec<ExtendedKeyUsagePurpose>, san: Vec<SanType>| {
-            let key = KeyPair::generate()
-                .map_err(|_| PkiError::Certificate("a key could not be made"))?;
+            let key =
+                KeyPair::generate().map_err(|_| PkiError::Issuing("a key could not be made"))?;
             let mut p = CertificateParams::default();
             let mut dn = DistinguishedName::new();
             dn.push(DnType::CommonName, cell.name.clone());
@@ -213,7 +213,7 @@ impl<'a> Rotation<'a> {
             p.not_after = self.now + time::Duration::days(CERTIFICATE_DAYS);
             let cert = p
                 .signed_by(&key, issuer, issuer_key)
-                .map_err(|_| PkiError::Certificate("the authority could not sign it"))?;
+                .map_err(|_| PkiError::Issuing("the authority could not sign it"))?;
             Ok::<_, PkiError>((cert.pem(), key.serialize_pem()))
         };
         Ok(Issued {

@@ -63,7 +63,8 @@ impl DatabaseSource for AdministratorCopy<'_> {
     }
 }
 
-/// A source that holds no credential, for the rehearsal and for tests.
+/// A source that holds no credential: the string it gives names the host and the role and has no
+/// password. For the rehearsal and for tests.
 pub struct Simulated;
 
 impl DatabaseSource for Simulated {
@@ -72,11 +73,9 @@ impl DatabaseSource for Simulated {
             .database
             .as_ref()
             .ok_or(PkiError::Manifest("a cell has no database to connect to"))?;
-        Ok(connection_string(
-            &db.host,
-            db.port,
-            ADMIN_ROLE,
-            "simulated",
+        Ok(format!(
+            "host={} port={} user={ADMIN_ROLE} dbname=postgres sslmode=require",
+            db.host, db.port
         ))
     }
 }

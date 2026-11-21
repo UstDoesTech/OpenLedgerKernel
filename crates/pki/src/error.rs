@@ -14,7 +14,7 @@ pub enum PkiError {
     #[error("the signer failed: {0}")]
     Signer(&'static str),
     #[error("a certificate could not be made: {0}")]
-    Certificate(&'static str),
+    Issuing(&'static str),
     #[error("a secret could not be {0}")]
     Secret(&'static str),
     #[error(
