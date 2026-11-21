@@ -164,16 +164,46 @@ A run with `proving` on (decision D-19) may also read each cell's administrator 
 | Azure | `Key Vault Secrets Officer` already reads a secret. If the Azure cell's administrator secret is in another vault, `Key Vault Secrets User` and `Key Vault Contributor` on that vault (reading, and opening its firewall the same way). |
 | Google Cloud | `roles/secretmanager.secretAccessor` on the Google Cloud cell's administrator secret only. |
 
-Leave these off an environment that holds real money or customer data. K-19d replaces the copy: the node agent writes a dedicated role's connection string itself, so no run reads the administrator credential, and these rights go. K-19c makes all of the identities and their rights with OpenTofu.
+Leave these off an environment that holds real money or customer data. K-19d replaces the copy: the node agent writes a dedicated role's connection string itself, so no run reads the administrator credential, and these rights go.
 
-Set it up like the other environments, with its own name:
+#### How the identities are made (K-19c, decision D-18)
 
-1. GitHub: the `rotate-credentials` environment, limited to `main`, with you as the required reviewer. It holds `AWS_ROLE_ARN`, `PLAN_STORE`, `TOFU_BACKEND_CONFIG` and, for the other clouds, the `AZURE_*` and `GCP_*` secrets of its own identities, exactly as in step 1.
-2. AWS: a role `rotate-credentials` with the trust policy of step 3 and the subject `repo:UstDoesTech/OpenLedgerKernel:environment:rotate-credentials`, and the permissions in the table. Maximum session: 2 hours.
-3. Azure: an app registration `rotate-credentials` with a federated credential for the `rotate-credentials` environment (the subject is `repo:UstDoesTech/OpenLedgerKernel:environment:rotate-credentials`) and the two roles above on the vault. The run opens the vault's firewall for its own address, as in step 4.
-4. Google Cloud: widen the provider's attribute condition to `assertion.repository == 'UstDoesTech/OpenLedgerKernel' && assertion.environment in ['infra-plan','infra-apply','rotate-credentials']`, make a service account `rotate-credentials`, and let that environment act as it only, as in step 5.
+You do not make these identities by hand. The `identities` layer (`infra/envs/europe/identities`) makes them, and you apply it with `infra-apply` like any other layer. The one list of what they may do is [`infra/rotation-identity.json`](../infra/rotation-identity.json). The modules read it, and a test holds this page to it. The identities are:
 
-Then apply the `authority` layer with `infra-apply`. The first rotation makes the authority's certificate and keeps it in the layer's secret. The runbook is [Rotating certificates and credentials](runbooks/rotating-credentials.md).
+- AWS: the role `rotate-credentials`, trusted only for the web identity subject `repo:UstDoesTech/OpenLedgerKernel:environment:rotate-credentials` and the audience `sts.amazonaws.com`. A second policy, `ledger-rotate-credentials-boundary`, holds the same document and is the role's permissions boundary.
+- Azure: a user-assigned managed identity `rotate-credentials` with a federated credential for the same subject. It is a managed identity and not an app registration, so making it needs no right in Microsoft Entra ID. The workflow signs in with its client id in the same way.
+- Google Cloud: the service account `rotate-credentials`, which only the `rotate-credentials` environment can act as, and no role on the project.
+
+The identities may do these things, and nothing else. For AWS the actions are, in full:
+
+| Group | Actions |
+| --- | --- |
+| Signing | `kms:GetPublicKey`, `kms:Sign` |
+| Secrets | `secretsmanager:GetSecretValue`, `secretsmanager:ListSecretVersionIds`, `secretsmanager:PutSecretValue` |
+| The secrets' key, if it is not the account's default | `kms:Decrypt`, `kms:GenerateDataKey` |
+| State | `s3:GetObject` on the `api` and `authority` state objects only, and `s3:ListBucket` on the state bucket |
+| Logs | `s3:PutObject` on the plan store's prefix only |
+
+For Azure the roles are `Key Vault Contributor` and `Key Vault Secrets Officer`, on the API vault only, and, with `proving` on, `Key Vault Secrets User` on the vault of the administrator credential. For Google Cloud they are `roles/secretmanager.secretAccessor`, `roles/secretmanager.secretVersionAdder` and `roles/secretmanager.viewer` on the API secret only, and, with `proving` on, `roles/secretmanager.secretAccessor` on the administrator secret only. Tests over the OpenTofu fail if a policy grants an action that is not in the list, grants an action on every resource, gives a role on a subscription or project, or lets an identity change any identity or permission.
+
+#### What the infra-apply identities need to make them
+
+Making an identity is itself a right, so it is kept as small as it can be and bounded. It is in [`infra/applier-rights.json`](../infra/applier-rights.json), and one script for each cloud gives it, once, in your own session (each prints what it would do until you add `--apply`):
+
+| Cloud | The extra rights of the `infra-apply` identity | The bound |
+| --- | --- | --- |
+| AWS | `iam:CreateRole`, `iam:UpdateRole`, `iam:UpdateAssumeRolePolicy`, `iam:PutRolePolicy`, `iam:PutRolePermissionsBoundary` and the matching read, delete and tag actions on the one role `rotate-credentials`. `iam:CreatePolicy`, `iam:CreatePolicyVersion` and the matching read, delete and tag actions on the one policy `ledger-rotate-credentials-boundary`. `iam:GetOpenIDConnectProvider` on the GitHub provider. Run `scripts/identity_rights_aws.sh`. | Named resources only. An explicit deny of `iam:DeleteRolePermissionsBoundary`, `iam:AttachRolePolicy` and `iam:DetachRolePolicy`. It can change this role and its boundary, so read the plan of the `identities` layer. It cannot touch any other role. |
+| Azure | The custom role `Ledger rotation identity manager`: managed identities, their federated credentials, resource groups and role assignments. Run `scripts/identity_rights_azure.sh`, then remove `User Access Administrator` from the identity. | The custom role replaces `User Access Administrator`, which was wider. Narrowing which roles it may hand out, with a condition, is a follow-up. |
+| Google Cloud | The custom role `ledgerRotationIdentityManager`: create, update, delete and set the policy on service accounts, and set the policy on secrets. Run `scripts/identity_rights_gcp.sh`. | Bound with a condition to service accounts whose name starts with `rotate-credentials@` and to secrets, with a deny of project, folder and organisation policy changes. |
+
+After `infra-apply` makes the layer, its output `environment_secrets` gives four identifiers. A person enters them in GitHub, because OpenTofu has no GitHub token and should not. They are not credentials. The values are `AWS_ROLE_ARN`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `GCP_SERVICE_ACCOUNT`.
+
+Two steps stay by hand, because nothing in OpenTofu can do them safely:
+
+1. GitHub: the `rotate-credentials` environment, limited to `main`, with you as the required reviewer. Enter the four identifiers above, and `PLAN_STORE`, `TOFU_BACKEND_CONFIG`, `AZURE_SUBSCRIPTION_ID` and `GCP_WORKLOAD_IDENTITY_PROVIDER`, exactly as in step 1.
+2. Google Cloud: widen the provider's attribute condition to `assertion.repository == 'UstDoesTech/OpenLedgerKernel' && assertion.environment in ['infra-plan','infra-apply','rotate-credentials']`. The provider is made by hand, as in step 5.
+
+Then apply the `authority` layer, the `api` layer and the `identities` layer with `infra-apply`, in that order. The layer's inputs are `TF_VAR_` secrets like the other layers': `TF_VAR_azure_subscription_id`, `TF_VAR_state_bucket`, `TF_VAR_plan_store`, `TF_VAR_workload_identity_pool` and, only for a proving environment, `TF_VAR_proving` set to `true`. The first rotation makes the authority's certificate and keeps it in the layer's secret. The runbook is [Rotating certificates and credentials](runbooks/rotating-credentials.md).
 
 ## Running it
 

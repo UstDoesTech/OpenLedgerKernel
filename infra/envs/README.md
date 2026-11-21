@@ -7,7 +7,7 @@ state, so the `infra-apply` workflow can plan and apply one layer at a time
 
 | Environment | Layers | Geo |
 | --- | --- | --- |
-| `europe` | `network` (I-01oa), `private-access` and `interconnect` (I-01ob), `registries` (I-01q) and `control-plane` (I-01ocb) `cell-first` (I-01occ), the first tenant's keys, repositories and administrators, `cells` (I-01va), the tenant's self-hosted database cells, `api` (K-16), the API machine next to each cell, and `authority` (K-17), the one KMS signing key and the secret for its public certificate. | `europe` |
+| `europe` | `network` (I-01oa), `private-access` and `interconnect` (I-01ob), `registries` (I-01q) and `control-plane` (I-01ocb) `cell-first` (I-01occ), the first tenant's keys, repositories and administrators, `cells` (I-01va), the tenant's self-hosted database cells, `api` (K-16), the API machine next to each cell, and `authority` (K-17), the one KMS signing key and the secret for its public certificate, and `identities` (K-19c), the rotate-credentials role, managed identity and service account. | `europe` |
 
 Apply the layers in that order, except that `registries` comes before `control-plane` and the etcd image is published between them (see below). Each later layer reads the networks layer's outputs from its state (`europe/network`).
 

@@ -33,7 +33,7 @@ Run it on demand, with the `kind` shown:
 ## Before the first run
 
 1. Apply the `authority` layer through **infra-apply**. It makes the KMS key and an empty secret for the authority's public certificate. It is the only layer that makes an authority.
-2. Set up the `rotate-credentials` environment and its identities, as in [Credentialed workflows](../credentialed-workflows.md), section 6. They are separate from the ones that apply infrastructure, and may sign and write these secrets and nothing else.
+2. Make the identities with the `identities` layer and set up the `rotate-credentials` environment, as in [Credentialed workflows](../credentialed-workflows.md), section 6. They are separate from the ones that apply infrastructure, and may sign and write these secrets and nothing else.
 3. Apply the `api` layer, so each cell has a machine and an empty secret.
 4. Fill `db.conn` and `tokens.json` in each cell's secret. For a proving environment, tick `proving` and the run fills a missing one from the cell's administrator credential and makes one fresh token for the tenant. An entry that is there is never replaced, so run it again without worry. For any other environment, fill them yourself: they hold the cell's own database connection and the tenant's tokens.
 

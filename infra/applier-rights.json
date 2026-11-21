@@ -1,0 +1,46 @@
+{
+  "note": "What the infra-apply identities need beyond their existing rights, to make the rotation identities (decision D-18). A person gives these once, with scripts/identity_rights_<cloud>.sh. Nothing here lets an identity change any other identity.",
+  "aws": {
+    "role_name": "rotate-credentials",
+    "boundary_name": "ledger-rotate-credentials-boundary",
+    "role_actions": [
+      "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:UpdateRole", "iam:UpdateAssumeRolePolicy",
+      "iam:PutRolePolicy", "iam:GetRolePolicy", "iam:DeleteRolePolicy", "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies", "iam:ListInstanceProfilesForRole", "iam:PutRolePermissionsBoundary", "iam:TagRole", "iam:UntagRole"
+    ],
+    "policy_actions": [
+      "iam:CreatePolicy", "iam:DeletePolicy", "iam:GetPolicy", "iam:GetPolicyVersion",
+      "iam:ListPolicyVersions", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:TagPolicy"
+    ],
+    "provider_actions": ["iam:GetOpenIDConnectProvider"],
+    "denied_actions": ["iam:DeleteRolePermissionsBoundary", "iam:AttachRolePolicy", "iam:DetachRolePolicy"]
+  },
+  "azure": {
+    "custom_role": "Ledger rotation identity manager",
+    "actions": [
+      "Microsoft.ManagedIdentity/userAssignedIdentities/read",
+      "Microsoft.ManagedIdentity/userAssignedIdentities/write",
+      "Microsoft.ManagedIdentity/userAssignedIdentities/delete",
+      "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/read",
+      "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write",
+      "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/delete",
+      "Microsoft.Resources/subscriptions/resourceGroups/read",
+      "Microsoft.Resources/subscriptions/resourceGroups/write",
+      "Microsoft.Resources/subscriptions/resourceGroups/delete",
+      "Microsoft.Authorization/roleAssignments/read",
+      "Microsoft.Authorization/roleAssignments/write",
+      "Microsoft.Authorization/roleAssignments/delete"
+    ],
+    "assignable_roles": ["Key Vault Contributor", "Key Vault Secrets Officer", "Key Vault Secrets User"]
+  },
+  "gcp": {
+    "custom_role": "ledgerRotationIdentityManager",
+    "service_account_permissions": [
+      "iam.serviceAccounts.create", "iam.serviceAccounts.delete", "iam.serviceAccounts.get",
+      "iam.serviceAccounts.update", "iam.serviceAccounts.getIamPolicy", "iam.serviceAccounts.setIamPolicy"
+    ],
+    "secret_permissions": ["secretmanager.secrets.getIamPolicy", "secretmanager.secrets.setIamPolicy"],
+    "service_account_prefix": "rotate-credentials@",
+    "denied_permissions": ["resourcemanager.projects.setIamPolicy", "resourcemanager.folders.setIamPolicy", "resourcemanager.organizations.setIamPolicy"]
+  }
+}

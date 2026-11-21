@@ -1,0 +1,27 @@
+{
+  "name": "rotate-credentials",
+  "environment": "rotate-credentials",
+  "repository": "UstDoesTech/OpenLedgerKernel",
+  "aws": {
+    "sign": ["kms:GetPublicKey", "kms:Sign"],
+    "secrets": ["secretsmanager:GetSecretValue", "secretsmanager:ListSecretVersionIds", "secretsmanager:PutSecretValue"],
+    "administrator_secret": ["secretsmanager:GetSecretValue"],
+    "encryption": ["kms:Decrypt", "kms:GenerateDataKey"],
+    "state": ["s3:GetObject"],
+    "state_bucket": ["s3:ListBucket"],
+    "plan_store": ["s3:PutObject"],
+    "max_session_seconds": 7200
+  },
+  "azure": {
+    "vault_roles": ["Key Vault Contributor", "Key Vault Secrets Officer"],
+    "administrator_vault_roles": ["Key Vault Contributor", "Key Vault Secrets User"]
+  },
+  "gcp": {
+    "secret_roles": [
+      "roles/secretmanager.secretAccessor",
+      "roles/secretmanager.secretVersionAdder",
+      "roles/secretmanager.viewer"
+    ],
+    "administrator_secret_roles": ["roles/secretmanager.secretAccessor"]
+  }
+}
