@@ -145,6 +145,19 @@ async fn https(
     key: Option<&str>,
     body: Option<Value>,
 ) -> Result<(u16, Value, Vec<u8>), String> {
+    https_as(ca, port, method, path, key, body, TENANT_TOKEN).await
+}
+
+/// The same, with the bearer token given.
+async fn https_as(
+    ca: &Authority,
+    port: u16,
+    method: &str,
+    path: &str,
+    key: Option<&str>,
+    body: Option<Value>,
+    bearer: &str,
+) -> Result<(u16, Value, Vec<u8>), String> {
     let mut roots = RootCertStore::empty();
     roots.add(ca.cert.der().clone()).unwrap();
     let config = rustls::ClientConfig::builder_with_provider(Arc::new(default_provider()))
@@ -169,7 +182,7 @@ async fn https(
         .unwrap_or_default();
     let body = body.map(|b| b.to_string()).unwrap_or_default();
     let mut request = format!(
-        "{method} {path} HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\nauthorization: Bearer {TENANT_TOKEN}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n",
+        "{method} {path} HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\nauthorization: Bearer {bearer}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n",
         body.len()
     );
     if let Some(k) = key {
@@ -493,6 +506,42 @@ async fn a_credential_the_other_side_no_longer_lists_is_refused_and_a_removed_ce
     put(&p.b.dir, "internal-auth.json", "[]");
     settle().await;
     assert_ne!(send("fourth").await, Ok(201));
+}
+
+/// K-19b: a token that a later run no longer lists is refused by the running service, and one it
+/// lists is accepted, with no restart.
+#[tokio::test]
+#[ignore = "needs Postgres on ports 5431 and 5432 and etcd"]
+async fn a_token_a_later_run_no_longer_lists_is_refused_and_a_new_one_is_accepted() {
+    let p = pair("tokens").await;
+    let open_as = |bearer: String, key: &'static str| {
+        let (ca, port) = (p.ca.clone(), p.a.public);
+        async move {
+            https_as(
+                &ca,
+                port,
+                "POST",
+                "/v1/accounts",
+                Some(key),
+                Some(json!({"currency":"GBP","overdraft_limit":{"minor":0,"currency":"GBP"}})),
+                &bearer,
+            )
+            .await
+            .map(|(s, _, _)| s)
+        }
+    };
+    assert_eq!(open_as(TENANT_TOKEN.into(), "before").await, Ok(201));
+
+    // A run lists a new token and no longer lists the old one.
+    let fresh = "f".repeat(64);
+    put(
+        &p.a.dir,
+        "tokens.json",
+        &format!(r#"[{{"token":"{fresh}","tenant":"ten_acme","principal":"usr_proving"}}]"#),
+    );
+    settle().await;
+    assert_eq!(open_as(TENANT_TOKEN.into(), "old").await, Ok(401));
+    assert_eq!(open_as(fresh.clone(), "new").await, Ok(201));
 }
 
 #[tokio::test]

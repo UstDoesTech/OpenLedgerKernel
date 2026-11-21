@@ -8,11 +8,13 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
+use ledger_pki::AdministratorCopy;
 use ledger_pki::manifest::{Authority, CellEntry};
+use ledger_pki::manifest::{Database, DatabaseKind};
 use ledger_pki::runner::ProcessRunner;
 use ledger_pki::{
     CliStore, Cloud, Kind, KmsSigner, Manifest, MemorySigner, MemoryStore, PkiError, Rotation,
-    SecretStore, Signer,
+    SecretStore, Signer, Simulated,
 };
 
 fn usage() -> ExitCode {
@@ -38,7 +40,10 @@ fn run(args: &[String]) -> Result<String, PkiError> {
     let now = time::OffsetDateTime::now_utc();
     match args.first().map(String::as_str) {
         Some("rehearse") => {
+            // `--proving` rehearses a proving environment: empty secrets, filled by a simulated source.
+            let proving = args.iter().any(|a| a == "--proving");
             let manifest = Manifest {
+                proving,
                 authority: Authority {
                     key_id: "rehearsal".into(),
                     certificate_secret: "rehearsal".into(),
@@ -57,12 +62,23 @@ fn run(args: &[String]) -> Result<String, PkiError> {
                     address: (*a).into(),
                     internal_port: 8444,
                     db_ca: None,
+                    database: proving.then(|| Database {
+                        host: format!("db-{n}.rehearsal"),
+                        port: 5432,
+                        kind: DatabaseKind::SelfHosted,
+                        credential_secret: format!("credential-{n}"),
+                    }),
                 })
                 .collect(),
             };
             let store = MemoryStore::new();
             for c in &manifest.cells {
-                store.put(c.cloud, &c.secret, r#"{"db.conn":"x","tokens.json":"[]"}"#);
+                let held = if proving {
+                    "{}"
+                } else {
+                    r#"{"db.conn":"x","tokens.json":"[]"}"#
+                };
+                store.put(c.cloud, &c.secret, held);
             }
             let signer: Arc<dyn Signer> = Arc::new(MemorySigner::new()?);
             let report = Rotation {
@@ -72,6 +88,7 @@ fn run(args: &[String]) -> Result<String, PkiError> {
                 now,
                 settle: Duration::ZERO,
                 sleep: &|_| {},
+                database: if proving { Some(&Simulated) } else { None },
             }
             .run(kind)?;
             Ok(report.to_string())
@@ -96,6 +113,7 @@ fn run(args: &[String]) -> Result<String, PkiError> {
             )?);
             let store: Box<dyn SecretStore> =
                 Box::new(CliStore::new(ProcessRunner, work.join("secret")));
+            let copy = AdministratorCopy::new(store.as_ref());
             let report = Rotation {
                 manifest: &manifest,
                 signer,
@@ -103,6 +121,8 @@ fn run(args: &[String]) -> Result<String, PkiError> {
                 now,
                 settle,
                 sleep: &std::thread::sleep,
+                // Used only when the manifest says it is a proving environment.
+                database: Some(&copy),
             }
             .run(kind)?;
             Ok(report.to_string())

@@ -23,6 +23,27 @@ pub struct Authority {
     pub certificate_secret: String,
 }
 
+/// Where a cell's own database is, and where its administrator's credential is held.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Database {
+    /// The name the database's certificate carries, which is what the connection string uses.
+    pub host: String,
+    pub port: u16,
+    pub kind: DatabaseKind,
+    /// The reference to the secret that holds the administrator's credential. Never the credential.
+    pub credential_secret: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DatabaseKind {
+    /// Postgres on machines the node agent runs. Its secret holds the administrator's password.
+    SelfHosted,
+    /// A managed service. Its secret is the service's own, and is not copied here.
+    Managed,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CellEntry {
@@ -38,6 +59,9 @@ pub struct CellEntry {
     /// trusts it. It is public. Left out, the secret keeps whatever it already holds.
     #[serde(default)]
     pub db_ca: Option<String>,
+    /// This cell's own database. Needed only for a proving environment.
+    #[serde(default)]
+    pub database: Option<Database>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -47,6 +71,11 @@ pub struct Manifest {
     /// The tenants a cell credential covers.
     pub tenants: Vec<String>,
     pub cells: Vec<CellEntry>,
+    /// A proving environment holds no real money or customer data (D-19). Only then may a run fill a
+    /// missing `db.conn` from the administrator's credential and make tokens for the tenants. Left
+    /// out, a run fills neither, and a person does.
+    #[serde(default)]
+    pub proving: bool,
 }
 
 impl Manifest {
@@ -78,6 +107,24 @@ impl Manifest {
             }
             if c.name.is_empty() || c.secret.is_empty() {
                 return Err(PkiError::Manifest("a cell has a name and a secret"));
+            }
+            if self.proving {
+                let Some(d) = &c.database else {
+                    return Err(PkiError::Manifest(
+                        "a proving environment gives each cell's database",
+                    ));
+                };
+                let plain = |s: &str| {
+                    !s.is_empty()
+                        && s.chars().all(|ch| {
+                            ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | ':' | '_')
+                        })
+                };
+                if !plain(&d.host) || d.credential_secret.is_empty() {
+                    return Err(PkiError::Manifest(
+                        "a cell's database has a plain host and a credential secret",
+                    ));
+                }
             }
             if let Some(ca) = &c.db_ca
                 && !(ca.contains("-----BEGIN CERTIFICATE-----")

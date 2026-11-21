@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod database;
 pub mod error;
 pub mod manifest;
 pub mod rotate;
@@ -18,6 +19,7 @@ pub mod runner;
 pub mod signer;
 pub mod store;
 
+pub use database::{AdministratorCopy, DatabaseSource, Simulated};
 pub use error::PkiError;
 pub use manifest::{Cloud, Manifest};
 pub use rotate::{Kind, Report, Rotation};

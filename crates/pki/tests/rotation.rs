@@ -28,6 +28,7 @@ fn cell(name: &str, cloud: Cloud, address: &str) -> CellEntry {
         address: address.into(),
         internal_port: 8444,
         db_ca: None,
+        database: None,
     }
 }
 
@@ -44,6 +45,7 @@ fn manifest(names: &[&str]) -> Manifest {
             .enumerate()
             .map(|(i, n)| cell(n, clouds[i % 3], &format!("10.1.0.{}", i + 1)))
             .collect(),
+        proving: false,
     }
 }
 
@@ -77,6 +79,7 @@ fn run(
         now: OffsetDateTime::now_utc(),
         settle: Duration::from_secs(420),
         sleep: &|_| {},
+        database: None,
     }
     .run(kind)
 }
@@ -342,6 +345,7 @@ fn the_steps_go_lists_then_calls_then_old_credentials_out_with_a_wait_between() 
         now: OffsetDateTime::now_utc(),
         settle: Duration::from_secs(420),
         sleep: &sleep,
+        database: None,
     }
     .run(Kind::All)
     .unwrap();
@@ -704,7 +708,7 @@ fn a_run_prints_one_line_of_counts() {
 /// `cells: N, certificates issued: N, ...` and nothing else.
 fn regex_free_counts(line: &str) -> bool {
     let parts: Vec<&str> = line.split(", ").collect();
-    parts.len() == 5
+    parts.len() == 7
         && parts.iter().all(|p| {
             p.rsplit_once(": ").is_some_and(|(label, n)| {
                 label.chars().all(|c| c.is_ascii_lowercase() || c == ' ')
@@ -785,4 +789,254 @@ fn a_database_authority_that_is_not_a_certificate_is_refused_without_its_text() 
         !err.contains("secret-looking-text"),
         "the error must not echo the value"
     );
+}
+
+// ---- K-19b: a proving environment's missing entries ----
+
+mod proving {
+    use super::*;
+    use ledger_pki::manifest::{Database, DatabaseKind};
+    use ledger_pki::{AdministratorCopy, DatabaseSource, Simulated};
+
+    fn proving_manifest(names: &[&str]) -> Manifest {
+        let mut m = manifest(names);
+        m.proving = true;
+        for (i, c) in m.cells.iter_mut().enumerate() {
+            c.database = Some(Database {
+                host: format!("db-{}.cells.example", names[i]),
+                port: 5432 + i as u16,
+                kind: DatabaseKind::SelfHosted,
+                credential_secret: format!("administrator-of-{}", names[i]),
+            });
+        }
+        m
+    }
+
+    /// Cells' API secrets start empty, as OpenTofu makes them, and each cell has its own
+    /// administrator credential, as the node agent writes it.
+    fn empty_store(m: &Manifest) -> MemoryStore {
+        let s = MemoryStore::new();
+        for c in &m.cells {
+            s.put(c.cloud, &c.secret, "");
+            let d = c.database.as_ref().unwrap();
+            s.put(
+                c.cloud,
+                &d.credential_secret,
+                &format!("admin-password-of-{}", c.name),
+            );
+        }
+        s
+    }
+
+    fn run_with(
+        m: &Manifest,
+        s: &dyn SecretStore,
+        source: Option<&dyn DatabaseSource>,
+    ) -> Result<ledger_pki::Report, PkiError> {
+        Rotation {
+            manifest: m,
+            signer: signer(),
+            store: s,
+            now: OffsetDateTime::now_utc(),
+            settle: Duration::from_secs(420),
+            sleep: &|_| {},
+            database: source,
+        }
+        .run(Kind::All)
+    }
+
+    #[test]
+    fn a_proving_run_fills_what_is_missing_and_each_cell_gets_only_its_own_database() {
+        let m = proving_manifest(&["cell-one", "cell-two", "cell-three"]);
+        let s = empty_store(&m);
+        let copy = AdministratorCopy::new(&s);
+        let report = run_with(&m, &s, Some(&copy)).unwrap();
+        assert_eq!(
+            (report.databases, report.tokens, report.incomplete),
+            (3, 3, 0)
+        );
+        for (i, c) in m.cells.iter().enumerate() {
+            let e = entries(&s, c);
+            let conn = &e["db.conn"];
+            assert!(conn.contains(&format!("host=db-{}.cells.example", c.name)));
+            assert!(conn.contains(&format!("port={}", 5432 + i)));
+            assert!(conn.contains(&format!("admin-password-of-{}", c.name)));
+            for other in m.cells.iter().filter(|o| o.name != c.name) {
+                assert!(
+                    !conn.contains(&other.name),
+                    "a cell's secret must hold only its own database"
+                );
+            }
+            // One fresh token for the tenant, not shared with another cell.
+            let tokens: serde_json::Value = serde_json::from_str(&e["tokens.json"]).unwrap();
+            assert_eq!(tokens.as_array().unwrap().len(), 1);
+            assert_eq!(tokens[0]["tenant"], "ten_acme");
+            assert!(tokens[0]["token"].as_str().unwrap().len() >= 40);
+        }
+        let first = entries(&s, &m.cells[0])["tokens.json"].clone();
+        let second = entries(&s, &m.cells[1])["tokens.json"].clone();
+        assert_ne!(first, second, "each cell's tokens are made for it");
+    }
+
+    #[test]
+    fn entries_that_are_there_are_left_alone_and_a_second_run_makes_nothing() {
+        let m = proving_manifest(&["cell-one", "cell-two"]);
+        let s = empty_store(&m);
+        let copy = AdministratorCopy::new(&s);
+        let sg = signer();
+        let sign = |sg: Arc<dyn Signer>| {
+            Rotation {
+                manifest: &m,
+                signer: sg,
+                store: &s,
+                now: OffsetDateTime::now_utc(),
+                settle: Duration::ZERO,
+                sleep: &|_| {},
+                database: Some(&copy),
+            }
+            .run(Kind::All)
+            .unwrap()
+        };
+        sign(sg.clone());
+        let before: Vec<_> = m.cells.iter().map(|c| entries(&s, c)).collect();
+        let again = sign(sg);
+        assert_eq!((again.databases, again.tokens), (0, 0));
+        for (c, b) in m.cells.iter().zip(&before) {
+            let e = entries(&s, c);
+            assert_eq!(e["db.conn"], b["db.conn"]);
+            assert_eq!(
+                e["tokens.json"], b["tokens.json"],
+                "a token in use is never replaced"
+            );
+        }
+
+        // A person's own entries are kept as they are.
+        let m = proving_manifest(&["cell-one"]);
+        let s = empty_store(&m);
+        s.put(
+            m.cells[0].cloud,
+            &m.cells[0].secret,
+            r#"{"db.conn":"their own","tokens.json":"[{\"token\":\"theirs\"}]"}"#,
+        );
+        let copy = AdministratorCopy::new(&s);
+        let report = run_with(&m, &s, Some(&copy)).unwrap();
+        assert_eq!((report.databases, report.tokens), (0, 0));
+        assert_eq!(entries(&s, &m.cells[0])["db.conn"], "their own");
+    }
+
+    #[test]
+    fn without_proving_nothing_is_filled_and_the_cells_are_counted_incomplete() {
+        let mut m = proving_manifest(&["cell-one"]);
+        m.proving = false;
+        let s = empty_store(&m);
+        let copy = AdministratorCopy::new(&s);
+        let report = run_with(&m, &s, Some(&copy)).unwrap();
+        assert_eq!(
+            (report.databases, report.tokens, report.incomplete),
+            (0, 0, 1)
+        );
+        let e = entries(&s, &m.cells[0]);
+        assert!(!e.contains_key("db.conn") && !e.contains_key("tokens.json"));
+    }
+
+    #[test]
+    fn a_credential_that_cannot_be_read_stops_the_run_with_nothing_written() {
+        let m = proving_manifest(&["cell-one", "cell-two"]);
+        let s = empty_store(&m);
+        // The second cell's administrator has not been written yet.
+        s.put(
+            m.cells[1].cloud,
+            &m.cells[1].database.as_ref().unwrap().credential_secret,
+            "",
+        );
+        let copy = AdministratorCopy::new(&s);
+        let err = run_with(&m, &s, Some(&copy)).unwrap_err().to_string();
+        assert!(!err.contains("cell-two") && !err.contains("administrator-of"));
+        for c in &m.cells {
+            assert_eq!(s.read(c.cloud, &c.secret).unwrap().unwrap_or_default(), "");
+        }
+        assert_eq!(
+            s.read(m.cells[0].cloud, AUTHORITY)
+                .unwrap()
+                .unwrap_or_default(),
+            ""
+        );
+    }
+
+    #[test]
+    fn a_proving_run_without_a_source_and_a_managed_cell_are_refused() {
+        let m = proving_manifest(&["cell-one"]);
+        let s = empty_store(&m);
+        assert!(run_with(&m, &s, None).is_err());
+
+        let mut managed = proving_manifest(&["cell-one"]);
+        managed.cells[0].database.as_mut().unwrap().kind = DatabaseKind::Managed;
+        let s = empty_store(&managed);
+        let copy = AdministratorCopy::new(&s);
+        assert!(run_with(&managed, &s, Some(&copy)).is_err());
+    }
+
+    #[test]
+    fn a_proving_manifest_must_give_each_cells_database() {
+        let text = r#"{"authority":{"key_id":"k","certificate_secret":"c"},"tenants":["ten_a"],
+            "proving":true,
+            "cells":[{"name":"a","cloud":"aws","secret":"s","address":"10.0.0.1","internal_port":8444}]}"#;
+        assert!(Manifest::parse(text).is_err());
+        let bad_host = text.replace(
+            r#""internal_port":8444"#,
+            r#""internal_port":8444,"database":{"host":"x y","port":5432,"kind":"self_hosted","credential_secret":"c"}"#,
+        );
+        assert!(Manifest::parse(&bad_host).is_err());
+    }
+
+    #[test]
+    fn the_connection_string_keeps_any_password_and_is_one_a_driver_reads() {
+        for password in [
+            "plain",
+            "it's",
+            r"back\slash",
+            "sp ace 'both' \\ x",
+            "=&;\"",
+        ] {
+            let line = ledger_pki::database::connection_string(
+                "db.example",
+                5432,
+                "ledger_admin",
+                password,
+            );
+            let config: tokio_postgres::Config = line.parse().expect("the driver must read it");
+            assert_eq!(config.get_user(), Some("ledger_admin"));
+            assert_eq!(config.get_password(), Some(password.as_bytes()));
+            assert_eq!(config.get_ports(), [5432]);
+        }
+    }
+
+    #[test]
+    fn the_simulated_source_holds_no_credential() {
+        let m = proving_manifest(&["cell-one"]);
+        let line = Simulated.connection(&m.cells[0]).unwrap();
+        assert!(line.contains("host=db-cell-one.cells.example"));
+    }
+
+    #[test]
+    fn a_proving_rehearsal_prints_one_line_of_counts_and_no_token_or_password() {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_ledger-pki"))
+            .args(["rehearse", "--proving", "--kind", "all"])
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        assert!(out.stderr.is_empty());
+        let line = String::from_utf8(out.stdout).unwrap();
+        assert_eq!(line.lines().count(), 1);
+        assert!(line.contains("database connections made: 3"), "{line}");
+        assert!(line.contains("login files made: 3"), "{line}");
+        assert!(line.contains("cells still missing a file: 0"), "{line}");
+        let long_hex = line
+            .split(|c: char| !c.is_ascii_hexdigit())
+            .any(|run| run.len() >= 32);
+        assert!(!long_hex, "no token may appear in the output");
+        for forbidden in ["simulated", "password", "db-cell", "rehearsal"] {
+            assert!(!line.contains(forbidden));
+        }
+    }
 }

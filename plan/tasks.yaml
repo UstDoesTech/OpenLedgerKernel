@@ -790,14 +790,16 @@ tasks:
   phase: P1
   workstream: K
   size: S
-  status: in_progress
+  status: done
   depends_on:
   - K-19a
   decisions:
   - D-19
   deliverables:
   - crates/pki
+  - crates/api
   - scripts/rotation_manifest.py
+  - .github/workflows/rotate-credentials.yml
   - docs/runbooks/rotating-credentials.md
   acceptance:
   - A run writes db.conn and tokens.json into each cell's API secret when they are absent, and leaves them

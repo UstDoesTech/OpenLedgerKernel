@@ -35,7 +35,7 @@ Run it on demand, with the `kind` shown:
 1. Apply the `authority` layer through **infra-apply**. It makes the KMS key and an empty secret for the authority's public certificate. It is the only layer that makes an authority.
 2. Set up the `rotate-credentials` environment and its identities, as in [Credentialed workflows](../credentialed-workflows.md), section 6. They are separate from the ones that apply infrastructure, and may sign and write these secrets and nothing else.
 3. Apply the `api` layer, so each cell has a machine and an empty secret.
-4. Fill `db.conn` and `tokens.json` in each cell's secret. These two are not made by the run. They hold the cell's own database connection and the tenant's tokens.
+4. Fill `db.conn` and `tokens.json` in each cell's secret. For a proving environment, tick `proving` and the run fills a missing one from the cell's administrator credential and makes one fresh token for the tenant. An entry that is there is never replaced, so run it again without worry. For any other environment, fill them yourself: they hold the cell's own database connection and the tenant's tokens.
 
 The run works without step 4, and says so: it prints how many cells still lack a file. A machine does not start until every file is there.
 
@@ -46,7 +46,7 @@ The run works without step 4, and says so: it prints how many cells still lack a
 A run takes about 15 minutes with three cells, almost all of it the two waits. The job prints one line:
 
 ```
-cells: 3, certificates issued: 6, credentials issued: 6, secret versions written: 10, cells still missing a file: 0
+cells: 3, certificates issued: 6, credentials issued: 6, secret versions written: 10, database connections made: 0, login files made: 0, cells still missing a file: 0
 ```
 
 | Count | What it is |
@@ -55,7 +55,9 @@ cells: 3, certificates issued: 6, credentials issued: 6, secret versions written
 | `certificates issued` | Two for each cell, when `kind` is `all` or `certificates`. |
 | `credentials issued` | One for each ordered pair of cells, when `kind` is `all` or `credentials`: 6 for three cells. |
 | `secret versions written` | Three for each cell when credentials are made, one when only certificates are. The first run adds one for the authority's certificate. |
-| `cells still missing a file` | Cells whose secret lacks a file the service needs. It should be 0 once `db.conn` and `tokens.json` are filled. |
+| `database connections made` | Cells whose `db.conn` was missing and was filled this run. Only a `proving` run makes any. |
+| `login files made` | Cells whose `tokens.json` was missing and got one fresh token for the tenant. Only a `proving` run makes any. |
+| `cells still missing a file` | Cells whose secret lacks a file the service needs. It should be 0 once `db.conn` and `tokens.json` are filled, by a `proving` run or by a person. |
 
 The log shows nothing else. No certificate, key, token, address, secret name or cell name is printed anywhere. Not by the tool, and not by the cloud tools it runs, whose output stays inside it. If you need to know more, ask the cloud: look at a secret's versions with your own sign-in.
 
@@ -108,5 +110,6 @@ A cell's private key, if it was seen, can be used until its certificate runs out
 ## What this does not do yet
 
 - **etcd's own members.** The cells' `etcd-ca.crt` is this authority's certificate, so etcd must trust it and show a certificate it signed. The members' certificates are not issued by this run. Until a task makes them, make them from this authority and keep them in each member's secret.
-- **`db.conn` and `tokens.json`.** A person still fills these. They are not certificates or cell credentials.
+- **`db.conn` and `tokens.json`.** A person fills these, unless the environment is a proving one and the run was given `proving` (D-19). Then the run copies the cell's administrator credential into `db.conn` and makes a fresh token for the tenant. K-19d replaces the copy with a role the node agent makes. Real sign-in replaces the tokens in A-06.
+- **Reading the proving token.** Use your own sign-in and keep it out of the log: for AWS, `aws secretsmanager get-secret-value --secret-id <the cell's API secret> --query SecretString --output text | jq -r '."tokens.json" | fromjson | .[0].token' > ~/smoke-token-aws`. Each cell's token is its own.
 - **The 7 day rhythm.** A person dispatches it, because a credentialed workflow runs only when a person starts it.

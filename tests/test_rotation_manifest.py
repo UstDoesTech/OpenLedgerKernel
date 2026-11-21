@@ -76,3 +76,63 @@ def test_an_unknown_cloud_is_refused(tmp_path):
     bad["apis"]["value"]["oracle"] = bad["apis"]["value"]["aws"]
     done, _ = run(tmp_path, bad)
     assert done.returncode != 0
+
+
+def cells(kind="self_hosted"):
+    one = lambda cloud, n: {"kind": kind, "host": f"db-{cloud}.cells.example", "port": 5432,
+                            "secret_ref": f"administrator-ref-{cloud}"}
+    return {"tenant": {"value": "ten_acme"},
+            "cells": {"value": {"aws": one("aws", 1), "azure": one("azure", 2), "gcp": one("gcp", 3)}}}
+
+
+def run_proving(tmp_path, cells_outputs):
+    (tmp_path / "cells.json").write_text(json.dumps(cells_outputs))
+    (tmp_path / "api.json").write_text(json.dumps(api()))
+    (tmp_path / "authority.json").write_text(json.dumps(AUTHORITY))
+    out = tmp_path / "manifest.json"
+    done = subprocess.run(
+        [sys.executable, str(SCRIPT), str(tmp_path / "api.json"), str(tmp_path / "authority.json"),
+         str(out), str(tmp_path / "cells.json")],
+        capture_output=True, text=True,
+    )
+    return done, out
+
+
+def test_without_the_cells_outputs_the_manifest_is_not_a_proving_one(tmp_path):
+    done, out = run(tmp_path, api())
+    assert done.returncode == 0, done.stderr
+    manifest = json.loads(out.read_text())
+    assert "proving" not in manifest
+    assert all("database" not in c for c in manifest["cells"])
+
+
+def test_with_the_cells_outputs_each_cell_carries_its_own_database_and_where_its_credential_is(tmp_path):
+    done, out = run_proving(tmp_path, cells())
+    assert done.returncode == 0, done.stderr
+    manifest = json.loads(out.read_text())
+    assert manifest["proving"] is True
+    for c in manifest["cells"]:
+        cloud = c["cloud"]
+        assert c["database"] == {"host": f"db-{cloud}.cells.example", "port": 5432,
+                                 "kind": "self_hosted", "credential_secret": f"administrator-ref-{cloud}"}
+    # The reference is there. A credential never is: the script cannot read one.
+    assert "password" not in out.read_text().lower()
+    assert stat.S_IMODE(out.stat().st_mode) == 0o600
+    assert done.stdout.strip() == "cells: 3"
+
+
+def test_a_proving_manifest_is_refused_when_a_database_is_not_plain_or_is_missing(tmp_path):
+    bad = cells()
+    bad["cells"]["value"]["aws"]["host"] = "db host; rm -rf"
+    done, _ = run_proving(tmp_path, bad)
+    assert done.returncode != 0 and "db host" not in done.stderr + done.stdout
+
+    short = cells()
+    del short["cells"]["value"]["gcp"]
+    done, _ = run_proving(tmp_path, short)
+    assert done.returncode != 0
+    assert "administrator-ref" not in done.stderr + done.stdout
+
+    odd = cells(kind="somewhere_else")
+    done, _ = run_proving(tmp_path, odd)
+    assert done.returncode != 0

@@ -156,6 +156,16 @@ One central certificate authority signs every cell's certificates (decision D-17
 | Azure | On the vault only: `Key Vault Secrets Officer`, so it can read and write the Azure API secret, and `Key Vault Contributor`, so the run can open the vault's firewall to its own address and close it again. Nothing else. |
 | Google Cloud | `roles/secretmanager.secretVersionAdder`, `roles/secretmanager.secretAccessor` and `roles/secretmanager.viewer` on the Google Cloud API secret only. Nothing else. |
 
+A run with `proving` on (decision D-19) may also read each cell's administrator credential, only to fill a database connection that is missing. It needs, besides the table:
+
+| Cloud | The extra rights for a proving run |
+| --- | --- |
+| AWS | Read on the state bucket for the `cells` layer, and `secretsmanager:GetSecretValue` on the AWS cell's administrator secret only. |
+| Azure | `Key Vault Secrets Officer` already reads a secret. If the Azure cell's administrator secret is in another vault, the same role on that vault, and its firewall opened the same way. |
+| Google Cloud | `roles/secretmanager.secretAccessor` on the Google Cloud cell's administrator secret only. |
+
+Leave these off an environment that holds real money or customer data. K-19d replaces the copy: the node agent writes a dedicated role's connection string itself, so no run reads the administrator credential, and these rights go. K-19c makes all of the identities and their rights with OpenTofu.
+
 Set it up like the other environments, with its own name:
 
 1. GitHub: the `rotate-credentials` environment, limited to `main`, with you as the required reviewer. It holds `AWS_ROLE_ARN`, `PLAN_STORE`, `TOFU_BACKEND_CONFIG` and, for the other clouds, the `AZURE_*` and `GCP_*` secrets of its own identities, exactly as in step 1.

@@ -21,6 +21,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
+use crate::database::DatabaseSource;
 use crate::error::PkiError;
 use crate::manifest::{CellEntry, Cloud, Manifest};
 use crate::signer::{Signer, key_pair};
@@ -55,6 +56,10 @@ pub struct Report {
     pub certificates: usize,
     pub credentials: usize,
     pub versions: usize,
+    /// Database connections and token files this run made, because a proving environment's secret
+    /// had none. A person's own entries are never counted, and never replaced.
+    pub databases: usize,
+    pub tokens: usize,
     /// Cells whose secret still lacks a file the service needs, such as the database connection.
     pub incomplete: usize,
 }
@@ -63,8 +68,14 @@ impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "cells: {}, certificates issued: {}, credentials issued: {}, secret versions written: {}, cells still missing a file: {}",
-            self.cells, self.certificates, self.credentials, self.versions, self.incomplete
+            "cells: {}, certificates issued: {}, credentials issued: {}, secret versions written: {}, database connections made: {}, login files made: {}, cells still missing a file: {}",
+            self.cells,
+            self.certificates,
+            self.credentials,
+            self.versions,
+            self.databases,
+            self.tokens,
+            self.incomplete
         )
     }
 }
@@ -97,10 +108,22 @@ pub struct Rotation<'a> {
     /// How long to wait between steps.
     pub settle: Duration,
     pub sleep: &'a (dyn Fn(Duration) + Sync),
+    /// Where a missing `db.conn` comes from. Used only when the manifest says `proving`.
+    pub database: Option<&'a dyn DatabaseSource>,
 }
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The tokens file for a proving environment: one fresh token for each tenant. Nothing else knows
+/// a token, and it is never printed.
+fn proving_tokens(tenants: &[String]) -> Result<String, PkiError> {
+    let list: Vec<Value> = tenants
+        .iter()
+        .map(|tenant| Ok(json!({"token": token()?, "tenant": tenant, "principal": "usr_proving"})))
+        .collect::<Result<_, PkiError>>()?;
+    Ok(Value::Array(list).to_string())
 }
 
 fn token() -> Result<String, PkiError> {
@@ -251,11 +274,34 @@ impl<'a> Rotation<'a> {
         };
 
         // Step 0: read and build everything. Nothing about a cell is written until all of it exists.
-        let (issuer, issuer_key, ca_pem) = self.authority()?;
         let mut now: Vec<Entries> = cells
             .iter()
             .map(|c| self.current(c))
             .collect::<Result<_, _>>()?;
+
+        // A proving environment's missing entries. An entry that is there is a person's, or an
+        // earlier run's, and is left as it is. Everything is made before anything is written, so
+        // a credential that cannot be read stops the run with nothing changed.
+        if self.manifest.proving {
+            let source = self.database.ok_or(PkiError::Manifest(
+                "a proving environment needs a source for the database connection",
+            ))?;
+            for (cell, entries) in cells.iter().zip(now.iter_mut()) {
+                if entries.get("db.conn").is_none_or(String::is_empty) {
+                    entries.insert("db.conn".into(), source.connection(cell)?);
+                    report.databases += 1;
+                }
+                if entries.get("tokens.json").is_none_or(String::is_empty) {
+                    entries.insert(
+                        "tokens.json".into(),
+                        proving_tokens(&self.manifest.tenants)?,
+                    );
+                    report.tokens += 1;
+                }
+            }
+        }
+
+        let (issuer, issuer_key, ca_pem) = self.authority()?;
 
         if kind.certificates() {
             for (cell, entries) in cells.iter().zip(now.iter_mut()) {
