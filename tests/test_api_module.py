@@ -134,9 +134,15 @@ def test_etcd_must_be_https():
 
 def test_every_file_the_environment_names_is_in_the_secret():
     text = body(BOOT)
-    files = set(re.search(r"secret_files = \[(.*?)\]", text, re.S).group(1).replace('"', "").replace(",", " ").split())
+    def listed(name):
+        found = re.search(rf"^  {name} = \[(.*?)\]", text, re.S | re.M)
+        return set(found.group(1).replace('"', "").replace(",", " ").split())
+
+    files = listed("secret_files")
+    optional = listed("optional_secret_files")
     named = set(re.findall(r'\$\{local\.secrets_dir\}/([\w.-]+)"', text))
-    assert named == files
+    assert named == files | optional
+    assert not files & optional
 
 
 def test_the_unit_runs_the_container_locked_down_and_pulls_by_digest():
@@ -150,7 +156,8 @@ def test_the_unit_runs_the_container_locked_down_and_pulls_by_digest():
 
 def test_the_secret_writer_makes_files_readable_by_the_service_only():
     script = (BOOT / "files" / "write-secrets.sh").read_text()
-    assert "umask 077" in script and "chmod 0400" in script and "chown 10001:10001" in script
+    assert "umask 077" in script and "chmod 0400" in script
+    assert 'owner="${LEDGER_API_SECRETS_OWNER:-10001:10001}"' in script and 'chown "$owner"' in script
     assert "exit 1" in script, "a missing entry stops the start"
 
 
@@ -201,3 +208,57 @@ def test_the_secret_writer_checks_every_entry_before_it_replaces_any_file():
     first_write = script.index('mv "$target/$name.new"')
     assert check < first_write
     assert script.count("exit 1") >= 2
+
+
+def _write(tmp_path, bundle, *names, existing=None):
+    """Runs the real writer script as the current user, into a directory of its own."""
+    import json
+    import os
+    import subprocess
+
+    target = tmp_path / "secrets"
+    target.mkdir(exist_ok=True)
+    for name, text in (existing or {}).items():
+        (target / name).write_text(text)
+    env = dict(os.environ, LEDGER_API_SECRETS_DIR=str(target), LEDGER_API_SECRETS_OWNER=f"{os.getuid()}:{os.getgid()}")
+    done = subprocess.run(
+        ["bash", str(BOOT / "files" / "write-secrets.sh"), *names],
+        input=json.dumps(bundle), text=True, capture_output=True, env=env,
+    )
+    return done, target
+
+
+def test_an_optional_entry_is_written_when_the_secret_has_it(tmp_path):
+    done, target = _write(tmp_path, {"a": "1", "db-ca.crt": "PEM"}, "a", "optional:db-ca.crt")
+    assert done.returncode == 0, done.stderr
+    assert (target / "db-ca.crt").read_text().strip() == "PEM"
+    assert oct((target / "db-ca.crt").stat().st_mode & 0o777) == "0o400"
+
+
+def test_a_secret_without_the_optional_entry_still_starts_and_a_stale_file_is_removed(tmp_path):
+    done, target = _write(tmp_path, {"a": "1"}, "a", "optional:db-ca.crt", existing={"db-ca.crt": "OLD"})
+    assert done.returncode == 0, done.stderr
+    assert (target / "a").exists()
+    assert not (target / "db-ca.crt").exists(), "the directory must match the secret"
+
+
+def test_an_empty_optional_entry_counts_as_missing(tmp_path):
+    done, target = _write(tmp_path, {"a": "1", "db-ca.crt": ""}, "a", "optional:db-ca.crt")
+    assert done.returncode == 0, done.stderr
+    assert not (target / "db-ca.crt").exists()
+
+
+def test_a_missing_required_entry_still_stops_the_start_and_changes_nothing(tmp_path):
+    done, target = _write(
+        tmp_path, {"a": "1", "db-ca.crt": "NEW"}, "a", "b", "optional:db-ca.crt",
+        existing={"a": "OLD", "db-ca.crt": "OLD"},
+    )
+    assert done.returncode != 0
+    assert (target / "a").read_text() == "OLD"
+    assert (target / "db-ca.crt").read_text() == "OLD"
+
+
+def test_the_service_is_told_where_the_database_authority_is():
+    text = body(BOOT)
+    assert re.search(r'LEDGER_DB_CA_FILE\s*=\s*"\$\{local\.secrets_dir\}/db-ca\.crt"', text)
+    assert "optional:" in text

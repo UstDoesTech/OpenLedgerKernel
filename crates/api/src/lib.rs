@@ -18,6 +18,7 @@
 
 mod app;
 pub mod auth;
+pub mod dbconn;
 pub mod error;
 mod internal;
 pub mod peer;

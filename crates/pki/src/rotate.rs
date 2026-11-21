@@ -85,6 +85,10 @@ pub const SECRET_FILES: [&str; 10] = [
     "etcd-client.key",
 ];
 
+/// Entries the service reads when they are there and does without when they are not. A rotation
+/// writes one only when the manifest gives it, and never removes one.
+pub const OPTIONAL_FILES: [&str; 1] = ["db-ca.crt"];
+
 pub struct Rotation<'a> {
     pub manifest: &'a Manifest,
     pub signer: Arc<dyn Signer>,
@@ -264,6 +268,14 @@ impl<'a> Rotation<'a> {
                 // One authority signs both what the cells present and what etcd presents.
                 entries.insert("etcd-ca.crt".into(), ca_pem.clone());
                 report.certificates += 2;
+            }
+        }
+
+        // The authority of each cell's database, when the manifest has it. Public, and not tied to
+        // either kind of run, so it is written whenever it is given.
+        for (cell, entries) in cells.iter().zip(now.iter_mut()) {
+            if let Some(ca) = &cell.db_ca {
+                entries.insert("db-ca.crt".into(), ca.clone());
             }
         }
 

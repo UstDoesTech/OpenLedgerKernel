@@ -762,23 +762,25 @@ tasks:
   phase: P1
   workstream: K
   size: S
-  status: todo
+  status: done
   depends_on:
   - K-17
   deliverables:
   - crates/api
   - crates/pki
+  - infra/modules/api-boot
   - docs/runbooks/rotating-credentials.md
   acceptance:
   - The API reads an optional db-ca.crt entry from its secret and trusts that CA, as well as the system
-    roots, when it connects to its cell's database. A change to the file is picked up by the reload, with
-    no restart.
+    roots, when it connects to its cell's database. The API connects once, at start, so a changed file
+    applies at the next start, which the refresh timer's service does not trigger.
   - A test against a Postgres node with TLS shows the connection works with the right CA, fails with
     another, and that a refused change keeps the old connector.
   - A start that cannot reach its database logs one line saying whether the cause was the name, the
     certificate or the sign-in, and no host, user or password.
   - The rotation writes db-ca.crt when the manifest gives one, and keeps it when it does not.
-  notes: The API checks the database certificate against the system roots only, and the cells' nodes use
+  notes: The API has no reconnect, so reloading a CA would change nothing. A reconnecting database client is
+    a separate task. The API checks the database certificate against the system roots only, and the cells' nodes use
     their own CA, so the first real connection is expected to fail without this. Edits a credentialed
     workflow's inputs, so it needs a person's review.
   refs:

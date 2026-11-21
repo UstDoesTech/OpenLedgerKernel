@@ -27,6 +27,7 @@ fn cell(name: &str, cloud: Cloud, address: &str) -> CellEntry {
         secret: format!("secret-{name}"),
         address: address.into(),
         internal_port: 8444,
+        db_ca: None,
     }
 }
 
@@ -735,4 +736,53 @@ fn the_binary_fails_loudly_and_says_nothing_about_what_it_was_given() {
         "the output named something it was given"
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+const DB_CA: &str =
+    "-----BEGIN CERTIFICATE-----\nTUVSRUxZLVBVQkxJQw==\n-----END CERTIFICATE-----\n";
+
+#[test]
+fn a_database_authority_in_the_manifest_is_written_and_one_already_there_is_kept() {
+    // Given in the manifest: written to that cell only.
+    let mut m = manifest(&["cell-one", "cell-two"]);
+    m.cells[0].db_ca = Some(DB_CA.into());
+    let s = store_for(&m);
+    let sg = signer();
+    let report = run(&m, &s, sg.clone(), Kind::All).unwrap();
+    assert_eq!(
+        entries(&s, &m.cells[0])
+            .get("db-ca.crt")
+            .map(String::as_str),
+        Some(DB_CA)
+    );
+    assert!(!entries(&s, &m.cells[1]).contains_key("db-ca.crt"));
+    // It is not one of the entries a cell must have, so it does not make a cell incomplete.
+    assert_eq!(report.incomplete, 0);
+
+    // Not given on a later run: the secret keeps it, for either kind of run.
+    let mut later = manifest(&["cell-one", "cell-two"]);
+    later.cells[0].db_ca = None;
+    for kind in [Kind::All, Kind::Certificates, Kind::Credentials] {
+        run(&later, &s, sg.clone(), kind).unwrap();
+        assert_eq!(
+            entries(&s, &m.cells[0])
+                .get("db-ca.crt")
+                .map(String::as_str),
+            Some(DB_CA),
+            "a run that was not given an authority must keep the one the secret holds"
+        );
+    }
+}
+
+#[test]
+fn a_database_authority_that_is_not_a_certificate_is_refused_without_its_text() {
+    let text = r#"{"authority":{"key_id":"k","certificate_secret":"c"},"tenants":["ten_a"],
+        "cells":[{"name":"a","cloud":"aws","secret":"s","address":"10.0.0.1","internal_port":8444,
+        "db_ca":"secret-looking-text-not-a-certificate"}]}"#;
+    let err = Manifest::parse(text).unwrap_err().to_string();
+    assert!(err.contains("db_ca"), "the error names the field");
+    assert!(
+        !err.contains("secret-looking-text"),
+        "the error must not echo the value"
+    );
 }

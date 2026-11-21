@@ -10,7 +10,7 @@ One central authority signs every cell's certificates (decision D-17). Its key i
 - a **client certificate and key for etcd**;
 - the **cell credentials**: for each pair of cells, one credential that the caller sends and the callee lists.
 
-It writes them, with the authority's public certificate, into that cell's API secret as a new version. The entries are the ones the API module lists as `secret_files`. It keeps `db.conn` and `tokens.json` as they were, because the run does not make those.
+It writes them, with the authority's public certificate, into that cell's API secret as a new version. The entries are the ones the API module lists as `secret_files`. It keeps `db.conn` and `tokens.json` as they were, because the run does not make those. It also keeps an optional `db-ca.crt`, the authority of the cell's database, which the service trusts as well as the system's roots. The run writes it only when the manifest gives a cell one (`db_ca`), and never removes it.
 
 Certificates last **30 days**. Cell credentials are replaced on every run. Each machine reads its secret again every **5 minutes**, and the service reads its files again every **30 seconds** when they change. So a rotation reaches a running service within about six minutes, with no restart and no dropped request.
 

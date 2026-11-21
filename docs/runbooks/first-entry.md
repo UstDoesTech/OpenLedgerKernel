@@ -31,7 +31,7 @@ Use the proving environment and a test tenant only. It holds no real money and n
 The secrets are made empty, on purpose: their contents never pass through OpenTofu or its state. Two workflows fill them, and you fill two entries.
 
 1. Apply `europe/authority` through **infra-apply**. It makes the authority's signing key in KMS.
-2. Fill `db.conn` and `tokens.json` in each cell's secret, with your own cloud sign-in. `db.conn` is the connection string for that cell's own Postgres, and no other cell's. `tokens.json` holds the bearer tokens for the test tenant: token, tenant, principal. Never put either in the repository, an issue, a pull request or a log.
+2. Fill `db.conn` and `tokens.json` in each cell's secret, with your own cloud sign-in. `db.conn` is the connection string for that cell's own Postgres, and no other cell's. `tokens.json` holds the bearer tokens for the test tenant: token, tenant, principal. Never put either in the repository, an issue, a pull request or a log. The service checks the database's certificate against the system's trusted roots. If the cells' nodes use their own authority, add that authority's public certificate as a third entry, `db-ca.crt`, in the same secret. Without it, a start that cannot trust the database logs "the database's certificate is not from an authority this service trusts (check db-ca.crt)".
 3. Run **rotate-credentials** with `kind` set to `all`, and approve its environment. It makes each cell's certificates and cell credentials and writes them into that cell's secret. See [Rotating certificates and credentials](rotating-credentials.md). The line it prints should end `cells still missing a file: 0`.
 
 The `apis` output of the `api` layer says where each secret is. The machine reads its secret again every five minutes, so the files reach it without a restart, and the service starts as soon as every file is there.
@@ -95,6 +95,9 @@ In `docs/evidence/gate-1.md`, write the date, the commit you proved, the clouds,
 
 | What you see | What it usually is |
 | --- | --- |
+| The log says the database's certificate is not from an authority this service trusts | Add the nodes' authority as the `db-ca.crt` entry of the cell's secret. A service reads it when it starts, so restart `ledger-api.service` after. |
+| The log says the name in `db.conn` is not one the certificate carries | Use the name the primary's certificate carries (its `primary_address`), not an IP address. |
+| The log says the database refused the sign-in, or that nothing answered | Check the user and password in `db.conn`, then the address and the route to the cell's database. |
 | The machine never serves | The secret is empty or is missing an entry. The service exits with code 2 and names the file. Run **rotate-credentials**, and fill `db.conn` and `tokens.json` if they are missing. The machine reads the secret again within five minutes. |
 | `control_plane_unavailable` | The machine cannot reach etcd: check the etcd addresses in the layer and that the client certificate was issued by etcd's authority. |
 | A status class of `4xx` on a step | The token, the tenant or the request is wrong. `401` is the token, `404` is an account that is not this tenant's. |

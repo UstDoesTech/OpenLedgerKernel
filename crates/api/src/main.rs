@@ -6,6 +6,8 @@
 //!
 //!   LEDGER_NODE            the cell this runs next to, such as `aws-lon-03`
 //!   LEDGER_DB_FILE         a file holding this cell's Postgres connection string
+//!   LEDGER_DB_CA_FILE      optional: an authority the database's certificate may come from, as well as
+//!                          the system's roots. Missing or empty means the system's roots only
 //!   LEDGER_DB_TLS          `off` to connect without TLS (tests only); anything else uses TLS
 //!   LEDGER_SCHEMA          the ledger schema, default `ledger`
 //!   LEDGER_LISTEN          the address to listen on, default `127.0.0.1:8080`
@@ -44,7 +46,6 @@ use ledger_api::peer::PeerClient;
 use ledger_api::reload::{self, Reloadable};
 use ledger_api::tls::{self, TlsFiles, TlsListener};
 use ledger_api::{AppState, internal_router, router};
-use tokio_postgres::{Client, Config, NoTls};
 
 fn var(name: &str) -> Result<String, String> {
     std::env::var(name).map_err(|_| format!("{name} is not set"))
@@ -57,25 +58,17 @@ fn file(name: &str) -> Result<String, String> {
         .map_err(|e| format!("{name}: cannot read {path}: {e}"))
 }
 
-async fn connect(conn: &str, tls: bool) -> Result<Client, String> {
-    let config: Config = conn
-        .parse()
-        .map_err(|_| "LEDGER_DB_FILE: not a connection string".to_owned())?;
-    if tls {
-        let connector = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
-        let (client, connection) = config
-            .connect(postgres_native_tls::MakeTlsConnector::new(connector))
-            .await
-            .map_err(|e| format!("cannot connect to the cell's database: {e}"))?;
-        tokio::spawn(connection);
-        Ok(client)
-    } else {
-        let (client, connection) = config
-            .connect(NoTls)
-            .await
-            .map_err(|e| format!("cannot connect to the cell's database: {e}"))?;
-        tokio::spawn(connection);
-        Ok(client)
+/// The authority that signed the database's certificate, when the secret holds one. A missing or
+/// empty file means the system's roots only.
+fn db_ca() -> Result<Option<String>, String> {
+    let Ok(path) = std::env::var("LEDGER_DB_CA_FILE") else {
+        return Ok(None);
+    };
+    match std::fs::read_to_string(&path) {
+        Ok(text) if !text.trim().is_empty() => Ok(Some(text)),
+        Ok(_) => Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err("LEDGER_DB_CA_FILE: cannot read it".to_owned()),
     }
 }
 
@@ -221,7 +214,8 @@ async fn run() -> Result<(), String> {
     } else {
         None
     };
-    let db = connect(&file("LEDGER_DB_FILE")?, tls).await?;
+    let db =
+        ledger_api::dbconn::connect(&file("LEDGER_DB_FILE")?, tls, db_ca()?.as_deref()).await?;
     // Fail at start, not at the first request, if the schema this needs is not there.
     ledger_store::validate_schema_name(&schema).map_err(|e| e.to_string())?;
     db.query_opt(&format!("select 1 from {schema}.api_request limit 1"), &[])
