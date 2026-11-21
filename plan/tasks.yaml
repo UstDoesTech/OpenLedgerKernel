@@ -762,12 +762,13 @@ tasks:
   phase: P1
   workstream: K
   size: S
-  status: in_progress
+  status: done
   depends_on:
   - K-17
   deliverables:
   - crates/api
   - crates/pki
+  - infra/modules/api-boot
   - docs/runbooks/rotating-credentials.md
   acceptance:
   - The API reads an optional db-ca.crt entry from its secret and trusts that CA, as well as the system

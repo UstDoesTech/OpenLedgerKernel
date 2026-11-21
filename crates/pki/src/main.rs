@@ -56,6 +56,7 @@ fn run(args: &[String]) -> Result<String, PkiError> {
                     secret: format!("secret-{n}"),
                     address: (*a).into(),
                     internal_port: 8444,
+                    db_ca: None,
                 })
                 .collect(),
             };
