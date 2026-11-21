@@ -59,8 +59,8 @@ def test_europe_has_its_first_three_layers():
 
 
 # The registries layer makes repositories only, before anything that needs a network. The authority
-# layer makes a key and a secret in AWS and needs no network.
-NO_NETWORK = {"network", "registries", "authority"}
+# layer makes a key and a secret in AWS and needs no network. The identities layer reads other layers' outputs only.
+NO_NETWORK = {"network", "registries", "authority", "identities"}
 
 
 @pytest.mark.parametrize("layer", [l for l in layers() if l.name not in NO_NETWORK], ids=lambda p: f"{p.parent.name}/{p.name}")

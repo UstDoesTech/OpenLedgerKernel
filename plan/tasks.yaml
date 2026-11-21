@@ -821,7 +821,7 @@ tasks:
   phase: P1
   workstream: I
   size: M
-  status: in_progress
+  status: done
   depends_on:
   - K-17
   decisions:
@@ -829,17 +829,21 @@ tasks:
   deliverables:
   - infra/envs/europe/identities
   - infra/modules/rotation-identity
+  - infra/rotation-identity.json
+  - infra/applier-rights.json
+  - scripts/identity_rights_aws.sh
+  - tests/test_identities_layer.py
   - docs/credentialed-workflows.md
   - docs/runbooks/rotating-credentials.md
   acceptance:
-  - A layer makes the rotate-credentials role in AWS, app registration in Azure and service account in
+  - A layer makes the rotate-credentials role in AWS, managed identity in Azure and service account in
     Google Cloud, each trusting only this repository's rotate-credentials environment, with exactly the
-    permissions the document lists, as tests over the plan.
+    permissions the document lists, as tests over the configuration.
   - A test fails if a policy grants more than the list, grants an action on every resource, or lets the
     identity change any identity or permission.
   - The layer's outputs give the values a person enters as the environment's secrets, and no secret.
   - The applying identities' extra rights are the smallest set that lets them make these identities, are
-    bounded as D-18 says, and are listed in the document with a test over the plan.
+    bounded as D-18 says, and are listed in the document with a test over the configuration.
   notes: Nothing here is applied by an agent. A person applies it through infra-apply. Entering the
     outputs as GitHub environment secrets stays a person's step. Widens the applying identities, so it
     needs a person's review.
