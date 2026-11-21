@@ -16,7 +16,7 @@ pub enum PkiError {
     #[error("a certificate could not be made: {0}")]
     Issuing(&'static str),
     #[error("a secret could not be {0}")]
-    Secret(&'static str),
+    Store(&'static str),
     #[error(
         "the run stopped at step {step} because {why}. What was written before it still works. Run it again"
     )]

@@ -52,7 +52,7 @@ impl<R: Runner> CliStore<R> {
             .recursive(true)
             .mode(0o700)
             .create(&self.work)
-            .map_err(|_| PkiError::Secret("written: no private place for it"))?;
+            .map_err(|_| PkiError::Store("written: no private place for it"))?;
         let path = self.work.join("secret-value");
         let mut file = std::fs::OpenOptions::new()
             .write(true)
@@ -60,12 +60,12 @@ impl<R: Runner> CliStore<R> {
             .truncate(true)
             .mode(0o600)
             .open(&path)
-            .map_err(|_| PkiError::Secret("written: no private place for it"))?;
+            .map_err(|_| PkiError::Store("written: no private place for it"))?;
         let wrote = file.write_all(value.as_bytes());
         drop(file);
         let result = match wrote {
             Ok(()) => f(&path.to_string_lossy()),
-            Err(_) => Err(PkiError::Secret("written: no private place for it")),
+            Err(_) => Err(PkiError::Store("written: no private place for it")),
         };
         let _ = std::fs::remove_file(&path);
         result
@@ -74,17 +74,17 @@ impl<R: Runner> CliStore<R> {
 
 /// `https://<vault>.vault.azure.net/secrets/<name>` into the vault and the name.
 fn azure_parts(secret: &str) -> Result<(String, String), PkiError> {
-    let bad = PkiError::Secret("addressed: not a Key Vault secret");
+    let bad = PkiError::Store("addressed: not a Key Vault secret");
     let rest = secret.strip_prefix("https://").ok_or(bad)?;
     let (host, path) = rest
         .split_once("/secrets/")
-        .ok_or(PkiError::Secret("addressed: not a Key Vault secret"))?;
+        .ok_or(PkiError::Store("addressed: not a Key Vault secret"))?;
     let vault = host
         .strip_suffix(".vault.azure.net")
-        .ok_or(PkiError::Secret("addressed: not a Key Vault secret"))?;
+        .ok_or(PkiError::Store("addressed: not a Key Vault secret"))?;
     let name = path.split('/').next().unwrap_or("");
     if vault.is_empty() || name.is_empty() {
-        return Err(PkiError::Secret("addressed: not a Key Vault secret"));
+        return Err(PkiError::Store("addressed: not a Key Vault secret"));
     }
     Ok((vault.to_owned(), name.to_owned()))
 }
@@ -96,7 +96,7 @@ fn gcp_parts(secret: &str) -> Result<(String, String), PkiError> {
         ["projects", project, "secrets", name] if !project.is_empty() && !name.is_empty() => {
             Ok(((*project).to_owned(), (*name).to_owned()))
         }
-        _ => Err(PkiError::Secret("addressed: not a Secret Manager secret")),
+        _ => Err(PkiError::Store("addressed: not a Secret Manager secret")),
     }
 }
 
@@ -346,7 +346,7 @@ impl SecretStore for MemoryStore {
         let attempt = self.writes.lock().unwrap().len() + 1;
         if *self.fail_write.lock().unwrap() == Some(attempt) {
             self.writes.lock().unwrap().push((cloud, secret.to_owned()));
-            return Err(PkiError::Secret("written"));
+            return Err(PkiError::Store("written"));
         }
         self.writes.lock().unwrap().push((cloud, secret.to_owned()));
         self.put(cloud, secret, value);

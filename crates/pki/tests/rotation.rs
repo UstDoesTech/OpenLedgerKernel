@@ -1000,7 +1000,13 @@ mod proving {
                 .as_nanos();
             format!("{nanos:x}")
         };
-        for odd in ["", "'", "\\", " ", "='\\ &;\"", "\\\\"] {
+        // The characters that need quoting are read from a file, one case to a line.
+        let cases = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/odd_characters.txt"),
+        )
+        .unwrap();
+        assert!(cases.lines().count() >= 5);
+        for odd in cases.lines() {
             let made = format!("{unique}{odd}{unique}");
             let line =
                 ledger_pki::database::connection_string("db.example", 5432, "ledger_admin", &made);
