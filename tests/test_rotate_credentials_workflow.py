@@ -174,3 +174,27 @@ def test_the_code_owners_cover_the_tool_and_its_script():
     owners = (ROOT / ".github" / "CODEOWNERS").read_text()
     for path in ("/crates/pki/", "/scripts/rotation_manifest.py", "/.github/"):
         assert re.search(rf"(?m)^{re.escape(path)}\s+@UstDoesTech$", owners), path
+
+
+def test_proving_is_off_unless_a_person_turns_it_on_and_is_checked_before_use():
+    proving = load()[True]["workflow_dispatch"]["inputs"]["proving"]
+    assert proving["type"] == "boolean" and proving["default"] is False
+    assert job()["env"]["INPUT_PROVING"] == "${{ inputs.proving }}"
+    check = step("Check the inputs")["run"]
+    assert "(true|false)" in check and "INPUT_PROVING" in check
+
+
+def test_the_cells_layer_is_read_and_handed_to_the_manifest_only_for_a_proving_run():
+    read = step("Read where the cells")["run"]
+    assert re.search(r'\[ "\$INPUT_PROVING" = true \] && layers="\$layers cells"', read)
+    assert re.search(r'\[ "\$INPUT_PROVING" = true \] && extra=\(', read)
+    assert 'layers="api authority"' in read
+    manifest = next(l for l in read.splitlines() if "rotation_manifest.py" in l)
+    assert manifest.strip().startswith("scripts/quiet.sh manifest python3")
+    assert "${extra[@]}" in manifest
+
+
+def test_no_script_in_the_workflow_touches_an_administrator_credential_or_a_token():
+    scripts = "\n".join(s.get("run", "") for s in steps()).lower()
+    for word in ("password", "administrator", "tokens.json", "db.conn", "get-secret-value"):
+        assert word not in scripts, "the tool handles these. The workflow's scripts must not touch them"
