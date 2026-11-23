@@ -62,7 +62,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-65 of 77 tasks done.
+65 of 79 tasks done.
 
 ```mermaid
 flowchart LR
@@ -105,6 +105,8 @@ flowchart LR
   K_19i["K-19i<br/>Let a proving run list the versions of a cell's administrator secret"]
   K_19j["K-19j<br/>Name the cloud when a cell has no administrator credential yet"]
   K_19k["K-19k<br/>Do not take Azure's placeholder for an administrator credential"]
+  K_20a["K-20a<br/>Show each self-hosted cell's nodes and certificate secrets in the cells layer's outputs"]
+  K_20b["K-20b<br/>Issue each self-hosted cell's database node certificates from the authority"]
   K_19d["K-19d<br/>Make each cell's application role in the node agent"]
   T_03["T-03<br/>Randomised fault testing"]
   I_01a["I-01a<br/>Infrastructure code scaffold, CI checks and UK-region guard"]
@@ -198,6 +200,9 @@ flowchart LR
   K_19h --> K_19i
   K_19i --> K_19j
   K_19j --> K_19k
+  K_19c --> K_20a
+  K_20a --> K_20b
+  K_17 --> K_20b
   K_19b --> K_19d
   T_02 --> T_03
   F_01 --> I_01a
@@ -307,6 +312,8 @@ flowchart LR
 | **K-19i** Let a proving run list the versions of a cell's administrator secret | Infrastructure | K-19h | None | S | Agent | Done |
 | **K-19j** Name the cloud when a cell has no administrator credential yet | Infrastructure | K-19i | None | S | Agent | Done |
 | **K-19k** Do not take Azure's placeholder for an administrator credential | Infrastructure | K-19j | None | S | Agent | Done |
+| **K-20a** Show each self-hosted cell's nodes and certificate secrets in the cells layer's outputs | Infrastructure | K-19c | None | S | Agent | To do |
+| **K-20b** Issue each self-hosted cell's database node certificates from the authority | Ledger kernel | K-20a, K-17 | None | M | Agent | To do |
 | **K-19d** Make each cell's application role in the node agent | Ledger kernel | K-19b | D-19 | M | Agent | To do |
 | **T-03** Randomised fault testing | Testing and fault injection | T-02 | None | M | Agent | Done |
 | **I-01a** Infrastructure code scaffold, CI checks and UK-region guard | Infrastructure | F-01 | None | M | Agent | Done |
