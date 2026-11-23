@@ -1047,6 +1047,28 @@ tasks:
   refs:
   - docs/self-hosted-postgres.md
   - docs/runbooks/rotating-credentials.md
+- id: K-20c
+  title: Document the order of a first proving run and what a first run needs
+  phase: P1
+  workstream: I
+  size: S
+  status: in_progress
+  depends_on:
+  - K-20b
+  decisions: []
+  deliverables:
+  - docs/runbooks/rotating-credentials.md
+  - docs/runbooks/first-entry.md
+  - docs/runbooks/troubleshooting.md
+  - docs/self-hosted-postgres.md
+  acceptance:
+  - The rotation runbook says to run once with proving off and again with proving on, and why.
+  - The runbooks say how to find the key for the AWS cell's secrets without reading a value.
+  - The troubleshooting list names the two errors a first run meets and what to do about each.
+  - The runbooks say that a machine's certificates last 30 days and are read only at start.
+  notes: Written from the first live proving run. Documents only; no code or workflow changes.
+  refs:
+  - docs/runbooks/rotating-credentials.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1

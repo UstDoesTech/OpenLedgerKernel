@@ -69,7 +69,7 @@ holds the node's files as one JSON object, with an entry for each file name abov
 
 - **Who puts the values in.** Whoever issues the certificates: the customer's own authority, or
   a certificate manager they run. In this platform's own environments that is the
-  `rotate-credentials` workflow (K-20b), which issues them from the platform's authority.
+  `rotate-credentials` workflow (K-20b), which issues them from the platform's authority. It is described in [Rotating certificates and credentials](runbooks/rotating-credentials.md), "The first run, in order". A machine reads its files only when it starts and they last 30 days, so restart each machine within that time (standbys first).
   OpenTofu makes the secret and never its contents, so no
   certificate or key is in the repository, the boot file or the state. On AWS and Google Cloud
   the secret starts empty. On Azure it starts as `{}`, and OpenTofu ignores any later value.
