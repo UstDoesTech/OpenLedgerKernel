@@ -53,7 +53,10 @@ impl DatabaseSource for AdministratorCopy<'_> {
             .read(cell.cloud, &db.credential_secret)?
             .unwrap_or_default();
         let password = secret.trim();
-        if password.is_empty() {
+        // Azure's Key Vault cannot hold an empty secret, so OpenTofu makes the secret with this text
+        // until the primary's first start replaces it (infra/modules/postgres/azure-self-hosted).
+        // It is not a credential, and a connection built from it would only fail later, far away.
+        if password.is_empty() || password == AZURE_PLACEHOLDER {
             return Err(PkiError::Store(match cell.cloud {
                 Cloud::Aws => "read: a cell's database in aws has no administrator credential yet",
                 Cloud::Azure => {
@@ -65,6 +68,9 @@ impl DatabaseSource for AdministratorCopy<'_> {
         Ok(connection_string(&db.host, db.port, ADMIN_ROLE, password))
     }
 }
+
+/// The value OpenTofu gives the Azure administrator secret until the primary writes the real one.
+const AZURE_PLACEHOLDER: &str = "set-by-the-primary-on-first-start";
 
 /// A source that holds no credential: the string it gives names the host and the role and has no
 /// password. For the rehearsal and for tests.
