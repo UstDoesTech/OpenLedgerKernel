@@ -33,6 +33,24 @@ variable "key_vault_id" {
   type        = string
 }
 
+variable "client_groups" {
+  description = "The tiers whose machines use the endpoints, by tier: the name of the tier's network security group and its subnets' address ranges. Each group may send HTTPS to the endpoints' subnets, and nothing else here."
+  type = map(object({
+    network_security_group_name = string
+    cidrs                       = list(string)
+  }))
+}
+
+variable "endpoint_cidrs" {
+  description = "The address ranges of the subnets the private endpoints sit in."
+  type        = list(string)
+}
+
+variable "endpoint_network_security_group_name" {
+  description = "The name of the network security group of the endpoints' subnets. It accepts HTTPS from the client tiers."
+  type        = string
+}
+
 variable "tags" {
   description = "Tags for every resource."
   type        = map(string)

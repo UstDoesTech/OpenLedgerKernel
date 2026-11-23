@@ -72,6 +72,17 @@ module "private_access_azure" {
   subnet_id           = local.network.azure.subnet_ids["control_plane"][0]
   registry_id         = azurerm_container_registry.this.id
   key_vault_id        = azurerm_key_vault.this.id
+
+  # The machines that use the endpoints: the cells, the API and the control plane. Each may send
+  # HTTPS to the endpoints' subnets, which are in the control plane tier.
+  client_groups = {
+    for tier in ["cell", "api", "control_plane"] : tier => {
+      network_security_group_name = local.network.azure.network_security_group_names[tier]
+      cidrs                       = local.plan.azure.subnets[tier]
+    }
+  }
+  endpoint_cidrs                       = local.plan.azure.subnets["control_plane"]
+  endpoint_network_security_group_name = local.network.azure.network_security_group_names["control_plane"]
 }
 
 module "private_access_gcp" {

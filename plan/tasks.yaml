@@ -1047,6 +1047,26 @@ tasks:
   refs:
   - docs/self-hosted-postgres.md
   - docs/runbooks/rotating-credentials.md
+- id: K-20d
+  title: Let the Azure machines send HTTPS to the private endpoints
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-20b
+  decisions: []
+  deliverables:
+  - infra/modules/private-access-azure
+  - infra/envs/europe/private-access
+  - docs/runbooks/troubleshooting.md
+  acceptance:
+  - Each of the cell, API and control plane tiers may send HTTPS, and only HTTPS, to the subnets the private endpoints are in, and those subnets accept HTTPS from those tiers only, shown by a test of the module and the layer.
+  - No rule opens the internet or any other port, and every other flow is still denied, shown by the existing flow tests and one new one.
+  - The troubleshooting list names the symptom, a timeout reaching the vault, and what applies the fix.
+  notes: Found in the first live proving run. The Azure network denies all traffic in and out of each tier unless a rule allows it, and the module for the endpoints made them and their DNS but no rule, so a machine's call to the vault timed out. AWS has the matching rules already. Changes network rules, so it needs a person's review, and a person applies the private-access layer.
+  refs:
+  - docs/self-hosted-postgres.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1
