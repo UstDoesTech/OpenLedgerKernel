@@ -202,7 +202,7 @@ After `infra-apply` makes the layer, its output `environment_secrets` gives four
 
 Two steps stay by hand, because nothing in OpenTofu can do them safely:
 
-1. GitHub: the `rotate-credentials` environment, limited to `main`, with you as the required reviewer. Enter the four identifiers above, and `PLAN_STORE`, `TOFU_BACKEND_CONFIG`, `AZURE_SUBSCRIPTION_ID` and `GCP_WORKLOAD_IDENTITY_PROVIDER`, exactly as in step 1.
+1. GitHub: the `rotate-credentials` environment, limited to `main`, with you as the required reviewer. Enter the four identifiers above, and `PLAN_STORE`, `TOFU_BACKEND_CONFIG`, `AZURE_SUBSCRIPTION_ID` and `GCP_WORKLOAD_IDENTITY_PROVIDER`, exactly as in step 1. Also set `AZURE_KEY_VAULT_NAME` and `AZURE_KEY_VAULT_RESOURCE_GROUP` (the `private-access` layer's outputs). Without them the run never opens the vault's firewall, and reading the Azure secret fails with `az, blocked by a firewall`. The run warns when `AZURE_CLIENT_ID` is set and the vault name is not.
 2. Google Cloud: widen the provider's attribute condition to `assertion.repository == 'UstDoesTech/OpenLedgerKernel' && assertion.environment in ['infra-plan','infra-apply','rotate-credentials']`. The provider is made by hand, as in step 5.
 
 Then apply the `authority` layer, the `api` layer and the `identities` layer with `infra-apply`, in that order. The layer's inputs are `TF_VAR_` secrets like the other layers': `TF_VAR_azure_subscription_id`, `TF_VAR_state_bucket`, `TF_VAR_plan_store`, `TF_VAR_workload_identity_pool` and, only for a proving environment, `TF_VAR_proving` set to `true`. The first rotation makes the authority's certificate and keeps it in the layer's secret. The runbook is [Rotating certificates and credentials](runbooks/rotating-credentials.md).

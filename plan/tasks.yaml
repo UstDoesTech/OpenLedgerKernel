@@ -892,6 +892,26 @@ tasks:
     which cloud or why. Prints one of a few fixed phrases, never the tool's own text.
   refs:
   - docs/runbooks/rotating-credentials.md
+- id: K-19g
+  title: Warn when the Azure Key Vault secrets are missing from the rotation environment
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-19f
+  decisions: []
+  deliverables:
+  - .github/workflows/rotate-credentials.yml
+  - docs/credentialed-workflows.md
+  acceptance:
+  - A run with Azure set and no vault name says so in a warning before it starts, and the document lists
+    the two vault secrets for the rotation environment.
+  notes: Found when a run stopped with az, blocked by a firewall, because the step that opens the vault was
+    skipped silently. A warning, not an error, because the vault's firewall is optional. Edits a workflow, so
+    it needs a person's review.
+  refs:
+  - docs/credentialed-workflows.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1
