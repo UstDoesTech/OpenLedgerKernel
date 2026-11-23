@@ -50,8 +50,7 @@ impl DatabaseSource for AdministratorCopy<'_> {
         }
         let secret = self
             .store
-            .read(cell.cloud, &db.credential_secret)
-            .map_err(|_| PkiError::Store("read: a cell's database credential"))?
+            .read(cell.cloud, &db.credential_secret)?
             .unwrap_or_default();
         let password = secret.trim();
         if password.is_empty() {

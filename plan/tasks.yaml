@@ -912,6 +912,24 @@ tasks:
     it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
+- id: K-19h
+  title: Say which tool and why when a cell's administrator credential cannot be read
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-19f
+  decisions: []
+  deliverables:
+  - crates/pki
+  acceptance:
+  - A refused read of a cell's administrator credential names its tool and one cause from the fixed list,
+    as every other cloud command does, and names no cell, secret or value.
+  notes: Found when a proving run stopped with only "a cell's database credential", hiding which cloud
+    refused. The credential read had replaced the safe error with a fixed phrase.
+  refs:
+  - docs/runbooks/rotating-credentials.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1

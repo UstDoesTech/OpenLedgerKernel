@@ -850,6 +850,38 @@ mod proving {
         .run(Kind::All)
     }
 
+    /// A store that refuses every read, as a cloud does when the run's role has no right to it.
+    struct Refusing;
+
+    impl SecretStore for Refusing {
+        fn read(&self, _: Cloud, _: &str) -> Result<Option<String>, PkiError> {
+            Err(PkiError::Command {
+                code: 1,
+                doing: "reading a secret",
+                tool: "gcloud",
+                cause: "permission refused",
+            })
+        }
+        fn write(&self, _: Cloud, _: &str, _: &str) -> Result<(), PkiError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_refused_read_of_the_administrator_credential_says_which_tool_and_why() {
+        let m = proving_manifest(&["cell-one"]);
+        let copy = AdministratorCopy::new(&Refusing);
+        let said = copy
+            .connection(&m.cells[0])
+            .expect_err("a refused read is an error")
+            .to_string();
+        assert_eq!(
+            said,
+            "a command failed (exit code 1) while reading a secret: gcloud, permission refused"
+        );
+        assert!(!said.contains("administrator-of-cell-one"));
+    }
+
     #[test]
     fn a_proving_run_fills_what_is_missing_and_each_cell_gets_only_its_own_database() {
         let m = proving_manifest(&["cell-one", "cell-two", "cell-three"]);
