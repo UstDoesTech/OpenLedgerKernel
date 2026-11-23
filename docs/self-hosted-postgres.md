@@ -71,6 +71,7 @@ holds the node's files as one JSON object, with an entry for each file name abov
   a certificate manager they run. OpenTofu makes the secret and never its contents, so no
   certificate or key is in the repository, the boot file or the state. On AWS and Google Cloud
   the secret starts empty. On Azure it starts as `{}`, and OpenTofu ignores any later value.
+- **Where to find them.** The `cells` layer's `cells` output lists each self-hosted cell's three `nodes`: name, role (`primary` or `standby`), private address, and `secret_ref`, the identifier of the node's secret. A certificate must name the primary's address and the node's own. The output holds no certificate or key.
 - **Who may read it.** Each node, with its own cloud identity, and no other node. Each node has
   an identity of its own for this. A node cannot read another node's certificates.
 - **When it is read.** At every start, before the container runs, by a script on the machine.

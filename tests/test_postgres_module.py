@@ -35,12 +35,14 @@ def test_module_structure(form):
 @pytest.mark.parametrize("form", FORMS)
 def test_outputs_are_host_port_and_secret_reference_only(form):
     text = code(MODULE / form / "outputs.tf")
-    assert set(re.findall(r'^output "(\w+)"', text, re.M)) == {"host", "port", "secret_ref"}
+    # Only a form the platform runs has nodes whose certificates someone must issue (K-20a).
+    expected = {"host", "port", "secret_ref"} | ({"nodes"} if form.endswith("-self-hosted") else set())
+    assert set(re.findall(r'^output "(\w+)"', text, re.M)) == expected
 
 
 def test_facade_outputs_are_host_port_secret_ref_and_kind():
     text = code(MODULE / "outputs.tf")
-    assert set(re.findall(r'^output "(\w+)"', text, re.M)) == {"kind", "host", "port", "secret_ref"}
+    assert set(re.findall(r'^output "(\w+)"', text, re.M)) == {"kind", "host", "port", "secret_ref", "nodes"}
 
 
 def test_no_password_or_connection_string_anywhere():
