@@ -59,3 +59,15 @@ variable "plan_store_prefix" {
   description = "The prefix in that bucket the role may write under. Empty for the whole bucket."
   type        = string
 }
+
+variable "state_encryption_arn" {
+  description = "The key that encrypts the state bucket, if it is not the bucket's default key. The role may decrypt with it, to read the state. Empty otherwise."
+  type        = string
+  default     = ""
+}
+
+variable "plan_store_encryption_arn" {
+  description = "The key that encrypts the plan store, if it is not the bucket's default key. The role may generate data keys with it, to write logs. Empty otherwise."
+  type        = string
+  default     = ""
+}

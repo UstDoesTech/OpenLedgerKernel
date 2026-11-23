@@ -849,6 +849,29 @@ tasks:
     needs a person's review.
   refs:
   - docs/credentialed-workflows.md
+- id: K-19e
+  title: Let the rotation role read state and write logs under the buckets' own keys
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-19c
+  decisions: []
+  deliverables:
+  - infra/modules/rotation-identity/aws
+  - infra/envs/europe/identities
+  - docs/credentialed-workflows.md
+  acceptance:
+  - When the state bucket is encrypted with its own key, the role may decrypt with that key and no other,
+    so it can read the state.
+  - When the plan store is encrypted with its own key, the role may generate data keys with that key and
+    no other, so it can write logs.
+  - The documented list and the tests cover both, and neither key is set by default.
+  notes: Found when the first rotate-credentials run was refused kms:Decrypt on the state bucket's key.
+    Adds two optional rights to a role that is otherwise unchanged, so it needs a person's review.
+  refs:
+  - docs/credentialed-workflows.md
 - id: K-19f
   title: Say which cloud a failed rotation command was for, and why
   phase: P1
@@ -856,7 +879,7 @@ tasks:
   size: S
   status: done
   depends_on:
-  - K-19c
+  - K-19e
   decisions: []
   deliverables:
   - crates/pki

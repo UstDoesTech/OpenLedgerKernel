@@ -181,6 +181,8 @@ The identities may do these things, and nothing else. For AWS the actions are, i
 | Signing | `kms:GetPublicKey`, `kms:Sign` |
 | Secrets | `secretsmanager:GetSecretValue`, `secretsmanager:ListSecretVersionIds`, `secretsmanager:PutSecretValue` |
 | The secrets' key, if it is not the account's default | `kms:Decrypt`, `kms:GenerateDataKey` |
+| The state bucket's key, if it is not the bucket's default (`TF_VAR_state_encryption_arn`) | `kms:Decrypt` on that key only |
+| The plan store's key, if it is not the bucket's default (`TF_VAR_plan_store_encryption_arn`) | `kms:GenerateDataKey` on that key only |
 | State | `s3:GetObject` on the `api` and `authority` state objects only, and `s3:ListBucket` on the state bucket |
 | Logs | `s3:PutObject` on the plan store's prefix only |
 
