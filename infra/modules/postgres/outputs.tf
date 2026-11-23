@@ -41,3 +41,12 @@ output "secret_ref" {
     module.gcp_self_hosted[*].secret_ref,
   ))
 }
+
+output "nodes" {
+  description = "A self-hosted cell's three nodes: name, role, private address and the secret that holds the node's certificates. Empty for a cell that someone else runs."
+  value = flatten([
+    module.aws_self_hosted[*].nodes,
+    module.azure_self_hosted[*].nodes,
+    module.gcp_self_hosted[*].nodes,
+  ])
+}
