@@ -115,9 +115,17 @@ def test_every_aws_statement_names_its_resources_and_none_is_every_resource():
     assert not re.search(r'Resource\s*=\s*\[\s*"\*"', src)
     assert '"arn:aws:s3:::${var.plan_store_bucket}/*"' in src  # a whole-bucket plan store, only when no prefix is given
     statements = re.findall(r"Resource\s*=\s*(.+)", src)
-    assert len(statements) == 7  # sign, secrets, state, list state, logs, administrator, encryption
+    assert len(statements) == 9  # sign, secrets, state, list state, logs, administrator, state key, logs key, secrets key
     for s in statements:
         assert "var." in s or "local." in s, s
+
+
+def test_the_state_and_log_keys_get_one_action_each_on_one_key_each():
+    aws = PERMISSIONS["aws"]
+    assert aws["state_encryption"] == ["kms:Decrypt"]
+    assert aws["plan_store_encryption"] == ["kms:GenerateDataKey"]
+    src = hcl(MODULES / "aws")
+    assert "Resource = [var.state_encryption_arn]" in src and "Resource = [var.plan_store_encryption_arn]" in src
 
 
 def test_the_aws_role_has_the_same_document_as_its_permissions_boundary():

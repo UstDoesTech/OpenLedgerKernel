@@ -88,6 +88,8 @@ module "aws" {
   api_secret_arn            = local.apis["aws"].secret_ref
   administrator_secret_arn  = var.proving ? local.cells["aws"].secret_ref : ""
   encryption_arn            = var.encryption_arn
+  state_encryption_arn      = var.state_encryption_arn
+  plan_store_encryption_arn = var.plan_store_encryption_arn
   state_bucket              = var.state_bucket
   state_keys                = concat(["${local.geo}/api", "${local.geo}/authority"], var.proving ? ["${local.geo}/cells"] : [])
   plan_store_bucket         = local.plan_store.bucket

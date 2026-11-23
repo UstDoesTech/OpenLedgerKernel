@@ -48,6 +48,18 @@ locals {
       Action   = local.aws.administrator_secret
       Resource = [var.administrator_secret_arn]
     }],
+    [for _ in(var.state_encryption_arn == "" ? [] : [1]) : {
+      Sid      = "DecryptTheState"
+      Effect   = "Allow"
+      Action   = local.aws.state_encryption
+      Resource = [var.state_encryption_arn]
+    }],
+    [for _ in(var.plan_store_encryption_arn == "" ? [] : [1]) : {
+      Sid      = "EncryptTheLogs"
+      Effect   = "Allow"
+      Action   = local.aws.plan_store_encryption
+      Resource = [var.plan_store_encryption_arn]
+    }],
     [for _ in(var.encryption_arn == "" ? [] : [1]) : {
       Sid      = "UseTheSecretsKey"
       Effect   = "Allow"
