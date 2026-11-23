@@ -313,7 +313,7 @@ flowchart LR
 | **K-19j** Name the cloud when a cell has no administrator credential yet | Infrastructure | K-19i | None | S | Agent | Done |
 | **K-19k** Do not take Azure's placeholder for an administrator credential | Infrastructure | K-19j | None | S | Agent | Done |
 | **K-20a** Show each self-hosted cell's nodes and certificate secrets in the cells layer's outputs | Infrastructure | K-19c | None | S | Agent | Done |
-| **K-20b** Issue each self-hosted cell's database node certificates from the authority | Ledger kernel | K-20a, K-17 | None | M | Agent | To do |
+| **K-20b** Issue each self-hosted cell's database node certificates from the authority | Ledger kernel | K-20a, K-17 | None | M | Agent | In progress |
 | **K-19d** Make each cell's application role in the node agent | Ledger kernel | K-19b | D-19 | M | Agent | To do |
 | **T-03** Randomised fault testing | Testing and fault injection | T-02 | None | M | Agent | Done |
 | **I-01a** Infrastructure code scaffold, CI checks and UK-region guard | Infrastructure | F-01 | None | M | Agent | Done |
