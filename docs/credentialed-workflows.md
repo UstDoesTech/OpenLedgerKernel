@@ -160,7 +160,7 @@ A run with `proving` on (decision D-19) may also read each cell's administrator 
 
 | Cloud | The extra rights for a proving run |
 | --- | --- |
-| AWS | Read on the state bucket for the `cells` layer, and `secretsmanager:GetSecretValue` and `secretsmanager:ListSecretVersionIds` on the AWS cell's administrator secret only. |
+| AWS | `secretsmanager:GetSecretValue` and `secretsmanager:ListSecretVersionIds` on the AWS cell's administrator secret only. |
 | Azure | `Key Vault Secrets Officer` already reads a secret. If the Azure cell's administrator secret is in another vault, `Key Vault Secrets User` and `Key Vault Contributor` on that vault (reading, and opening its firewall the same way). |
 | Google Cloud | `roles/secretmanager.secretAccessor` and `roles/secretmanager.viewer` on the Google Cloud cell's administrator secret only. |
 
@@ -180,13 +180,14 @@ The identities may do these things, and nothing else. For AWS the actions are, i
 | --- | --- |
 | Signing | `kms:GetPublicKey`, `kms:Sign` |
 | Secrets | `secretsmanager:GetSecretValue`, `secretsmanager:ListSecretVersionIds`, `secretsmanager:PutSecretValue` |
-| The secrets' key, if it is not the account's default | `kms:Decrypt`, `kms:GenerateDataKey` |
+| The AWS cell's secrets' key, if it is not the account's default (`TF_VAR_encryption_arn`). It must be the tenant's key when the API secret, the administrator credential or the database machines' certificates use it | `kms:Decrypt`, `kms:GenerateDataKey` |
 | The state bucket's key, if it is not the bucket's default (`TF_VAR_state_encryption_arn`) | `kms:Decrypt` on that key only |
 | The plan store's key, if it is not the bucket's default (`TF_VAR_plan_store_encryption_arn`) | `kms:GenerateDataKey` on that key only |
-| State | `s3:GetObject` on the `api` and `authority` state objects only, and `s3:ListBucket` on the state bucket |
+| State | `s3:GetObject` on the `api`, `authority` and `cells` state objects only, and `s3:ListBucket` on the state bucket |
+| Database machines' certificates | `secretsmanager:PutSecretValue` on each of the AWS cell's database machines' secrets only |
 | Logs | `s3:PutObject` on the plan store's prefix only |
 
-For Azure the roles are `Key Vault Contributor` and `Key Vault Secrets Officer`, on the API vault only, and, with `proving` on, `Key Vault Secrets User` on the vault of the administrator credential. For Google Cloud they are `roles/secretmanager.secretAccessor`, `roles/secretmanager.secretVersionAdder` and `roles/secretmanager.viewer` on the API secret only, and, with `proving` on, `roles/secretmanager.secretAccessor` and `roles/secretmanager.viewer` on the administrator secret only. Tests over the OpenTofu fail if a policy grants an action that is not in the list, grants an action on every resource, gives a role on a subscription or project, or lets an identity change any identity or permission.
+For Azure the roles are `Key Vault Contributor` and `Key Vault Secrets Officer`, on the API vault only (Secrets Officer also writes the database machines' certificates, which are in the same vault), and, with `proving` on, `Key Vault Secrets User` on the vault of the administrator credential. For Google Cloud they are `roles/secretmanager.secretAccessor`, `roles/secretmanager.secretVersionAdder` and `roles/secretmanager.viewer` on the API secret only, `roles/secretmanager.secretVersionAdder` on each of the Google Cloud cell's database machines' secrets only, and, with `proving` on, `roles/secretmanager.secretAccessor` and `roles/secretmanager.viewer` on the administrator secret only. Tests over the OpenTofu fail if a policy grants an action that is not in the list, grants an action on every resource, gives a role on a subscription or project, or lets an identity change any identity or permission.
 
 #### What the infra-apply identities need to make them
 

@@ -23,3 +23,9 @@ variable "administrator_secret_id" {
   type        = string
   default     = ""
 }
+
+variable "node_secret_ids" {
+  description = "The secrets that hold the certificates of the Google Cloud cell's database machines, as projects/<project>/secrets/<name>. The service account may add a version to each, and no more."
+  type        = list(string)
+  default     = []
+}

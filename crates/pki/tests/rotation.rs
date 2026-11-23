@@ -713,7 +713,7 @@ fn a_run_prints_one_line_of_counts() {
 /// `cells: N, certificates issued: N, ...` and nothing else.
 fn regex_free_counts(line: &str) -> bool {
     let parts: Vec<&str> = line.split(", ").collect();
-    parts.len() == 7
+    parts.len() == 8
         && parts.iter().all(|p| {
             p.rsplit_once(": ").is_some_and(|(label, n)| {
                 label.chars().all(|c| c.is_ascii_lowercase() || c == ' ')
@@ -812,6 +812,7 @@ mod proving {
                 port: 5432 + i as u16,
                 kind: DatabaseKind::SelfHosted,
                 credential_secret: format!("administrator-of-{}", names[i]),
+                nodes: vec![],
             });
         }
         m

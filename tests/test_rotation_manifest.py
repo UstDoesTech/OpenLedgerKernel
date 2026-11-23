@@ -85,14 +85,14 @@ def cells(kind="self_hosted"):
             "cells": {"value": {"aws": one("aws", 1), "azure": one("azure", 2), "gcp": one("gcp", 3)}}}
 
 
-def run_proving(tmp_path, cells_outputs):
+def run_proving(tmp_path, cells_outputs, proving=True):
     (tmp_path / "cells.json").write_text(json.dumps(cells_outputs))
     (tmp_path / "api.json").write_text(json.dumps(api()))
     (tmp_path / "authority.json").write_text(json.dumps(AUTHORITY))
     out = tmp_path / "manifest.json"
     done = subprocess.run(
         [sys.executable, str(SCRIPT), str(tmp_path / "api.json"), str(tmp_path / "authority.json"),
-         str(out), str(tmp_path / "cells.json")],
+         str(out), str(tmp_path / "cells.json"), *(["proving"] if proving else [])],
         capture_output=True, text=True,
     )
     return done, out
@@ -114,7 +114,8 @@ def test_with_the_cells_outputs_each_cell_carries_its_own_database_and_where_its
     for c in manifest["cells"]:
         cloud = c["cloud"]
         assert c["database"] == {"host": f"db-{cloud}.cells.example", "port": 5432,
-                                 "kind": "self_hosted", "credential_secret": f"administrator-ref-{cloud}"}
+                                 "kind": "self_hosted", "credential_secret": f"administrator-ref-{cloud}",
+                                 "nodes": []}
     # The reference is there. A credential never is: the script cannot read one.
     assert "password" not in out.read_text().lower()
     assert stat.S_IMODE(out.stat().st_mode) == 0o600
@@ -136,3 +137,41 @@ def test_a_proving_manifest_is_refused_when_a_database_is_not_plain_or_is_missin
     odd = cells(kind="somewhere_else")
     done, _ = run_proving(tmp_path, odd)
     assert done.returncode != 0
+
+
+def with_nodes(cloud="aws"):
+    out = cells()
+    out["cells"]["value"][cloud]["nodes"] = [
+        {"name": f"{cloud}-n{i}", "role": "primary" if i == 1 else "standby",
+         "address": f"10.0.{i}.10", "secret_ref": f"tls-ref-{cloud}-{i}"}
+        for i in (1, 2, 3)
+    ]
+    return out
+
+
+def test_the_cells_outputs_without_the_word_proving_give_databases_and_nodes_but_not_a_proving_manifest(tmp_path):
+    done, out = run_proving(tmp_path, with_nodes(), proving=False)
+    assert done.returncode == 0, done.stderr
+    manifest = json.loads(out.read_text())
+    assert "proving" not in manifest
+    aws = next(c for c in manifest["cells"] if c["cloud"] == "aws")
+    assert [n["role"] for n in aws["database"]["nodes"]] == ["primary", "standby", "standby"]
+    assert aws["database"]["nodes"][1] == {"name": "aws-n2", "role": "standby", "address": "10.0.2.10",
+                                           "secret": "tls-ref-aws-2"}
+    other = next(c for c in manifest["cells"] if c["cloud"] == "gcp")
+    assert other["database"]["nodes"] == []
+    assert "tls-ref" not in done.stdout + done.stderr and done.stdout.strip() == "cells: 3"
+
+
+def test_a_machine_that_is_not_plain_or_a_cell_someone_else_runs_with_machines_is_refused(tmp_path):
+    for mutate in (
+        lambda o: o["cells"]["value"]["aws"]["nodes"][0].update(role="leader"),
+        lambda o: o["cells"]["value"]["aws"]["nodes"][0].update(address="10.0.0.1; x"),
+        lambda o: o["cells"]["value"]["aws"]["nodes"][0].update(secret_ref=""),
+        lambda o: o["cells"]["value"]["aws"].update(kind="managed"),
+    ):
+        bad = with_nodes()
+        mutate(bad)
+        done, _ = run_proving(tmp_path, bad, proving=False)
+        assert done.returncode != 0
+        assert "tls-ref" not in done.stderr + done.stdout and "10.0." not in done.stderr + done.stdout

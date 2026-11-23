@@ -115,7 +115,7 @@ def test_every_aws_statement_names_its_resources_and_none_is_every_resource():
     assert not re.search(r'Resource\s*=\s*\[\s*"\*"', src)
     assert '"arn:aws:s3:::${var.plan_store_bucket}/*"' in src  # a whole-bucket plan store, only when no prefix is given
     statements = re.findall(r"Resource\s*=\s*(.+)", src)
-    assert len(statements) == 9  # sign, secrets, state, list state, logs, administrator, state key, logs key, secrets key
+    assert len(statements) == 10  # sign, secrets, state, list state, logs, administrator, node certificates, state key, logs key, secrets key
     for s in statements:
         assert "var." in s or "local." in s, s
 
@@ -148,7 +148,8 @@ def test_the_aws_role_is_assumed_only_with_a_web_identity_and_the_audience_is_ch
 def test_the_administrator_credential_is_read_only_when_proving():
     src = hcl(LAYER)
     assert 'administrator_secret_arn  = var.proving ?' in src
-    assert 'var.proving ? ["${local.geo}/cells"]' in src
+    # The cells layer is read on every run (K-20b), whether or not it is a proving one.
+    assert 'state_keys                = ["${local.geo}/api", "${local.geo}/authority", "${local.geo}/cells"]' in src
     assert 'administrator_secret_id = var.proving ?' in src
     # The tool asks whether the secret has a version before it reads it, so both are needed.
     assert set(PERMISSIONS["aws"]["administrator_secret"]) == {"secretsmanager:GetSecretValue", "secretsmanager:ListSecretVersionIds"}
@@ -183,7 +184,7 @@ def test_gcp_roles_are_the_listed_ones_and_only_on_secrets():
     src = hcl(MODULES / "gcp")
     assert "google_project_iam" not in src and "google_organization_iam" not in src and "google_folder_iam" not in src
     assert not re.search(r'resource "google_service_account_iam_(binding|policy)"', src)
-    assert src.count('resource "google_secret_manager_secret_iam_member"') == 2
+    assert src.count('resource "google_secret_manager_secret_iam_member"') == 3  # the API secret, the administrator secret, the machines' secrets
     roles = set(PERMISSIONS["gcp"]["secret_roles"]) | set(PERMISSIONS["gcp"]["administrator_secret_roles"])
     for r in roles:
         assert r.startswith("roles/secretmanager."), r
@@ -284,3 +285,26 @@ def test_the_document_lists_the_applier_rights_and_the_scripts():
         assert name in DOC, name
     for cloud in ("aws", "azure", "gcp"):
         assert f"scripts/identity_rights_{cloud}.sh" in DOC
+
+
+# ---- K-20b: writing the database machines' certificates ------------------------------------------
+
+def test_the_node_certificate_secrets_get_a_write_and_nothing_else_on_exactly_those_secrets():
+    aws = PERMISSIONS["aws"]
+    assert aws["node_secrets"] == ["secretsmanager:PutSecretValue"]
+    assert PERMISSIONS["gcp"]["node_secret_roles"] == ["roles/secretmanager.secretVersionAdder"]
+    src = hcl(MODULES / "aws")
+    assert "Action   = local.aws.node_secrets" in src and "Resource = var.node_secret_arns" in src
+    layer = hcl(LAYER)
+    # They come from the cells layer's nodes, never written by hand, and only for that cloud.
+    assert 'node_secret_arns          = [for n in try(local.cells["aws"].nodes, []) : n.secret_ref]' in layer
+    assert 'node_secret_ids         = [for n in try(local.cells["gcp"].nodes, []) : n.secret_ref]' in layer
+    gcp = hcl(MODULES / "gcp")
+    assert "local.gcp.node_secret_roles" in gcp and "var.node_secret_ids" in gcp
+    # Azure's roles on the vault already cover its machines' secrets, so nothing is added there.
+    assert "node" not in hcl(MODULES / "azure")
+
+
+def test_the_document_lists_the_node_certificate_rights_and_where_the_key_for_them_comes_from():
+    assert "`secretsmanager:PutSecretValue`" in DOC and "`roles/secretmanager.secretVersionAdder`" in DOC
+    assert "database machines" in DOC and "`TF_VAR_encryption_arn`" in DOC

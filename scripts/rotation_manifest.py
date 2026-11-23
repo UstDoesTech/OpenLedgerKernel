@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Builds the manifest the rotation reads, from the outputs of the api and authority layers.
 
-Usage: rotation_manifest.py <api outputs.json> <authority outputs.json> <manifest.json> [<cells outputs.json>]
+Usage: rotation_manifest.py <api outputs.json> <authority outputs.json> <manifest.json> [<cells outputs.json> [proving]]
 
-The inputs are `tofu output -json` files. Giving the cells layer's outputs marks the manifest as a
-proving environment's (D-19): it then carries each cell's own database and where its
-administrator's credential is held, so the run may fill a missing db.conn and tokens.json. The manifest holds identifiers, so it is written with
-mode 0600 on the runner and never printed. This prints only how many cells it found.
+The inputs are `tofu output -json` files. Giving the cells layer's outputs adds each cell's own
+database: where it is, where its administrator's credential is held and, for a self-hosted cell, its
+machines and the secrets their certificates go in (K-20b). The last word, `proving`, marks the manifest as a
+proving environment's (D-19), so the run may also fill a missing db.conn and tokens.json. The manifest holds
+identifiers, so it is written with mode 0600 on the runner and never printed. This prints only how many
+cells it found.
 """
 import json
 import os
@@ -47,11 +49,31 @@ def databases(cells_outputs: dict) -> dict:
             "port": port,
             "kind": c["kind"],
             "credential_secret": c["secret_ref"],
+            "nodes": nodes(c),
         }
     return out
 
 
-def build(api: dict, authority: dict, cells_outputs: dict | None = None) -> dict:
+ROLES = {"primary", "standby"}
+
+
+def nodes(cell: dict) -> list:
+    """A self-hosted cell's machines, each with the secret its certificates go in. Never a certificate."""
+    listed = cell.get("nodes") or []
+    if listed and cell["kind"] != "self_hosted":
+        raise SystemExit("a cell that someone else runs lists machines")
+    out = []
+    for n in listed:
+        name, role, address, secret = (n.get(k) for k in ("name", "role", "address", "secret_ref"))
+        if not (isinstance(name, str) and PLAIN.fullmatch(name)) or role not in ROLES:
+            raise SystemExit("a machine has no plain name or no role")
+        if not (isinstance(address, str) and PLAIN.fullmatch(address)) or not secret:
+            raise SystemExit("a machine has no address or no certificate secret")
+        out.append({"name": name, "role": role, "address": address, "secret": secret})
+    return out
+
+
+def build(api: dict, authority: dict, cells_outputs: dict | None = None, proving: bool = False) -> dict:
     apis = value(api, "apis")
     tenant = value(api, "tenant")
     if not isinstance(tenant, str) or not re.fullmatch(r"ten_[a-z0-9]+", tenant):
@@ -85,13 +107,15 @@ def build(api: dict, authority: dict, cells_outputs: dict | None = None) -> dict
         "tenants": [tenant],
         "cells": cells,
     }
-    if cells_outputs is not None:
+    if proving:
+        if cells_outputs is None:
+            raise SystemExit("a proving environment needs the cells layer's outputs")
         manifest["proving"] = True
     return manifest
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) not in (4, 5):
+    if len(argv) not in (4, 5, 6) or (len(argv) == 6 and argv[5] != "proving"):
         print(__doc__.strip().splitlines()[2], file=sys.stderr)
         return 2
     api, authority, out = argv[1:4]
@@ -100,10 +124,10 @@ def main(argv: list[str]) -> int:
     with open(authority) as f:
         authority_outputs = json.load(f)
     cells_outputs = None
-    if len(argv) == 5:
+    if len(argv) >= 5:
         with open(argv[4]) as f:
             cells_outputs = json.load(f)
-    manifest = build(api_outputs, authority_outputs, cells_outputs)
+    manifest = build(api_outputs, authority_outputs, cells_outputs, proving=len(argv) == 6)
     fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(manifest, f)

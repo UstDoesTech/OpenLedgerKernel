@@ -46,15 +46,16 @@ The run works without step 4, and says so: it prints how many cells still lack a
 A run takes about 15 minutes with three cells, almost all of it the two waits. The job prints one line:
 
 ```
-cells: 3, certificates issued: 6, credentials issued: 6, secret versions written: 10, database connections made: 0, login files made: 0, cells still missing a file: 0
+cells: 3, certificates issued: 6, database node certificates issued: 15, credentials issued: 6, secret versions written: 19, database connections made: 0, login files made: 0, cells still missing a file: 0
 ```
 
 | Count | What it is |
 | --- | --- |
 | `cells` | Cells in the `api` layer's outputs. |
 | `certificates issued` | Two for each cell, when `kind` is `all` or `certificates`. |
+| `database node certificates issued` | For each self-hosted cell, one server certificate for each of its three machines and one replication certificate for each of the two standbys: 5 for a cell, 15 for three. None for a cell someone else runs. Written into each machine's own secret, which the machine reads when it starts, so a machine that was waiting for its files starts by itself within a minute. |
 | `credentials issued` | One for each ordered pair of cells, when `kind` is `all` or `credentials`: 6 for three cells. |
-| `secret versions written` | Three for each cell when credentials are made, one when only certificates are. The first run adds one for the authority's certificate. |
+| `secret versions written` | Three for each cell when credentials are made, one when only certificates are, one more for each database machine, and one for the authority's certificate on the first run. |
 | `database connections made` | Cells whose `db.conn` was missing and was filled this run. Only a `proving` run makes any. |
 | `login files made` | Cells whose `tokens.json` was missing and got one fresh token for the tenant. Only a `proving` run makes any. |
 | `cells still missing a file` | Cells whose secret lacks a file the service needs. It should be 0 once `db.conn` and `tokens.json` are filled, by a `proving` run or by a person. |
