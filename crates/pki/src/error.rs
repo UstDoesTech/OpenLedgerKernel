@@ -5,8 +5,15 @@
 pub enum PkiError {
     #[error("the manifest is not usable: {0}")]
     Manifest(&'static str),
-    #[error("a command failed (exit code {0}) while {1}")]
-    Command(i32, &'static str),
+    #[error("a command failed (exit code {code}) while {doing}: {tool}, {cause}")]
+    Command {
+        code: i32,
+        doing: &'static str,
+        /// One of a fixed few words: aws, az, gcloud or a tool.
+        tool: &'static str,
+        /// One of a fixed few phrases chosen by `runner::cause`. Never the tool's own words.
+        cause: &'static str,
+    },
     #[error("a command could not be run while {0}")]
     CannotRun(&'static str),
     #[error("an answer could not be read while {0}")]

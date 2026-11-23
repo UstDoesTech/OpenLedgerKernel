@@ -88,8 +88,8 @@ The run fails loudly: the job is red, and the error names a step. It names no ce
 | `the run stopped at step 2 ...` | Some cells call with new credentials and some with old. All are listed, so calls still work. | Run again. |
 | `the run stopped at step 3 ...` | Old credentials are still listed on some cells. | Run again. Nothing is broken, only less tidy. |
 | `the stored authority certificate is not for the signing key` | The KMS key is not the one that made the stored certificate. Nothing was written. | See "Replacing the authority". |
-| `a command failed (exit code N) while reading the authority's public key` | The run's AWS identity may not use the key, or the key is gone. | Check the role's permissions in [Credentialed workflows](../credentialed-workflows.md), section 6. |
-| `a command failed ... while reading a secret` or `writing a secret` | The identity for that cloud may not read or write the secret, or the Key Vault's firewall did not open in time. | Check that cloud's role, then run again. |
+| `a command failed (exit code N) while reading the authority's public key: aws, <cause>` | The run's AWS identity may not use the key, or the key is gone. | Check the role's permissions in [Credentialed workflows](../credentialed-workflows.md), section 6. |
+| `a command failed ... while reading a secret` or `writing a secret: <tool>, <cause>` | The tool is `aws`, `az` or `gcloud`, which says the cloud. The cause is one of `permission refused`, `blocked by a firewall`, `not signed in`, `not found`, `no network` or `another cause`. It is chosen from a fixed list, and nothing the tool said is printed. `permission refused` on `aws` after a key change usually means the role lacks the key (see `TF_VAR_state_encryption_arn` in section 6). `blocked by a firewall` on `az` means the vault's firewall did not open in time. | Check that cloud's role and, for `az`, the vault's firewall, then run again. |
 
 The job's step log files are in the plan store under the run's id, like every other credentialed run. They hold the cloud tools' own words. Read them with your own sign-in, never in a public place.
 

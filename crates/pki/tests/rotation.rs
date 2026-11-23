@@ -679,7 +679,12 @@ fn a_failure_names_a_step_and_never_a_cell_a_secret_a_key_or_a_value() {
             "a message names forbidden text number {n}"
         );
     }
-    let r = recorder(vec![Err(PkiError::Command(255, "reading a secret"))]);
+    let r = recorder(vec![Err(PkiError::Command {
+        code: 255,
+        doing: "reading a secret",
+        tool: "aws",
+        cause: "another cause",
+    })]);
     let err = CliStore::new(Shared(r), std::env::temp_dir())
         .read(Cloud::Gcp, "projects/p/secrets/named-secret")
         .unwrap_err();

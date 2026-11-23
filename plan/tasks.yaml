@@ -849,6 +849,26 @@ tasks:
     needs a person's review.
   refs:
   - docs/credentialed-workflows.md
+- id: K-19f
+  title: Say which cloud a failed rotation command was for, and why
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-19c
+  decisions: []
+  deliverables:
+  - crates/pki
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - A failed cloud command names its tool (aws, az or gcloud) and one cause from a fixed list, and no
+    other word the tool said, so the public log shows no name, address or secret.
+  - The runbook lists the causes and what to do about each.
+  notes: Found when a run stopped with only "a command failed while reading a secret", so nobody could tell
+    which cloud or why. Prints one of a few fixed phrases, never the tool's own text.
+  refs:
+  - docs/runbooks/rotating-credentials.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1
