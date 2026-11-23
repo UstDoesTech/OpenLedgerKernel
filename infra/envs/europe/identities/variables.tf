@@ -40,3 +40,15 @@ variable "encryption_arn" {
   type        = string
   default     = ""
 }
+
+variable "state_encryption_arn" {
+  description = "The AWS key that encrypts the state bucket, if it is not the bucket's default key. A key's ARN names it and is not a credential. Supply it as the TF_VAR_state_encryption_arn secret. Empty otherwise."
+  type        = string
+  default     = ""
+}
+
+variable "plan_store_encryption_arn" {
+  description = "The AWS key that encrypts the plan store, if it is not the bucket's default key. A key's ARN names it and is not a credential. Supply it as the TF_VAR_plan_store_encryption_arn secret. Empty otherwise."
+  type        = string
+  default     = ""
+}
