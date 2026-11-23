@@ -160,9 +160,9 @@ A run with `proving` on (decision D-19) may also read each cell's administrator 
 
 | Cloud | The extra rights for a proving run |
 | --- | --- |
-| AWS | Read on the state bucket for the `cells` layer, and `secretsmanager:GetSecretValue` on the AWS cell's administrator secret only. |
+| AWS | Read on the state bucket for the `cells` layer, and `secretsmanager:GetSecretValue` and `secretsmanager:ListSecretVersionIds` on the AWS cell's administrator secret only. |
 | Azure | `Key Vault Secrets Officer` already reads a secret. If the Azure cell's administrator secret is in another vault, `Key Vault Secrets User` and `Key Vault Contributor` on that vault (reading, and opening its firewall the same way). |
-| Google Cloud | `roles/secretmanager.secretAccessor` on the Google Cloud cell's administrator secret only. |
+| Google Cloud | `roles/secretmanager.secretAccessor` and `roles/secretmanager.viewer` on the Google Cloud cell's administrator secret only. |
 
 Leave these off an environment that holds real money or customer data. K-19d replaces the copy: the node agent writes a dedicated role's connection string itself, so no run reads the administrator credential, and these rights go.
 
@@ -186,7 +186,7 @@ The identities may do these things, and nothing else. For AWS the actions are, i
 | State | `s3:GetObject` on the `api` and `authority` state objects only, and `s3:ListBucket` on the state bucket |
 | Logs | `s3:PutObject` on the plan store's prefix only |
 
-For Azure the roles are `Key Vault Contributor` and `Key Vault Secrets Officer`, on the API vault only, and, with `proving` on, `Key Vault Secrets User` on the vault of the administrator credential. For Google Cloud they are `roles/secretmanager.secretAccessor`, `roles/secretmanager.secretVersionAdder` and `roles/secretmanager.viewer` on the API secret only, and, with `proving` on, `roles/secretmanager.secretAccessor` on the administrator secret only. Tests over the OpenTofu fail if a policy grants an action that is not in the list, grants an action on every resource, gives a role on a subscription or project, or lets an identity change any identity or permission.
+For Azure the roles are `Key Vault Contributor` and `Key Vault Secrets Officer`, on the API vault only, and, with `proving` on, `Key Vault Secrets User` on the vault of the administrator credential. For Google Cloud they are `roles/secretmanager.secretAccessor`, `roles/secretmanager.secretVersionAdder` and `roles/secretmanager.viewer` on the API secret only, and, with `proving` on, `roles/secretmanager.secretAccessor` and `roles/secretmanager.viewer` on the administrator secret only. Tests over the OpenTofu fail if a policy grants an action that is not in the list, grants an action on every resource, gives a role on a subscription or project, or lets an identity change any identity or permission.
 
 #### What the infra-apply identities need to make them
 
