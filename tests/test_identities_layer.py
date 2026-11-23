@@ -150,7 +150,9 @@ def test_the_administrator_credential_is_read_only_when_proving():
     assert 'administrator_secret_arn  = var.proving ?' in src
     assert 'var.proving ? ["${local.geo}/cells"]' in src
     assert 'administrator_secret_id = var.proving ?' in src
-    assert set(PERMISSIONS["aws"]["administrator_secret"]) == {"secretsmanager:GetSecretValue"}
+    # The tool asks whether the secret has a version before it reads it, so both are needed.
+    assert set(PERMISSIONS["aws"]["administrator_secret"]) == {"secretsmanager:GetSecretValue", "secretsmanager:ListSecretVersionIds"}
+    assert set(PERMISSIONS["gcp"]["administrator_secret_roles"]) == {"roles/secretmanager.secretAccessor", "roles/secretmanager.viewer"}
 
 
 # ---- Azure: a managed identity with roles on the vault only --------------------------------------

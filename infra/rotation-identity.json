@@ -13,7 +13,8 @@
       "secretsmanager:PutSecretValue"
     ],
     "administrator_secret": [
-      "secretsmanager:GetSecretValue"
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:ListSecretVersionIds"
     ],
     "encryption": [
       "kms:Decrypt",
@@ -53,7 +54,8 @@
       "roles/secretmanager.viewer"
     ],
     "administrator_secret_roles": [
-      "roles/secretmanager.secretAccessor"
+      "roles/secretmanager.secretAccessor",
+      "roles/secretmanager.viewer"
     ]
   }
 }

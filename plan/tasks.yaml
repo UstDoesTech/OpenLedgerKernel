@@ -930,6 +930,27 @@ tasks:
     refused. The credential read had replaced the safe error with a fixed phrase.
   refs:
   - docs/runbooks/rotating-credentials.md
+- id: K-19i
+  title: Let a proving run list the versions of a cell's administrator secret
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-19h
+  decisions: []
+  deliverables:
+  - infra/rotation-identity.json
+  - docs/credentialed-workflows.md
+  acceptance:
+  - With proving on, the AWS role may list the versions of the cell's administrator secret as well as read it,
+    and the Google Cloud service account may list its versions as well as access it, on that secret only.
+  - The document lists both, and a test holds the file to the documented set.
+  notes: Found when a proving run was refused on the administrator secret. The tool asks whether a secret has a
+    version before it reads it, and only the read had been allowed. Adds one action and one role to a proving
+    run's rights, so it needs a person's review.
+  refs:
+  - docs/credentialed-workflows.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1
