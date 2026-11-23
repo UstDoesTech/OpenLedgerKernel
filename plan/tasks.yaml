@@ -988,6 +988,62 @@ tasks:
     before its first start holds a placeholder, and the run would have copied it into db.conn as a password.
   refs:
   - docs/runbooks/rotating-credentials.md
+- id: K-20a
+  title: Show each self-hosted cell's nodes and certificate secrets in the cells layer's outputs
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - K-19c
+  decisions: []
+  deliverables:
+  - infra/envs/europe/cells
+  - infra/modules/postgres
+  - docs/self-hosted-postgres.md
+  acceptance:
+  - For a self-hosted cell, the layer outputs each node's name, role, private address and the identifier of
+    the secret that holds its certificates, and the primary's address that the certificates must name. A
+    managed cell outputs none of these.
+  - The outputs hold no secret, shown by a test over the configuration, and match the secrets the modules
+    make, for each of the three clouds.
+  notes: Found while proving K-19. A cell's primary reads its certificates before it makes the database, and
+    nothing issues them, so no cell ever writes its administrator credential. The next task needs this to
+    know what to issue and where to put it.
+  refs:
+  - docs/self-hosted-postgres.md
+- id: K-20b
+  title: Issue each self-hosted cell's database node certificates from the authority
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-20a
+  - K-17
+  decisions: []
+  deliverables:
+  - crates/pki
+  - scripts/rotation_manifest.py
+  - docs/runbooks/rotating-credentials.md
+  - docs/credentialed-workflows.md
+  acceptance:
+  - A rotation issues each node of a self-hosted cell a server certificate naming the primary's address and the
+    node's own, a replication certificate whose common name is replicator for a standby, and the authority's
+    certificate, and writes the five files into that node's secret as a new version. The files are those
+    the node agent lists.
+  - A node started with those files, in a test against real Postgres, passes the agent's check of its
+    certificates and a standby accepts the primary's certificate.
+  - A rotation that fails part-way leaves every node with files it can use, and the run prints counts only,
+    each shown by a test.
+  - The rotation role's rights on each node's secret, and on the cell's key where the secret uses one, are
+    listed in the document and in infra/rotation-identity.json with a test, and nothing else is widened.
+  notes: Found while proving K-19. The administrator secret on AWS is encrypted with the tenant's key, so a
+    proving run will need decrypt on that key to read it. Edits a credentialed workflow and an AWS role, so it
+    needs a person's review. The same gap for etcd is K-18.
+  refs:
+  - docs/self-hosted-postgres.md
+  - docs/runbooks/rotating-credentials.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1
