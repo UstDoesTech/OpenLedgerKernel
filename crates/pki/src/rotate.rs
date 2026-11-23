@@ -23,7 +23,7 @@ use time::OffsetDateTime;
 
 use crate::database::DatabaseSource;
 use crate::error::PkiError;
-use crate::manifest::{CellEntry, Cloud, Manifest};
+use crate::manifest::{CellEntry, Cloud, Database, Manifest, Node, NodeRole};
 use crate::signer::{Signer, key_pair};
 use crate::store::SecretStore;
 
@@ -54,6 +54,9 @@ impl Kind {
 pub struct Report {
     pub cells: usize,
     pub certificates: usize,
+    /// Certificates made for the machines of self-hosted databases: a server certificate for each,
+    /// and a replication certificate for each standby.
+    pub node_certificates: usize,
     pub credentials: usize,
     pub versions: usize,
     /// Database connections and token files this run made, because a proving environment's secret
@@ -68,9 +71,10 @@ impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "cells: {}, certificates issued: {}, credentials issued: {}, secret versions written: {}, database connections made: {}, login files made: {}, cells still missing a file: {}",
+            "cells: {}, certificates issued: {}, database node certificates issued: {}, credentials issued: {}, secret versions written: {}, database connections made: {}, login files made: {}, cells still missing a file: {}",
             self.cells,
             self.certificates,
+            self.node_certificates,
             self.credentials,
             self.versions,
             self.databases,
@@ -186,6 +190,66 @@ impl<'a> Rotation<'a> {
             }
         };
         Ok((cert, key, pem))
+    }
+
+    /// The five files of one database node, as the node agent lists them for its role: a server
+    /// certificate that names the primary's address and the node's own, the authority's
+    /// certificate, and for a standby a client certificate whose common name is `replicator`.
+    fn issue_node(
+        &self,
+        db: &Database,
+        node: &Node,
+        ca_pem: &str,
+        issuer: &rcgen::Certificate,
+        issuer_key: &KeyPair,
+    ) -> Result<(Entries, usize), PkiError> {
+        let ip = |a: &str| {
+            a.parse::<std::net::IpAddr>()
+                .map_err(|_| PkiError::Issuing("a node's address is not an IP address"))
+        };
+        let primary = db
+            .nodes
+            .iter()
+            .find(|n| n.role == NodeRole::Primary)
+            .ok_or(PkiError::Manifest("a cell has one primary node"))?;
+        let mut names = vec![ip(&primary.address)?];
+        if ip(&node.address)? != names[0] {
+            names.push(ip(&node.address)?);
+        }
+        let make = |common_name: &str, usage: ExtendedKeyUsagePurpose, san: Vec<SanType>| {
+            let key =
+                KeyPair::generate().map_err(|_| PkiError::Issuing("a key could not be made"))?;
+            let mut p = CertificateParams::default();
+            let mut dn = DistinguishedName::new();
+            dn.push(DnType::CommonName, common_name);
+            p.distinguished_name = dn;
+            p.subject_alt_names = san;
+            p.extended_key_usages = vec![usage];
+            p.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+            p.not_before = self.now - time::Duration::minutes(10);
+            p.not_after = self.now + time::Duration::days(CERTIFICATE_DAYS);
+            let cert = p
+                .signed_by(&key, issuer, issuer_key)
+                .map_err(|_| PkiError::Issuing("the authority could not sign it"))?;
+            Ok::<_, PkiError>((cert.pem(), key.serialize_pem()))
+        };
+        let mut files = Entries::new();
+        let (crt, key) = make(
+            &node.name,
+            ExtendedKeyUsagePurpose::ServerAuth,
+            names.into_iter().map(SanType::IpAddress).collect(),
+        )?;
+        files.insert("server.crt".into(), crt);
+        files.insert("server.key".into(), key);
+        files.insert("ca.crt".into(), ca_pem.to_owned());
+        let mut made = 1;
+        if node.role == NodeRole::Standby {
+            let (crt, key) = make("replicator", ExtendedKeyUsagePurpose::ClientAuth, vec![])?;
+            files.insert("replication.crt".into(), crt);
+            files.insert("replication.key".into(), key);
+            made += 1;
+        }
+        Ok((files, made))
     }
 
     fn issue(
@@ -317,6 +381,29 @@ impl<'a> Rotation<'a> {
             }
         }
 
+        // The certificates of each self-hosted cell's database machines, made now with everything
+        // else, and written first in step 1, so a machine that has been waiting for its files can start. The service
+        // trusts the same authority for the database, so its secret gets that certificate as the
+        // database's, unless the manifest gives another.
+        let mut node_secrets: Vec<(Cloud, &str, String)> = Vec::new();
+        if kind.certificates() {
+            for (cell, entries) in cells.iter().zip(now.iter_mut()) {
+                let Some(db) = &cell.database else { continue };
+                if db.nodes.is_empty() {
+                    continue;
+                }
+                for node in &db.nodes {
+                    let (files, made) = self.issue_node(db, node, &ca_pem, &issuer, &issuer_key)?;
+                    let text = serde_json::to_string(&files).map_err(|_| PkiError::Stopped {
+                        step: 1,
+                        why: "a secret could not be encoded",
+                    })?;
+                    node_secrets.push((cell.cloud, node.secret.as_str(), text));
+                    report.node_certificates += made;
+                }
+                entries.insert("db-ca.crt".into(), ca_pem.clone());
+            }
+        }
         // The authority of each cell's database, when the manifest has it. Public, and not tied to
         // either kind of run, so it is written whenever it is given.
         for (cell, entries) in cells.iter().zip(now.iter_mut()) {
@@ -383,7 +470,18 @@ impl<'a> Rotation<'a> {
             }
         }
 
-        // Step 1: new certificates, and every cell lists the new credentials as well as the old.
+        // Step 1: the database machines' certificates first, so a machine that has been waiting for
+        // its files can start, and then the cells' own.
+        for (cloud, secret, text) in &node_secrets {
+            self.store
+                .write(*cloud, secret, text)
+                .map_err(|_| PkiError::Stopped {
+                    step: 1,
+                    why: "a database node's certificates could not be written",
+                })?;
+            report.versions += 1;
+        }
+        // Every cell gets new certificates and lists the new credentials as well as the old.
         for (i, cell) in cells.iter().enumerate() {
             if kind.credentials() {
                 now[i].insert("internal-auth.json".into(), accept_now[i].to_string());

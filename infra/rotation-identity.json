@@ -16,6 +16,9 @@
       "secretsmanager:GetSecretValue",
       "secretsmanager:ListSecretVersionIds"
     ],
+    "node_secrets": [
+      "secretsmanager:PutSecretValue"
+    ],
     "encryption": [
       "kms:Decrypt",
       "kms:GenerateDataKey"
@@ -56,6 +59,9 @@
     "administrator_secret_roles": [
       "roles/secretmanager.secretAccessor",
       "roles/secretmanager.viewer"
+    ],
+    "node_secret_roles": [
+      "roles/secretmanager.secretVersionAdder"
     ]
   }
 }

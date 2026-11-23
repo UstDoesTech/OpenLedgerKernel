@@ -71,3 +71,9 @@ variable "plan_store_encryption_arn" {
   type        = string
   default     = ""
 }
+
+variable "node_secret_arns" {
+  description = "The secrets that hold the certificates of the AWS cell's database machines. The role may write a new version of each, and no more."
+  type        = list(string)
+  default     = []
+}

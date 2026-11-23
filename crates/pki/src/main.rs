@@ -67,6 +67,7 @@ fn run(args: &[String]) -> Result<String, PkiError> {
                         port: 5432,
                         kind: DatabaseKind::SelfHosted,
                         credential_secret: format!("credential-{n}"),
+                        nodes: vec![],
                     }),
                 })
                 .collect(),

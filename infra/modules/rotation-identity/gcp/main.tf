@@ -33,3 +33,11 @@ resource "google_secret_manager_secret_iam_member" "administrator" {
   role      = each.value
   member    = "serviceAccount:${google_service_account.this.email}"
 }
+
+resource "google_secret_manager_secret_iam_member" "nodes" {
+  for_each = { for pair in setproduct(var.node_secret_ids, local.gcp.node_secret_roles) : "${pair[0]}|${pair[1]}" => pair }
+
+  secret_id = each.value[0]
+  role      = each.value[1]
+  member    = "serviceAccount:${google_service_account.this.email}"
+}

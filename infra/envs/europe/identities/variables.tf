@@ -36,7 +36,7 @@ variable "oidc_subject_prefix" {
 }
 
 variable "encryption_arn" {
-  description = "The AWS key that encrypts the API secret, if it is not the account's default key. Empty otherwise."
+  description = "The AWS key that encrypts the AWS cell's secrets (the API secret, the administrator credential and the database machines' certificates), if it is not the account's default key. A key's ARN names it and is not a credential. Supply it as the TF_VAR_encryption_arn secret. Empty otherwise."
   type        = string
   default     = ""
 }

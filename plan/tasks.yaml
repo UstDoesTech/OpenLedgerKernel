@@ -1017,7 +1017,7 @@ tasks:
   phase: P1
   workstream: K
   size: M
-  status: in_progress
+  status: done
   depends_on:
   - K-20a
   - K-17
@@ -1025,6 +1025,9 @@ tasks:
   deliverables:
   - crates/pki
   - scripts/rotation_manifest.py
+  - infra/rotation-identity.json
+  - infra/modules/rotation-identity
+  - .github/workflows/rotate-credentials.yml
   - docs/runbooks/rotating-credentials.md
   - docs/credentialed-workflows.md
   acceptance:

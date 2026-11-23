@@ -48,6 +48,12 @@ locals {
       Action   = local.aws.administrator_secret
       Resource = [var.administrator_secret_arn]
     }],
+    [for _ in(length(var.node_secret_arns) == 0 ? [] : [1]) : {
+      Sid      = "WriteTheNodeCertificates"
+      Effect   = "Allow"
+      Action   = local.aws.node_secrets
+      Resource = var.node_secret_arns
+    }],
     [for _ in(var.state_encryption_arn == "" ? [] : [1]) : {
       Sid      = "DecryptTheState"
       Effect   = "Allow"

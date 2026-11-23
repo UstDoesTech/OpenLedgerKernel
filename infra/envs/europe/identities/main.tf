@@ -91,7 +91,8 @@ module "aws" {
   state_encryption_arn      = var.state_encryption_arn
   plan_store_encryption_arn = var.plan_store_encryption_arn
   state_bucket              = var.state_bucket
-  state_keys                = concat(["${local.geo}/api", "${local.geo}/authority"], var.proving ? ["${local.geo}/cells"] : [])
+  state_keys                = ["${local.geo}/api", "${local.geo}/authority", "${local.geo}/cells"]
+  node_secret_arns          = [for n in try(local.cells["aws"].nodes, []) : n.secret_ref]
   plan_store_bucket         = local.plan_store.bucket
   plan_store_prefix         = local.plan_store_prefix
 }
@@ -114,4 +115,5 @@ module "gcp" {
   workload_identity_pool  = var.workload_identity_pool
   api_secret_id           = local.apis["gcp"].secret_ref
   administrator_secret_id = var.proving ? local.cells["gcp"].secret_ref : ""
+  node_secret_ids         = [for n in try(local.cells["gcp"].nodes, []) : n.secret_ref]
 }

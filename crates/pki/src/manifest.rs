@@ -33,6 +33,29 @@ pub struct Database {
     pub kind: DatabaseKind,
     /// The reference to the secret that holds the administrator's credential. Never the credential.
     pub credential_secret: String,
+    /// A self-hosted cell's machines, each with the secret its certificates go in. Left out for a
+    /// cell someone else runs, and then no certificate is issued for it.
+    #[serde(default)]
+    pub nodes: Vec<Node>,
+}
+
+/// One machine of a self-hosted cell's database.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Node {
+    pub name: String,
+    pub role: NodeRole,
+    /// The machine's private IP address, which its certificate names.
+    pub address: String,
+    /// The reference to the secret that holds this node's certificates. Never a certificate.
+    pub secret: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeRole {
+    Primary,
+    Standby,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -124,6 +147,36 @@ impl Manifest {
                     return Err(PkiError::Manifest(
                         "a cell's database has a plain host and a credential secret",
                     ));
+                }
+            }
+            if let Some(d) = &c.database
+                && !d.nodes.is_empty()
+            {
+                let bad = |why: &'static str| Err(PkiError::Manifest(why));
+                if d.kind != DatabaseKind::SelfHosted {
+                    return bad("only a self-hosted cell has nodes");
+                }
+                if d.nodes
+                    .iter()
+                    .filter(|n| n.role == NodeRole::Primary)
+                    .count()
+                    != 1
+                {
+                    return bad("a cell has one primary node");
+                }
+                let mut names: Vec<&str> = d.nodes.iter().map(|n| n.name.as_str()).collect();
+                names.sort_unstable();
+                names.dedup();
+                if names.len() != d.nodes.len() {
+                    return bad("two nodes of a cell share a name");
+                }
+                for n in &d.nodes {
+                    if n.name.is_empty() || n.secret.is_empty() {
+                        return bad("a node has a name and a secret");
+                    }
+                    if n.address.parse::<std::net::IpAddr>().is_err() {
+                        return bad("a node's address is an IP address");
+                    }
                 }
             }
             if let Some(ca) = &c.db_ca

@@ -184,14 +184,18 @@ def test_proving_is_off_unless_a_person_turns_it_on_and_is_checked_before_use():
     assert "(true|false)" in check and "INPUT_PROVING" in check
 
 
-def test_the_cells_layer_is_read_and_handed_to_the_manifest_only_for_a_proving_run():
+def test_the_cells_layer_is_always_read_and_only_a_proving_run_says_proving():
+    # K-20b: every run needs each self-hosted cell's machines, to issue their certificates. A run
+    # that is not a proving one still never fills a credential, because the word is not given.
     read = step("Read where the cells")["run"]
-    assert re.search(r'\[ "\$INPUT_PROVING" = true \] && layers="\$layers cells"', read)
-    assert re.search(r'\[ "\$INPUT_PROVING" = true \] && extra=\(', read)
-    assert 'layers="api authority"' in read
+    assert 'layers="api authority cells"' in read
+    assert 'extra=("$RUNNER_TEMP/cells-outputs.json")' in read
+    assert re.search(r'\[ "\$INPUT_PROVING" = true \] && extra\+=\(proving\)', read)
     manifest = next(l for l in read.splitlines() if "rotation_manifest.py" in l)
     assert manifest.strip().startswith("scripts/quiet.sh manifest python3")
     assert "${extra[@]}" in manifest
+    check = step("Check the inputs")["run"]
+    assert 'infra/envs/$INPUT_ENV/cells' in check and "INPUT_PROVING\" = false \] ||" not in check
 
 
 def test_no_script_in_the_workflow_touches_an_administrator_credential_or_a_token():
