@@ -868,6 +868,26 @@ mod proving {
     }
 
     #[test]
+    fn a_cell_with_no_administrator_credential_yet_is_named_by_its_cloud_and_nothing_else() {
+        let m = proving_manifest(&["cell-one", "cell-two", "cell-three"]);
+        let s = MemoryStore::new();
+        for c in &m.cells {
+            s.put(c.cloud, &c.database.as_ref().unwrap().credential_secret, "");
+            let said = AdministratorCopy::new(&s)
+                .connection(c)
+                .expect_err("no credential yet")
+                .to_string();
+            let word = match c.cloud {
+                Cloud::Aws => "aws",
+                Cloud::Azure => "azure",
+                Cloud::Gcp => "gcp",
+            };
+            assert!(said.contains(&format!("in {word} has no administrator credential yet")));
+            assert!(!said.contains(&c.name) && !said.contains("administrator-of"));
+        }
+    }
+
+    #[test]
     fn a_refused_read_of_the_administrator_credential_says_which_tool_and_why() {
         let m = proving_manifest(&["cell-one"]);
         let copy = AdministratorCopy::new(&Refusing);
