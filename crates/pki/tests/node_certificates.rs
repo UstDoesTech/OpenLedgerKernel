@@ -86,7 +86,7 @@ fn run(
 fn files(store: &MemoryStore, cloud: Cloud, secret: &str) -> serde_json::Map<String, Value> {
     let text = store
         .latest(cloud, secret)
-        .unwrap_or_else(|| panic!("{secret} was not written"));
+        .expect("a secret the test expects was not written");
     match serde_json::from_str(&text).unwrap() {
         Value::Object(o) => o,
         _ => panic!("not an object"),
