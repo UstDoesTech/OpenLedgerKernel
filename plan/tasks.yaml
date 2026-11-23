@@ -970,6 +970,24 @@ tasks:
   notes: Found when a proving run said a cell had no credential yet without saying which of three clouds.
   refs:
   - docs/runbooks/rotating-credentials.md
+- id: K-19k
+  title: Do not take Azure's placeholder for an administrator credential
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-19j
+  decisions: []
+  deliverables:
+  - crates/pki
+  acceptance:
+  - A proving run treats the text OpenTofu puts in an unwritten Azure administrator secret as no credential
+    yet, and stops with the same message as an empty one, so it never builds a connection from it.
+  notes: Found while checking why a proving run stopped. Key Vault cannot hold an empty secret, so an Azure cell
+    before its first start holds a placeholder, and the run would have copied it into db.conn as a password.
+  refs:
+  - docs/runbooks/rotating-credentials.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1

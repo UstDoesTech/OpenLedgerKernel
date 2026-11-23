@@ -888,6 +888,23 @@ mod proving {
     }
 
     #[test]
+    fn the_placeholder_in_an_unwritten_azure_secret_is_not_taken_for_a_credential() {
+        let m = proving_manifest(&["cell-one", "cell-two", "cell-three"]);
+        let s = MemoryStore::new();
+        let azure = m.cells.iter().find(|c| c.cloud == Cloud::Azure).unwrap();
+        s.put(
+            azure.cloud,
+            &azure.database.as_ref().unwrap().credential_secret,
+            "set-by-the-primary-on-first-start\n",
+        );
+        let said = AdministratorCopy::new(&s)
+            .connection(azure)
+            .expect_err("a placeholder is no credential")
+            .to_string();
+        assert!(said.contains("has no administrator credential yet"));
+    }
+
+    #[test]
     fn a_refused_read_of_the_administrator_credential_says_which_tool_and_why() {
         let m = proving_manifest(&["cell-one"]);
         let copy = AdministratorCopy::new(&Refusing);
