@@ -198,3 +198,9 @@ def test_no_script_in_the_workflow_touches_an_administrator_credential_or_a_toke
     scripts = "\n".join(s.get("run", "") for s in steps()).lower()
     for word in ("password", "administrator", "tokens.json", "db.conn", "get-secret-value"):
         assert word not in scripts, "the tool handles these. The workflow's scripts must not touch them"
+
+
+def test_the_run_warns_when_azure_is_set_and_the_vault_name_is_not():
+    src = WORKFLOW.read_text() if "WORKFLOW" in globals() else (Path(__file__).resolve().parent.parent / ".github/workflows/rotate-credentials.yml").read_text()
+    assert '[ "$HAS_AZURE" = true ] && [ "$HAS_VAULT" != true ]' in src
+    assert "::warning::Azure is set but AZURE_KEY_VAULT_NAME is not" in src
