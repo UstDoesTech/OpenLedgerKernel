@@ -37,6 +37,8 @@ Run it on demand, with the `kind` shown:
 3. Apply the `api` layer, so each cell has a machine and an empty secret.
 4. Fill `db.conn` and `tokens.json` in each cell's secret. For a proving environment, tick `proving` and the run fills a missing one from the cell's administrator credential and makes one fresh token for the tenant. An entry that is there is never replaced, so run it again without worry. For any other environment, fill them yourself: they hold the cell's own database connection and the tenant's tokens.
 
+5. Run in this order the first time (see "The first run, in order" below): certificates first with `proving` off, then again with `proving` on.
+
 The run works without step 4, and says so: it prints how many cells still lack a file. A machine does not start until every file is there.
 
 ## Run it
@@ -61,6 +63,18 @@ cells: 3, certificates issued: 6, database node certificates issued: 15, credent
 | `cells still missing a file` | Cells whose secret lacks a file the service needs. It should be 0 once `db.conn` and `tokens.json` are filled, by a `proving` run or by a person. |
 
 The log shows nothing else. No certificate, key, token, address, secret name or cell name is printed anywhere. Not by the tool, and not by the cloud tools it runs, whose output stays inside it. If you need to know more, ask the cloud: look at a secret's versions with your own sign-in.
+
+## The first run, in order
+
+A self-hosted cell's database machines cannot start until their certificates exist. Each primary writes its administrator credential only once it has started. A `proving` run reads that credential before it writes anything. So a first `proving` run fails with "has no administrator credential yet", and nothing it could have issued gets issued. Do it in two runs:
+
+1. **Certificates, `proving` off.** Run with `kind` `all`. The counts line shows `database node certificates issued: 5` for each self-hosted cell (15 for three). The run reads no administrator credential, so it cannot hit the error above.
+2. **Wait about five minutes.** Each machine's unit restarts every ten seconds, and reads its secret each time. Once its files are there it starts, and each primary writes its administrator credential.
+3. **Fill the files, `proving` on.** Run again with `kind` `all`. It copies each cell's administrator credential into `db.conn` and makes a token for the tenant. The counts line shows `database connections made` and `login files made`, and `cells still missing a file: 0`.
+
+If step 3 still says a cell has no administrator credential after ten minutes, the machines did not start. See "If a run fails" for where to look.
+
+Both runs need the `identities` layer applied after K-20b, because the role may write the machines' secrets only from then on. Set `TF_VAR_encryption_arn` to the key that encrypts the AWS cell's secrets. Find it without reading any value: `aws secretsmanager describe-secret --secret-id <the cell>/administrator --query KmsKeyId --output text`. If that prints `None`, or `aws/secretsmanager`, the secret uses the account's default key and the variable stays unset. Do not use the state bucket's key, the authority's key or any other cell-component key. The state bucket's key has its own variable, `TF_VAR_state_encryption_arn`.
 
 ## Why there are three steps
 
@@ -90,7 +104,7 @@ The run fails loudly: the job is red, and the error names a step. It names no ce
 | `the run stopped at step 3 ...` | Old credentials are still listed on some cells. | Run again. Nothing is broken, only less tidy. |
 | `the stored authority certificate is not for the signing key` | The KMS key is not the one that made the stored certificate. Nothing was written. | See "Replacing the authority". |
 | `a command failed (exit code N) while reading the authority's public key: aws, <cause>` | The run's AWS identity may not use the key, or the key is gone. | Check the role's permissions in [Credentialed workflows](../credentialed-workflows.md), section 6. |
-| `a secret could not be read: a cell's database in <cloud> has no administrator credential yet` | A proving run copies the administrator's credential, and that cell's primary has not written it. The primary writes it on its first start, so the cell may be paused, not started, or failed to start. | Check that cell's machines are running, and that its administrator secret has a version (`<cell>/administrator` in AWS, `<cell>-administrator` in Azure and Google Cloud). See [Self-hosted Postgres](../self-hosted-postgres.md). Then run again. |
+| `a secret could not be read: a cell's database in <cloud> has no administrator credential yet` | A proving run copies the administrator's credential, and that cell's primary has not written it. The primary writes it on its first start, so the cell may be paused, not started, or failed to start. | On a first run, run without `proving` first (see "The first run, in order"). Otherwise check that cell's machines are running, and that its administrator secret has a version (`<cell>/administrator` in AWS, `<cell>-administrator` in Azure and Google Cloud). See [Self-hosted Postgres](../self-hosted-postgres.md). Then run again. |
 | `a command failed ... while reading a secret` or `writing a secret: <tool>, <cause>` | The tool is `aws`, `az` or `gcloud`, which says the cloud. The cause is one of `permission refused`, `blocked by a firewall`, `not signed in`, `not found`, `no network` or `another cause`. It is chosen from a fixed list, and nothing the tool said is printed. `permission refused` on `aws` after a key change usually means the role lacks the key (see `TF_VAR_state_encryption_arn` in section 6). `blocked by a firewall` on `az` means the vault's firewall did not open in time. | Check that cloud's role and, for `az`, the vault's firewall, then run again. |
 
 The job's step log files are in the plan store under the run's id, like every other credentialed run. They hold the cloud tools' own words. Read them with your own sign-in, never in a public place.
@@ -111,6 +125,7 @@ A cell's private key, if it was seen, can be used until its certificate runs out
 
 ## What this does not do yet
 
+- **Refreshing the machines' certificates.** A database machine reads its certificates when it starts, and they last 30 days. A run writes new ones into the secrets, but a machine that is already running keeps the old ones until it restarts. Until a task reloads them, restart one machine at a time (standbys first, then the primary) within 30 days of a run, or the machine's certificate runs out.
 - **etcd's own members.** The cells' `etcd-ca.crt` is this authority's certificate, so etcd must trust it and show a certificate it signed. The members' certificates are not issued by this run. Until a task makes them, make them from this authority and keep them in each member's secret.
 - **`db.conn` and `tokens.json`.** A person fills these, unless the environment is a proving one and the run was given `proving` (D-19). Then the run copies the cell's administrator credential into `db.conn` and makes a fresh token for the tenant. K-19d replaces the copy with a role the node agent makes. Real sign-in replaces the tokens in A-06.
 - **Reading the proving token.** Use your own sign-in and keep it out of the log: for AWS, `aws secretsmanager get-secret-value --secret-id <the cell's API secret> --query SecretString --output text | jq -r '."tokens.json" | fromjson | .[0].token' > ~/smoke-token-aws`. Each cell's token is its own.
