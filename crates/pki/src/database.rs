@@ -6,7 +6,7 @@
 //! [`AdministratorCopy`]. Nothing here prints a host, a user or a password.
 
 use crate::error::PkiError;
-use crate::manifest::{CellEntry, DatabaseKind};
+use crate::manifest::{CellEntry, Cloud, DatabaseKind};
 use crate::store::SecretStore;
 
 /// The role a self-hosted node's agent makes for the administrator.
@@ -54,9 +54,13 @@ impl DatabaseSource for AdministratorCopy<'_> {
             .unwrap_or_default();
         let password = secret.trim();
         if password.is_empty() {
-            return Err(PkiError::Store(
-                "read: a cell's database has no administrator credential yet",
-            ));
+            return Err(PkiError::Store(match cell.cloud {
+                Cloud::Aws => "read: a cell's database in aws has no administrator credential yet",
+                Cloud::Azure => {
+                    "read: a cell's database in azure has no administrator credential yet"
+                }
+                Cloud::Gcp => "read: a cell's database in gcp has no administrator credential yet",
+            }));
         }
         Ok(connection_string(&db.host, db.port, ADMIN_ROLE, password))
     }

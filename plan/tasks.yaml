@@ -951,6 +951,25 @@ tasks:
     run's rights, so it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
+- id: K-19j
+  title: Name the cloud when a cell has no administrator credential yet
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-19i
+  decisions: []
+  deliverables:
+  - crates/pki
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - The error for a cell whose administrator credential is empty says its cloud (aws, azure or gcp) and
+    names no cell, secret or value.
+  - The runbook says what it means and what to check.
+  notes: Found when a proving run said a cell had no credential yet without saying which of three clouds.
+  refs:
+  - docs/runbooks/rotating-credentials.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1
