@@ -149,6 +149,7 @@ def test_azure_machines_may_send_https_to_the_endpoints_and_the_endpoints_accept
     assert 'direction                    = "Inbound"' in text
     assert text.count('access                       = "Allow"') == 2
     assert "for_each = var.client_groups" in text
+    assert "length(var.client_groups) > 0" in text, "a standalone deployment passes no groups and gets no rules"
     assert "var.endpoint_cidrs" in text
     assert "*" not in re.findall(r"destination_address_prefixes\s*=\s*(.*)", text)[0]
     assert "Internet" not in text and "0.0.0.0/0" not in text

@@ -77,6 +77,8 @@ resource "azurerm_network_security_rule" "to_endpoints" {
 }
 
 resource "azurerm_network_security_rule" "from_clients" {
+  count = length(var.client_groups) > 0 ? 1 : 0
+
   name                         = "allow-private-endpoints-in"
   resource_group_name          = var.resource_group_name
   network_security_group_name  = var.endpoint_network_security_group_name
