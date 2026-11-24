@@ -163,6 +163,7 @@ pub fn router<C: ControlPlane + 'static>(state: AppState<C>) -> Router {
         .route("/v1/sessions", post(sign_in::<C>))
         .route("/v1/sessions:end", post(sign_out::<C>))
         .with_state(state)
+        .merge(crate::ui::routes())
 }
 
 /// The caller, from the bearer token. A request without one never reaches a handler.

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Ledger Kernel</title>
+  <link rel="stylesheet" href="/ui/style.css">
+  <script type="module" src="/ui/app.js"></script>
+</head>
+<body>
+  <header>
+    <p class="brand">Open Ledger Kernel</p>
+  </header>
+  <main>
+    <h1>Try the ledger</h1>
+    <p id="cell" role="status">Checking which cell this is.</p>
+
+    <section id="signed-out" aria-labelledby="sign-in-heading">
+      <h2 id="sign-in-heading">Sign in</h2>
+      <form id="sign-in" novalidate>
+        <p id="sign-in-error" class="error" role="alert" hidden></p>
+        <div class="field">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" id="sign-in-button">Sign in</button>
+      </form>
+    </section>
+
+    <section id="signed-in" aria-labelledby="signed-in-heading" hidden>
+      <h2 id="signed-in-heading" tabindex="-1">Signed in</h2>
+      <p>You are signed in as <strong id="who"></strong>.</p>
+      <button type="button" id="sign-out">Sign out</button>
+    </section>
+  </main>
+</body>
+</html>
