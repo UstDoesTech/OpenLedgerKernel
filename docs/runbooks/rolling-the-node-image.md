@@ -8,13 +8,15 @@ A digest change plans one update, to `terraform_data.image`, and nothing else. T
 
 A plan to change a digest that shows machines or disks being **replaced** is wrong. Do not apply it. See [Troubleshooting](troubleshooting.md).
 
-## One thing is not ready yet
+## What the workflow can replace
 
-**The workflow cannot replace one machine.** `infra-apply` plans and applies a whole layer. There is no input for a single resource to replace, and an agent must never run `tofu` against a real account. Until an input is added (a change to a credentialed workflow, so it needs the owner's review), a rollout cannot be started from the workflow. Do not work around this by running `tofu apply -replace` from a laptop against shared state without the owner's say.
+`infra-apply` has a `replace` input that takes the address of **one** machine, and the plan check refuses a plan that deletes a data disk or replaces any other machine (see [Credentialed workflows](../credentialed-workflows.md)). An agent must never run `tofu` against a real account, and a person does not need to either.
 
-The data disks are ready. On all three clouds, for both the Postgres nodes and the etcd members, the data disk is its own resource, so replacing a machine keeps it. If a cell was created before that change, apply the layer first and read the plan: the old inline AWS disks are destroyed and new volumes created, which is safe only while the cell holds no data worth keeping.
+The data disks are their own resources. On all three clouds, for both the Postgres nodes and the etcd members, replacing a machine keeps its disk. If a cell was created before that change, apply the layer first and read the plan: the old inline AWS disks are destroyed and new volumes created, which is safe only while the cell holds no data worth keeping.
 
-## When the workflow can replace a machine
+The API machines are rolled the same way, one at a time, but they hold no data. See [Rolling a new API image](rolling-the-api-image.md).
+
+## Replacing a machine
 
 Do one machine at a time, and one cloud at a time.
 
