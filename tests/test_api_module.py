@@ -99,7 +99,8 @@ def test_azure_machine_is_private_and_reads_one_secret():
 def test_gcp_machine_is_private_and_reads_one_secret():
     text = body(API / "gcp")
     assert "access_config" not in text, "an access_config gives the machine a public address"
-    assert "enable_secure_boot          = true" in text
+    assert "enable_secure_boot          = false" in text, "Flatcar's public image is not signed for Google's Secure Boot"
+    assert "enable_vtpm                 = true" in text and "enable_integrity_monitoring = true" in text
     assert text.count('resource "google_secret_manager_secret_iam_member"') == 1
     assert 'role      = "roles/secretmanager.secretAccessor"' in text
     assert "secretVersionAdder" not in text and "secretmanager.admin" not in text

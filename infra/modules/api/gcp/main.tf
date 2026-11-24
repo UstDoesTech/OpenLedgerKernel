@@ -85,8 +85,12 @@ resource "google_compute_instance" "api" {
     subnetwork = var.subnet_id
   }
 
+  # Flatcar's public image for Google Cloud is not signed for Google's Secure Boot keys. With
+  # Secure Boot on, the firmware refuses the disk ("Security Violation") and the machine never
+  # starts. The virtual TPM and integrity monitoring stay on. Secure Boot comes back with an
+  # image of our own that is signed for it.
   shielded_instance_config {
-    enable_secure_boot          = true
+    enable_secure_boot          = false
     enable_vtpm                 = true
     enable_integrity_monitoring = true
   }
