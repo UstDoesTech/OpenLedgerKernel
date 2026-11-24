@@ -1126,6 +1126,26 @@ tasks:
   notes: The apply of K-20e failed on every cell machine with a message asking for allow_stopping_for_update. The change is made in place by stopping the machine, not by replacing it. Nothing else changes.
   refs:
   - docs/self-hosted-postgres.md
+- id: K-20g
+  title: Run steps 4 to 6 of the first entry in one script
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-20f
+  decisions: []
+  deliverables:
+  - scripts/first_entry_check.sh
+  - scripts/smoke_write.sh
+  - docs/runbooks/first-entry.md
+  acceptance:
+  - One script checks every cell's health, writes nothing if one is not ready, makes a first entry at the first cell, and a transfer from it to each other cell, shown by tests against stand-in APIs.
+  - Each cell is used with its own token, and the script prints counts only, shown by tests.
+  - The runbook says where it can run and how to get each cell's token without printing it.
+  notes: A workflow on GitHub's runners cannot reach the APIs, which have no public address, and the API machines cannot call each other's client port. So this is a script for a machine inside the network. smoke_write.sh gains a token file for a payee at another cell, because each cell has its own token and the cross-cell step would otherwise get a 401. A workflow needs a machine inside the network that the platform makes, which is a separate task.
+  refs:
+  - docs/runbooks/first-entry.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1

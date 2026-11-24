@@ -39,6 +39,36 @@ The `apis` output of the `api` layer says where each secret is. The machine read
 
 *What it proves:* the secret store, the machine's identity and the secret's contents agree.
 
+## Steps 4 to 6 in one run
+
+`scripts/first_entry_check.sh` does steps 4, 5 and 6 together. It checks each cell's health and stops, having written nothing, if any cell is not ready. Then it makes a first entry at the first cell, and a transfer from the first cell to each other cell. It prints counts only, one line for each step, and a total in the form the evidence file wants: `steps: N, failed: 0`.
+
+Run it from a machine that can reach the APIs. They have no public address, and port 8443 is open only to the ranges in the `api` layer's `api_client_cidrs`. A workflow on GitHub's runners cannot reach them, and the API machines cannot call each other's port 8443. Use your VPN, or a small machine inside the network whose range is in `api_client_cidrs`.
+
+1. Save the `api` layer's `apis` output (`tofu output -json apis > apis.json`) and the authority's certificate (the `ca.crt` entry of any cell's secret, which is the same everywhere).
+2. Save each cell's test token in its own file, in the order of the keys in `apis.json` (`aws`, `azure`, `gcp`). Each cell has its own token. Read it from the cell's secret without printing it, using `secret_ref` from `apis.json`:
+   ```sh
+   umask 077
+   # AWS
+   aws secretsmanager get-secret-value --secret-id "<secret_ref>" --query SecretString --output text \
+     | jq -r '.["tokens.json"] | fromjson | .[0].token' > token-aws
+   # Azure
+   az keyvault secret show --id "<secret_ref>" --query value -o tsv \
+     | jq -r '.["tokens.json"] | fromjson | .[0].token' > token-azure
+   # Google Cloud
+   gcloud secrets versions access latest --secret "<the name at the end of secret_ref>" --project "<project>" \
+     | jq -r '.["tokens.json"] | fromjson | .[0].token' > token-gcp
+   ```
+   Delete the files when you have finished. They are test tokens, but they still do not belong in a repository, a log or a message.
+3. Run it:
+   ```sh
+   LEDGER_APIS_FILE=apis.json LEDGER_API_CA_FILE=ca.crt \
+   LEDGER_API_TOKEN_FILES="token-aws token-azure token-gcp" \
+   scripts/first_entry_check.sh
+   ```
+
+A step that fails says which cell, and the status class only. The table at the end of this page says what each failure usually is. The manual steps follow, for a machine where you want to run one step alone.
+
 ## 4. Check each cell serves
 
 From inside the network, ask each API for its health. The answer has counts only.
@@ -101,6 +131,7 @@ In `docs/evidence/gate-1.md`, write the date, the commit you proved, the clouds,
 | The log says the database refused the sign-in, or that nothing answered | Check the user and password in `db.conn`, then the address and the route to the cell's database. |
 | The machine never serves | The secret is empty or is missing an entry. The service exits with code 2 and names the file. Run **rotate-credentials** (with `proving` on, for a proving environment), and fill `db.conn` and `tokens.json` yourself if they are missing and it is not one. The machine reads the secret again within five minutes. |
 | `control_plane_unavailable` | The machine cannot reach etcd: check the etcd addresses in the layer and that the client certificate was issued by etcd's authority. |
+| `status class 4xx` on the cross-cell step's payee only | Each cell has its own token. The payee's cell was given another cell's token: check the order of the token files against the order of the keys in `apis.json`. |
 | A status class of `4xx` on a step | The token, the tenant or the request is wrong. `401` is the token, `404` is an account that is not this tenant's. |
 | `5xx` on the cross-cell step only | The payee's cell cannot be reached from the payer's: check `cells.json`, the interconnect and that the payee's `internal-auth.json` names the payer's cell. |
 | Steps pass but a balance check fails | Stop. Do not repeat it. Something wrote twice or not at all, and that is a defect to report, with the counts the script printed. |
