@@ -64,7 +64,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-75 of 89 tasks done.
+75 of 91 tasks done.
 
 ```mermaid
 flowchart LR
@@ -115,6 +115,8 @@ flowchart LR
   K_20f["K-20f<br/>Let Google Cloud machines be stopped for an update to their shielded settings"]
   K_20g["K-20g<br/>Run steps 4 to 6 of the first entry in one script"]
   K_21["K-21<br/>Sign in to the API with a username and password"]
+  K_20h["K-20h<br/>Let infra-apply replace one API machine"]
+  K_20i["K-20i<br/>Runbook for rolling a new API image onto running cells"]
   K_22["K-22<br/>The proving run makes a test user for the UI"]
   UI_01["UI-01<br/>Serve a basic page from the API, with sign-in"]
   UI_02["UI-02<br/>Check a cell, open an account and read its balances in the page"]
@@ -221,6 +223,8 @@ flowchart LR
   K_20e --> K_20f
   K_20f --> K_20g
   K_13 --> K_21
+  K_20g --> K_20h
+  K_20h --> K_20i
   K_21 --> K_22
   K_21 --> UI_01
   UI_01 --> UI_02
@@ -342,6 +346,8 @@ flowchart LR
 | **K-20f** Let Google Cloud machines be stopped for an update to their shielded settings | Infrastructure | K-20e | None | S | Agent | Done |
 | **K-20g** Run steps 4 to 6 of the first entry in one script | Infrastructure | K-20f | None | S | Agent | Done |
 | **K-21** Sign in to the API with a username and password | Ledger kernel | K-13 | D-21 | M | Agent | Done |
+| **K-20h** Let infra-apply replace one API machine | Infrastructure | K-20g | None | S | Agent | To do |
+| **K-20i** Runbook for rolling a new API image onto running cells | Infrastructure | K-20h | None | S | Agent | To do |
 | **K-22** The proving run makes a test user for the UI | Infrastructure | K-21 | D-21 | S | Agent | Done |
 | **UI-01** Serve a basic page from the API, with sign-in | Basic UI | K-21 | D-20, D-21 | M | Agent | Done |
 | **UI-02** Check a cell, open an account and read its balances in the page | Basic UI | UI-01 | D-20 | M | Agent | To do |
