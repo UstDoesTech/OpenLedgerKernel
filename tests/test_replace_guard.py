@@ -159,6 +159,65 @@ def test_the_script_accepts_an_api_address_and_prints_nothing_about_it(tmp_path)
     assert out.returncode == 1 and "api_aws" not in out.stdout + out.stderr
 
 
+# ---- K-20j: an Azure API machine's identity is new with the machine, so its role assignments are too
+
+AZ = "module.api_azure.azurerm_linux_virtual_machine.api"
+AZ_REPLACE = change(AZ, "azurerm_linux_virtual_machine", "delete", "create")
+SECRET = change("module.api_azure.azurerm_role_assignment.secret", "azurerm_role_assignment", "delete", "create")
+REGISTRY = change("module.api_azure.azurerm_role_assignment.registry", "azurerm_role_assignment", "create", "delete")
+
+
+def test_replacing_an_azure_api_machine_may_recreate_its_two_role_assignments():
+    assert guard.check_plan(AZ, {"resource_changes": [AZ_REPLACE, SECRET, REGISTRY]}) is None
+    assert guard.check_plan(AZ, {"resource_changes": [AZ_REPLACE, SECRET, REGISTRY,
+                                                      change("t.image", "terraform_data", "update")]}) is None
+
+
+def test_a_role_assignment_that_is_only_deleted_is_refused():
+    gone = change("module.api_azure.azurerm_role_assignment.secret", "azurerm_role_assignment", "delete")
+    assert guard.check_plan(AZ, {"resource_changes": [AZ_REPLACE, gone]})
+
+
+def test_a_role_assignment_in_another_module_is_refused():
+    other = change("module.api_other.azurerm_role_assignment.secret", "azurerm_role_assignment", "delete", "create")
+    assert guard.check_plan(AZ, {"resource_changes": [AZ_REPLACE, other]})
+    # A module whose name only begins like the machine's is another module.
+    near = change("module.api_azure_two.azurerm_role_assignment.secret", "azurerm_role_assignment", "delete", "create")
+    assert guard.check_plan(AZ, {"resource_changes": [AZ_REPLACE, near]})
+    top = change("azurerm_role_assignment.secret", "azurerm_role_assignment", "delete", "create")
+    assert guard.check_plan(AZ, {"resource_changes": [AZ_REPLACE, top]})
+
+
+def test_a_database_nodes_plan_may_not_recreate_a_role_assignment():
+    node = "module.cell.azurerm_linux_virtual_machine.node[1]"
+    plan = {"resource_changes": [
+        change(node, "azurerm_linux_virtual_machine", "delete", "create"),
+        change("module.cell.azurerm_role_assignment.x", "azurerm_role_assignment", "delete", "create"),
+    ]}
+    assert guard.check_plan(node, plan)
+
+
+@pytest.mark.parametrize("kind", ["azurerm_role_definition", "azurerm_key_vault_secret", "azurerm_network_interface",
+                                  "azurerm_user_assigned_identity", "azurerm_managed_disk", "azurerm_key_vault"])
+def test_no_other_resource_type_may_be_recreated_with_an_azure_api_machine(kind):
+    other = change(f"module.api_azure.{kind}.x", kind, "delete", "create")
+    assert guard.check_plan(AZ, {"resource_changes": [AZ_REPLACE, other]})
+
+
+def test_only_one_machine_is_replaced_even_with_role_assignments():
+    other = change("module.api_aws.aws_instance.api", "aws_instance", "delete", "create")
+    assert guard.check_plan(AZ, {"resource_changes": [AZ_REPLACE, SECRET, other]})
+    assert guard.check_plan(AZ, {"resource_changes": [SECRET, REGISTRY]})
+
+
+def test_the_address_error_says_an_api_machine_is_accepted_and_prints_nothing_it_was_given():
+    out = run("address", "module.secretname.azure_instance.api")
+    assert out.returncode == 1
+    text = out.stdout + out.stderr
+    assert "API machine" in text and "no index" in text
+    assert "secretname" not in text and "azure_instance" not in text
+
+
 def run(*args):
     return subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True, text=True)
 

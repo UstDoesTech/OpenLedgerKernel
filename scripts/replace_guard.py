@@ -18,6 +18,10 @@ import sys
 MACHINES = {"aws_instance", "azurerm_linux_virtual_machine", "google_compute_instance"}
 ATTACHMENTS = {"aws_volume_attachment", "azurerm_virtual_machine_data_disk_attachment"}
 DISKS = {"aws_ebs_volume", "azurerm_managed_disk", "google_compute_disk"}
+# An Azure API machine has a system-assigned identity, and its role assignments take their principal
+# from it, so they are recreated with the machine. This is the one thing that may be replaced
+# alongside an API machine, and only in the machine's own module.
+DEPENDENTS = {"azurerm_role_assignment"}
 
 _INDEX = r'(\[([0-9]+|"[a-z0-9_.-]+")\])?'
 _MODULES = rf"(module\.[a-z0-9_]+{_INDEX}\.)"
@@ -36,9 +40,15 @@ def valid_address(address: str) -> bool:
     return bool(ADDRESS.fullmatch(address))
 
 
+def _module_of(address: str) -> str:
+    """The module path of a resource address: everything before its `<type>.<name>`."""
+    return address.rsplit(".", 2)[0] if address.count(".") >= 2 else ""
+
+
 def check_plan(address: str, plan: dict) -> str | None:
     """Return None if the plan is the one asked for, otherwise a reason with no names in it."""
     replaced = 0
+    api = address.endswith(".api") and _module_of(address) != ""
     for change in plan.get("resource_changes", []):
         actions = set(change["change"]["actions"])
         kind = change["type"]
@@ -50,6 +60,11 @@ def check_plan(address: str, plan: dict) -> str | None:
             if change["address"] != address or actions != {"create", "delete"}:
                 return "the plan removes a machine other than the one asked for"
             replaced += 1
+        elif api and kind in DEPENDENTS:
+            # Replaced with the machine, in its own module: deleted and made again, never just deleted.
+            inside = change["address"].startswith(_module_of(address) + ".")
+            if actions != {"create", "delete"} or not inside:
+                return "the plan deletes something other than the machine and what is made again with it"
         elif kind not in ATTACHMENTS:
             return "the plan deletes something other than the machine and its disk attachment"
     if replaced != 1:
@@ -63,7 +78,8 @@ def main(argv: list) -> int:
             if valid_address(argv[2]):
                 return 0
             print("::error::the address to replace must be one machine: a node or member of an "
-                  "instance or virtual machine resource, with its index")
+                  "instance or virtual machine resource, with its index, or an API machine "
+                  "(module.<name>.<type>.api, with no index)")
             return 1
         if len(argv) == 4 and argv[1] == "plan":
             with open(argv[3], encoding="utf-8") as f:
