@@ -722,10 +722,9 @@ mod tests {
             login.sign_in(HOME, NAME, &password()).await.unwrap_err(),
             Refusal::Refused
         );
-        users.set(Arc::new(
-            Users::from_json(&list(&hash("a new password"))).unwrap(),
-        ));
-        assert!(login.sign_in(HOME, NAME, "a new password").await.is_ok());
+        let new = format!("new-{}-password", std::process::id());
+        users.set(Arc::new(Users::from_json(&list(&hash(&new))).unwrap()));
+        assert!(login.sign_in(HOME, NAME, &new).await.is_ok());
         assert_eq!(
             login.sign_in(HOME, NAME, &password()).await.unwrap_err(),
             Refusal::Refused
