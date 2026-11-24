@@ -1334,6 +1334,29 @@ tasks:
   notes: Written once the load balancer exists, so that no step in it cannot be done.
   refs:
   - docs/runbooks/rolling-the-api-image.md
+- id: K-23e
+  title: Let infra-apply replace the AWS API machine when a load balancer is in front of it
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - K-23b
+  decisions: []
+  deliverables:
+  - scripts/replace_guard.py
+  - tests/test_replace_guard.py
+  - docs/credentialed-workflows.md
+  - docs/runbooks/rolling-the-api-image.md
+  acceptance:
+  - When the AWS API machine is replaced, the plan check also lets through the load balancer's target group attachment replaced with it (a create and a delete, in the load balancer's module), shown
+    by tests that include the attachment.
+  - The plan check still refuses a plan that deletes a data disk, deletes anything else, replaces another machine, or replaces the attachment when the machine is not being replaced, shown by tests.
+  - The rolling runbook says what the AWS plan shows once a load balancer exists. No other workflow file changes.
+  notes: Found while writing the runbook for K-23c. The attachment is built from the machine's id, so replacing the machine replaces it, as an Azure machine's role assignments are (K-20j). Until this is
+    done, the AWS machine must be replaced before the load balancer is made, or the load balancer taken down first.
+  refs:
+  - docs/runbooks/rolling-the-api-image.md
 - id: K-23d
   title: Limit sign-in failures for each address, not only each username
   phase: P1

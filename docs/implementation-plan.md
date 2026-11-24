@@ -65,7 +65,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-82 of 96 tasks done.
+82 of 97 tasks done.
 
 ```mermaid
 flowchart LR
@@ -122,6 +122,7 @@ flowchart LR
   K_23a["K-23a<br/>Edge subnets and a route to the internet on AWS, for the load balancer only"]
   K_23b["K-23b<br/>A load balancer in front of the AWS API, from named ranges only"]
   K_23c["K-23c<br/>Runbook for putting the AWS API and page on the internet, and taking them off"]
+  K_23e["K-23e<br/>Let infra-apply replace the AWS API machine when a load balancer is in front of it"]
   K_23d["K-23d<br/>Limit sign-in failures for each address, not only each username"]
   K_22["K-22<br/>The proving run makes a test user for the UI"]
   UI_01["UI-01<br/>Serve a basic page from the API, with sign-in"]
@@ -235,6 +236,7 @@ flowchart LR
   K_20h --> K_23a
   K_23a --> K_23b
   K_23b --> K_23c
+  K_23b --> K_23e
   K_21 --> K_23d
   K_21 --> K_22
   K_21 --> UI_01
@@ -363,6 +365,7 @@ flowchart LR
 | **K-23a** Edge subnets and a route to the internet on AWS, for the load balancer only | Infrastructure | K-20h | D-22 | S | Agent | Done |
 | **K-23b** A load balancer in front of the AWS API, from named ranges only | Infrastructure | K-23a | D-22 | M | Agent | Done |
 | **K-23c** Runbook for putting the AWS API and page on the internet, and taking them off | Infrastructure | K-23b | None | S | Agent | To do |
+| **K-23e** Let infra-apply replace the AWS API machine when a load balancer is in front of it | Infrastructure | K-23b | None | S | Agent | To do |
 | **K-23d** Limit sign-in failures for each address, not only each username | Ledger kernel | K-21 | D-21 | M | Agent | Done |
 | **K-22** The proving run makes a test user for the UI | Infrastructure | K-21 | D-21 | S | Agent | Done |
 | **UI-01** Serve a basic page from the API, with sign-in | Basic UI | K-21 | D-20, D-21 | M | Agent | Done |
