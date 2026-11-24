@@ -139,6 +139,16 @@ def test_azure_reaches_registry_and_vault_over_private_endpoints_with_private_dn
     assert "is_manual_connection           = false" in text
 
 
+def test_every_google_cloud_machine_boots_flatcar_without_secure_boot_and_keeps_the_rest():
+    # Flatcar's public Google Cloud image is not signed for Google's Secure Boot keys, so with it
+    # on the firmware refuses the disk and the machine never starts.
+    for path in ["postgres/gcp-self-hosted", "api/gcp", "control-plane/gcp-members"]:
+        text = body(MODULES / path)
+        assert "enable_secure_boot          = false" in text, path
+        assert "enable_vtpm                 = true" in text, path
+        assert "enable_integrity_monitoring = true" in text, path
+
+
 def test_azure_machines_may_send_https_to_the_endpoints_and_the_endpoints_accept_it():
     # The network denies everything in and out, so without these the machines time out
     # reaching the vault and the registry.

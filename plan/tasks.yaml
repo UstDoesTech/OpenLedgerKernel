@@ -1089,6 +1089,25 @@ tasks:
   notes: Found in the first live proving run. The Azure network denies all traffic in and out of each tier unless a rule allows it, and the module for the endpoints made them and their DNS but no rule, so a machine's call to the vault timed out. AWS has the matching rules already. Changes network rules, so it needs a person's review, and a person applies the private-access layer.
   refs:
   - docs/self-hosted-postgres.md
+- id: K-20e
+  title: Boot Flatcar on Google Cloud without Secure Boot
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-20d
+  decisions: []
+  deliverables:
+  - infra/modules/postgres/gcp-self-hosted
+  - infra/modules/api/gcp
+  - infra/modules/control-plane/gcp-members
+  acceptance:
+  - Every Google Cloud machine that boots Flatcar has Secure Boot off and keeps its virtual TPM and integrity monitoring, shown by a test of the three modules.
+  - The reason and the way back are in the modules, in a comment.
+  notes: Found in the first live proving run. The primary of the Google Cloud cell never started. Its console showed Security Violation from the firmware, because Flatcar's public image for Google Cloud is not signed for Google's Secure Boot keys. Loosens a security setting and one existing test, so it needs a person's review. Secure Boot comes back with an image of our own that is signed for it, which is a later task.
+  refs:
+  - docs/self-hosted-postgres.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1
