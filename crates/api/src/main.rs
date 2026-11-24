@@ -12,6 +12,8 @@
 //!   LEDGER_SCHEMA          the ledger schema, default `ledger`
 //!   LEDGER_LISTEN          the address to listen on, default `127.0.0.1:8080`
 //!   LEDGER_TOKENS_FILE     a JSON list of `{token, tenant, principal}` (see `ledger_api::auth`)
+//!   LEDGER_TRUSTED_PROXIES optional: comma-separated ranges (such as the load balancer's subnets) whose
+//!                          `X-Forwarded-For` is believed, for the limits on sign-in. Default none.
 //!   LEDGER_USERS_FILE      optional: a JSON list of `{username, password_hash, tenant, principal}` for
 //!                          sign-in with a username and password (see `ledger_api::login`)
 //!   LEDGER_INTERNAL_LISTEN the address of the internal listener, for calls from other cells. Not
@@ -91,11 +93,24 @@ async fn serve(
     match config {
         Some(config) => {
             let listener = TlsListener::reloadable(tcp, config).map_err(|e| e.to_string())?;
-            servers
-                .spawn(async move { axum::serve(listener, app).with_graceful_shutdown(end).await });
+            servers.spawn(async move {
+                axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<ledger_api::client_addr::Peer>(),
+                )
+                .with_graceful_shutdown(end)
+                .await
+            });
         }
         None => {
-            servers.spawn(async move { axum::serve(tcp, app).with_graceful_shutdown(end).await });
+            servers.spawn(async move {
+                axum::serve(
+                    tcp,
+                    app.into_make_service_with_connect_info::<ledger_api::client_addr::Peer>(),
+                )
+                .with_graceful_shutdown(end)
+                .await
+            });
         }
     }
     Ok(())
@@ -264,6 +279,14 @@ async fn run() -> Result<(), String> {
             Arc::new(ledger_api::login::MonotonicClock::new()),
         );
         state = state.with_login(login);
+        // The ranges whose forwarded client address is believed, such as the load balancer's
+        // subnets. None means the header is never read.
+        let trusted = match std::env::var("LEDGER_TRUSTED_PROXIES") {
+            Ok(text) => ledger_api::client_addr::TrustedProxies::parse(&text)
+                .map_err(|e| format!("LEDGER_TRUSTED_PROXIES: {e}"))?,
+            Err(_) => ledger_api::client_addr::TrustedProxies::none(),
+        };
+        state = state.with_trusted_proxies(trusted);
         Some(users)
     } else {
         None

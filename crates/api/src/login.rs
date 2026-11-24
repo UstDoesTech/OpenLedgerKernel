@@ -17,6 +17,8 @@
 //! - at most a few hashes run at once, so a flood of sign-ins cannot starve the ledger.
 
 use std::collections::HashMap;
+use std::hash::Hash;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -31,8 +33,12 @@ use crate::auth::{Authenticator, Principal, is_principal_name};
 
 /// How long a sign-in lasts.
 pub const SESSION_LIFETIME: Duration = Duration::from_secs(30 * 60);
-/// Failures in a row before the username is locked.
+/// Failures in a row, from one address for one username, before that address is locked out of that
+/// username.
 pub const FAILURES_BEFORE_LOCK: u32 = 5;
+/// Failures from one address across all usernames, within one lock's length, before that address
+/// is locked out of sign-in altogether.
+pub const ADDRESS_FAILURES_BEFORE_LOCK: u32 = 20;
 /// How long a lock lasts.
 pub const LOCK_FOR: Duration = Duration::from_secs(60);
 /// Hashes that may run at the same time.
@@ -239,45 +245,114 @@ impl Authenticator for Sessions {
     }
 }
 
-/// Failed sign-ins in a row for each username, and until when a username is locked.
-#[derive(Default)]
-struct Throttle {
-    by_name: Mutex<HashMap<String, (u32, Option<Duration>)>>,
+/// Failures counted for each key, and until when a key is locked.
+struct Locks<K> {
+    map: Mutex<HashMap<K, Counted>>,
+    threshold: u32,
+    /// With a window, failures older than it are forgotten. Without, they count until a success.
+    window: Option<Duration>,
 }
 
-impl Throttle {
-    fn locked(&self, name: &str, now: Duration) -> bool {
-        let Ok(map) = self.by_name.lock() else {
-            return true;
-        };
-        matches!(map.get(name), Some((_, Some(until))) if *until > now)
+#[derive(Clone, Copy)]
+struct Counted {
+    failures: u32,
+    since: Duration,
+    until: Option<Duration>,
+}
+
+impl<K: Hash + Eq + Clone> Locks<K> {
+    fn new(threshold: u32, window: Option<Duration>) -> Self {
+        Locks {
+            map: Mutex::new(HashMap::new()),
+            threshold,
+            window,
+        }
     }
 
-    fn failed(&self, name: &str, now: Duration) {
-        let Ok(mut map) = self.by_name.lock() else {
+    fn locked(&self, key: &K, now: Duration) -> bool {
+        let Ok(map) = self.map.lock() else {
+            return true;
+        };
+        matches!(map.get(key), Some(Counted { until: Some(u), .. }) if *u > now)
+    }
+
+    fn failed(&self, key: &K, now: Duration) {
+        let Ok(mut map) = self.map.lock() else {
             return;
         };
-        if map.len() >= MAX_TRACKED && !map.contains_key(name) {
-            // Forget those that are neither locked nor close to it. A lock is never dropped.
-            map.retain(|_, (_, until)| until.is_some_and(|u| u > now));
+        if map.len() >= MAX_TRACKED && !map.contains_key(key) {
+            // Forget those that are not locked. A lock is never dropped.
+            map.retain(|_, c| c.until.is_some_and(|u| u > now));
             if map.len() >= MAX_TRACKED {
                 return;
             }
         }
-        let entry = map.entry(name.to_owned()).or_insert((0, None));
-        if matches!(entry.1, Some(until) if until <= now) {
-            *entry = (0, None);
+        let entry = map.entry(key.clone()).or_insert(Counted {
+            failures: 0,
+            since: now,
+            until: None,
+        });
+        let lock_ended = matches!(entry.until, Some(until) if until <= now);
+        let window_ended = self
+            .window
+            .is_some_and(|w| now.saturating_sub(entry.since) >= w);
+        if lock_ended || window_ended {
+            *entry = Counted {
+                failures: 0,
+                since: now,
+                until: None,
+            };
         }
-        entry.0 += 1;
-        if entry.0 >= FAILURES_BEFORE_LOCK {
-            *entry = (0, Some(now + LOCK_FOR));
+        entry.failures += 1;
+        if entry.failures >= self.threshold {
+            entry.failures = 0;
+            entry.until = Some(now + LOCK_FOR);
         }
     }
 
-    fn succeeded(&self, name: &str) {
-        if let Ok(mut map) = self.by_name.lock() {
-            map.remove(name);
+    fn succeeded(&self, key: &K) {
+        if let Ok(mut map) = self.map.lock() {
+            map.remove(key);
         }
+    }
+}
+
+/// The limits on sign-in. A lock on a username alone would let anyone lock a person out from
+/// anywhere, so the count is of one address's failures for one username. A second count, of one
+/// address's failures for any username, slows a caller who tries many names.
+struct Throttle {
+    by_address_and_name: Locks<(IpAddr, String)>,
+    by_address: Locks<IpAddr>,
+}
+
+impl Default for Throttle {
+    fn default() -> Self {
+        Throttle {
+            by_address_and_name: Locks::new(FAILURES_BEFORE_LOCK, None),
+            by_address: Locks::new(ADDRESS_FAILURES_BEFORE_LOCK, Some(LOCK_FOR)),
+        }
+    }
+}
+
+impl Throttle {
+    fn locked(&self, client: IpAddr, name: &str, now: Duration) -> bool {
+        self.by_address.locked(&client, now)
+            || self
+                .by_address_and_name
+                .locked(&(client, name.to_owned()), now)
+    }
+
+    fn failed(&self, client: IpAddr, name: &str, now: Duration) {
+        self.by_address.failed(&client, now);
+        self.by_address_and_name
+            .failed(&(client, name.to_owned()), now);
+    }
+
+    /// A right password clears the count for that address and username only. It does not clear the
+    /// count for the address, which someone with one real account could otherwise reset at will.
+    fn succeeded(&self, client: IpAddr, name: &str) {
+        self.by_address_and_name
+            .succeeded(&(client, name.to_owned()));
     }
 }
 
@@ -325,7 +400,12 @@ impl Login {
     }
 
     /// Checks a username and password, and makes a token if they are right.
-    pub async fn sign_in(&self, username: &str, password: &str) -> Result<Issued, Refusal> {
+    pub async fn sign_in(
+        &self,
+        client: IpAddr,
+        username: &str,
+        password: &str,
+    ) -> Result<Issued, Refusal> {
         if password.is_empty() || password.len() > MAX_PASSWORD_BYTES {
             return Err(Refusal::Refused);
         }
@@ -335,7 +415,7 @@ impl Login {
             .clone()
             .unwrap_or_else(|| username.chars().take(64).collect());
         let now = self.clock.now();
-        if self.throttle.locked(&key, now) {
+        if self.throttle.locked(client, &key, now) {
             return Err(Refusal::Locked);
         }
         let users = self.users.get();
@@ -362,7 +442,7 @@ impl Login {
                     .sessions
                     .issue(&principal)
                     .ok_or(Refusal::Unavailable)?;
-                self.throttle.succeeded(&key);
+                self.throttle.succeeded(client, &key);
                 Ok(Issued {
                     token,
                     expires_in: SESSION_LIFETIME.as_secs(),
@@ -370,7 +450,7 @@ impl Login {
                 })
             }
             _ => {
-                self.throttle.failed(&key, self.clock.now());
+                self.throttle.failed(client, &key, self.clock.now());
                 Err(Refusal::Refused)
             }
         }
@@ -397,6 +477,8 @@ mod tests {
 
     const PASSWORD: &str = "correct horse battery staple";
     const NAME: &str = "user@bankofmumanddad.test";
+    const HOME: IpAddr = IpAddr::V4(std::net::Ipv4Addr::new(203, 0, 113, 9));
+    const ELSEWHERE: IpAddr = IpAddr::V4(std::net::Ipv4Addr::new(198, 51, 100, 7));
 
     struct Fake(AtomicU64);
 
@@ -478,7 +560,7 @@ mod tests {
     #[tokio::test]
     async fn the_right_password_signs_in_and_the_token_names_the_user() {
         let (login, _, _) = login();
-        let issued = login.sign_in(NAME, PASSWORD).await.unwrap();
+        let issued = login.sign_in(HOME, NAME, PASSWORD).await.unwrap();
         assert_eq!(issued.expires_in, 1800);
         assert_eq!(issued.principal, "usr_ada");
         assert_eq!(issued.token.len(), 64);
@@ -486,7 +568,7 @@ mod tests {
         assert_eq!(who.name, "usr_ada");
         assert_eq!(who.tenant, "ten_acme".parse::<TenantId>().unwrap());
         // Another sign-in is another token, and each works.
-        let again = login.sign_in(NAME, PASSWORD).await.unwrap();
+        let again = login.sign_in(HOME, NAME, PASSWORD).await.unwrap();
         assert_ne!(again.token, issued.token);
         assert!(login.authenticate(&issued.token).is_some());
     }
@@ -496,13 +578,13 @@ mod tests {
         let (login, _, _) = login();
         assert!(
             login
-                .sign_in("User@BankOfMumAndDad.TEST", PASSWORD)
+                .sign_in(HOME, "User@BankOfMumAndDad.TEST", PASSWORD)
                 .await
                 .is_ok()
         );
         assert_eq!(
             login
-                .sign_in(NAME, &PASSWORD.to_uppercase())
+                .sign_in(HOME, NAME, &PASSWORD.to_uppercase())
                 .await
                 .unwrap_err(),
             Refusal::Refused
@@ -512,12 +594,15 @@ mod tests {
     #[tokio::test]
     async fn an_unknown_user_and_a_wrong_password_are_not_told_apart() {
         let (login, _, users) = login();
-        let wrong = login.sign_in(NAME, "wrong password").await.unwrap_err();
-        let unknown = login
-            .sign_in("nobody@bankofmumanddad.test", PASSWORD)
+        let wrong = login
+            .sign_in(HOME, NAME, "wrong password")
             .await
             .unwrap_err();
-        let not_an_address = login.sign_in("nobody", PASSWORD).await.unwrap_err();
+        let unknown = login
+            .sign_in(HOME, "nobody@bankofmumanddad.test", PASSWORD)
+            .await
+            .unwrap_err();
+        let not_an_address = login.sign_in(HOME, "nobody", PASSWORD).await.unwrap_err();
         assert_eq!(wrong, Refusal::Refused);
         assert_eq!(unknown, Refusal::Refused);
         assert_eq!(not_an_address, Refusal::Refused);
@@ -528,10 +613,13 @@ mod tests {
     #[tokio::test]
     async fn nothing_is_hashed_for_an_empty_or_huge_password() {
         let (login, _, _) = login();
-        assert_eq!(login.sign_in(NAME, "").await.unwrap_err(), Refusal::Refused);
+        assert_eq!(
+            login.sign_in(HOME, NAME, "").await.unwrap_err(),
+            Refusal::Refused
+        );
         assert_eq!(
             login
-                .sign_in(NAME, &"x".repeat(MAX_PASSWORD_BYTES + 1))
+                .sign_in(HOME, NAME, &"x".repeat(MAX_PASSWORD_BYTES + 1))
                 .await
                 .unwrap_err(),
             Refusal::Refused
@@ -543,61 +631,63 @@ mod tests {
         let (login, clock, _) = login();
         for _ in 0..FAILURES_BEFORE_LOCK {
             assert_eq!(
-                login.sign_in(NAME, "wrong").await.unwrap_err(),
+                login.sign_in(HOME, NAME, "wrong").await.unwrap_err(),
                 Refusal::Refused
             );
         }
         assert_eq!(
-            login.sign_in(NAME, PASSWORD).await.unwrap_err(),
+            login.sign_in(HOME, NAME, PASSWORD).await.unwrap_err(),
             Refusal::Locked
         );
         clock.move_on(LOCK_FOR.as_secs() - 1);
         assert_eq!(
-            login.sign_in(NAME, PASSWORD).await.unwrap_err(),
+            login.sign_in(HOME, NAME, PASSWORD).await.unwrap_err(),
             Refusal::Locked
         );
         clock.move_on(2);
-        assert!(login.sign_in(NAME, PASSWORD).await.is_ok());
+        assert!(login.sign_in(HOME, NAME, PASSWORD).await.is_ok());
     }
 
     #[tokio::test]
     async fn an_unknown_name_is_locked_too_so_the_lock_does_not_say_who_exists() {
         let (login, _, _) = login();
         for _ in 0..FAILURES_BEFORE_LOCK {
-            let _ = login.sign_in("nobody@bankofmumanddad.test", "wrong").await;
+            let _ = login
+                .sign_in(HOME, "nobody@bankofmumanddad.test", "wrong")
+                .await;
         }
         assert_eq!(
             login
-                .sign_in("nobody@bankofmumanddad.test", "wrong")
+                .sign_in(HOME, "nobody@bankofmumanddad.test", "wrong")
                 .await
                 .unwrap_err(),
             Refusal::Locked
         );
         // Another name is not affected.
-        assert!(login.sign_in(NAME, PASSWORD).await.is_ok());
+        assert!(login.sign_in(HOME, NAME, PASSWORD).await.is_ok());
     }
 
     #[tokio::test]
     async fn a_right_password_starts_the_count_again() {
         let (login, _, _) = login();
         for _ in 0..FAILURES_BEFORE_LOCK - 1 {
-            let _ = login.sign_in(NAME, "wrong").await;
+            let _ = login.sign_in(HOME, NAME, "wrong").await;
         }
-        assert!(login.sign_in(NAME, PASSWORD).await.is_ok());
+        assert!(login.sign_in(HOME, NAME, PASSWORD).await.is_ok());
         for _ in 0..FAILURES_BEFORE_LOCK - 1 {
             assert_eq!(
-                login.sign_in(NAME, "wrong").await.unwrap_err(),
+                login.sign_in(HOME, NAME, "wrong").await.unwrap_err(),
                 Refusal::Refused
             );
         }
-        assert!(login.sign_in(NAME, PASSWORD).await.is_ok());
+        assert!(login.sign_in(HOME, NAME, PASSWORD).await.is_ok());
     }
 
     #[tokio::test]
     async fn a_token_stops_at_its_expiry_and_when_it_is_ended() {
         let (login, clock, _) = login();
-        let first = login.sign_in(NAME, PASSWORD).await.unwrap().token;
-        let second = login.sign_in(NAME, PASSWORD).await.unwrap().token;
+        let first = login.sign_in(HOME, NAME, PASSWORD).await.unwrap().token;
+        let second = login.sign_in(HOME, NAME, PASSWORD).await.unwrap().token;
         clock.move_on(SESSION_LIFETIME.as_secs() - 1);
         assert!(login.authenticate(&first).is_some());
         login.sign_out(&second);
@@ -623,15 +713,15 @@ mod tests {
         let (login, _, users) = login();
         users.set(Arc::new(Users::empty()));
         assert_eq!(
-            login.sign_in(NAME, PASSWORD).await.unwrap_err(),
+            login.sign_in(HOME, NAME, PASSWORD).await.unwrap_err(),
             Refusal::Refused
         );
         users.set(Arc::new(
             Users::from_json(&list(&hash("a new password"))).unwrap(),
         ));
-        assert!(login.sign_in(NAME, "a new password").await.is_ok());
+        assert!(login.sign_in(HOME, NAME, "a new password").await.is_ok());
         assert_eq!(
-            login.sign_in(NAME, PASSWORD).await.unwrap_err(),
+            login.sign_in(HOME, NAME, PASSWORD).await.unwrap_err(),
             Refusal::Refused
         );
     }
@@ -639,9 +729,124 @@ mod tests {
     #[tokio::test]
     async fn the_token_is_kept_only_as_a_hash() {
         let (login, _, _) = login();
-        let token = login.sign_in(NAME, PASSWORD).await.unwrap().token;
+        let token = login.sign_in(HOME, NAME, PASSWORD).await.unwrap().token;
         let live = login.sessions().live.lock().unwrap();
         assert!(live.keys().all(|k| k != token.as_bytes()));
         assert!(live.contains_key(&hash_token(&token)));
+    }
+
+    #[tokio::test]
+    async fn a_lock_is_for_one_address_and_one_name_so_nobody_can_lock_a_person_out() {
+        let (login, clock, _) = login();
+        for _ in 0..FAILURES_BEFORE_LOCK {
+            let _ = login.sign_in(ELSEWHERE, NAME, "wrong").await;
+        }
+        assert_eq!(
+            login.sign_in(ELSEWHERE, NAME, PASSWORD).await.unwrap_err(),
+            Refusal::Locked
+        );
+        // The person, from their own address, is not locked.
+        assert!(login.sign_in(HOME, NAME, PASSWORD).await.is_ok());
+        // And the locked address can try another name.
+        assert_eq!(
+            login
+                .sign_in(ELSEWHERE, "other@bankofmumanddad.test", "wrong")
+                .await
+                .unwrap_err(),
+            Refusal::Refused
+        );
+        clock.move_on(LOCK_FOR.as_secs() + 1);
+        assert!(login.sign_in(ELSEWHERE, NAME, PASSWORD).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn many_names_from_one_address_slow_that_address_and_say_the_same_whether_the_name_exists()
+     {
+        let (login, clock, _) = login();
+        for i in 0..ADDRESS_FAILURES_BEFORE_LOCK {
+            // Each name is tried once, so no name is locked by itself.
+            let name = if i % 2 == 0 {
+                format!("nobody{i}@bankofmumanddad.test")
+            } else {
+                NAME.to_owned()
+            };
+            let name = if i % 2 == 1 && i > 1 {
+                format!("nobody{i}@bankofmumanddad.test")
+            } else {
+                name
+            };
+            assert_eq!(
+                login.sign_in(ELSEWHERE, &name, "wrong").await.unwrap_err(),
+                Refusal::Refused
+            );
+        }
+        // Real name or not, right password or not: the same answer.
+        for name in [
+            NAME,
+            "nobody@bankofmumanddad.test",
+            "another@bankofmumanddad.test",
+        ] {
+            for password in [PASSWORD, "wrong"] {
+                assert_eq!(
+                    login.sign_in(ELSEWHERE, name, password).await.unwrap_err(),
+                    Refusal::Locked
+                );
+            }
+        }
+        // Another address is not slowed, and the slowing ends.
+        assert!(login.sign_in(HOME, NAME, PASSWORD).await.is_ok());
+        clock.move_on(LOCK_FOR.as_secs() + 1);
+        assert!(login.sign_in(ELSEWHERE, NAME, PASSWORD).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn failures_spread_over_more_than_a_minute_do_not_add_up_for_an_address() {
+        let (login, clock, _) = login();
+        for i in 0..ADDRESS_FAILURES_BEFORE_LOCK - 1 {
+            let _ = login
+                .sign_in(
+                    ELSEWHERE,
+                    &format!("nobody{i}@bankofmumanddad.test"),
+                    "wrong",
+                )
+                .await;
+        }
+        clock.move_on(LOCK_FOR.as_secs() + 1);
+        for i in 0..ADDRESS_FAILURES_BEFORE_LOCK - 1 {
+            assert_eq!(
+                login
+                    .sign_in(
+                        ELSEWHERE,
+                        &format!("later{i}@bankofmumanddad.test"),
+                        "wrong"
+                    )
+                    .await
+                    .unwrap_err(),
+                Refusal::Refused
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_right_password_does_not_clear_the_count_for_the_address() {
+        let (login, _, _) = login();
+        for i in 0..ADDRESS_FAILURES_BEFORE_LOCK - 1 {
+            let _ = login
+                .sign_in(
+                    ELSEWHERE,
+                    &format!("nobody{i}@bankofmumanddad.test"),
+                    "wrong",
+                )
+                .await;
+            // The caller signs in to an account of their own between guesses.
+            let _ = login.sign_in(ELSEWHERE, NAME, PASSWORD).await;
+        }
+        let _ = login
+            .sign_in(ELSEWHERE, "last@bankofmumanddad.test", "wrong")
+            .await;
+        assert_eq!(
+            login.sign_in(ELSEWHERE, NAME, PASSWORD).await.unwrap_err(),
+            Refusal::Locked
+        );
     }
 }

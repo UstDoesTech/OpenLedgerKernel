@@ -268,8 +268,11 @@ paths:
         token. A correct username and password return a random bearer token that lasts the number
         of seconds in `expires_in`. The token names the user's tenant and principal from the cell's
         list of users, never from the request. An unknown user and a wrong password get the same
-        `401`, and five failures in a row lock the username for a minute with a `429`. Nothing sent
-        here is logged or returned. A cell that has no list of users answers `404`.
+        `401`. Five failures in a row from one address for one username lock that address out of
+        that username for a minute, and twenty failures from one address across any usernames lock
+        that address out of sign-in for a minute, both with a `429` that is the same whether or not
+        the username exists. The same username from another address is not locked. Nothing sent here
+        is logged or returned, and nor is the address. A cell that has no list of users answers `404`.
       x-skeleton: true
       requestBody:
         required: true
@@ -303,7 +306,7 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
         '429':
-          description: Too many failures in a row for this username
+          description: Too many failures from this address, for this username or for any
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
