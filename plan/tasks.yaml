@@ -117,6 +117,14 @@ decisions:
     The proving run makes one test user, user@bankofmumanddad.test (a fake domain), with a generated
     password that a person reads from the cell's secret. The password is never in the repository. This is
     a stand-in for A-06, which replaces it behind the same trait.
+- id: D-22
+  title: Whether and how a cell's API and page are reachable from the internet
+  status: decided
+  proposed: None of the cells is reachable from the internet today. The owner asked for a load balancer on AWS.
+  outcome: The AWS cell gets an internet-facing application load balancer, and Azure and Google Cloud stay private. It takes HTTPS only, on a name the owner gives, with a certificate from AWS Certificate
+    Manager, and passes traffic to the API machine over HTTPS on its own port. It takes connections only from ranges the owner lists, with a rate limit from AWS WAF, and none at all until a range is
+    listed. The whole internet (0.0.0.0/0) is refused until each address has its own sign-in limit (K-23d). The page is served by the cell behind it and manages only that cell. The edge subnets and
+    their route to the internet are a tier of their own, so the private tiers never get a route to the internet. (Ust Oldfield, 2026-11-24, in conversation. An agent proposed the shape, and merging the pull request that adds this decision approves it.)
 tasks:
 - id: F-01
   title: Rust workspace and CI
@@ -1257,6 +1265,99 @@ tasks:
     Cloud use a role or a service account that is separate from the machine, so they are not affected. This widens the guard of a credentialed workflow, so it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
+- id: K-23a
+  title: Edge subnets and a route to the internet on AWS, for the load balancer only
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - K-20h
+  decisions:
+  - D-22
+  deliverables:
+  - infra/address_plan.json
+  - infra/modules/network-aws
+  - tests/test_network_aws_edge.py
+  acceptance:
+  - An edge tier is added at the end of the address plan, three subnets in three zones, so that no address that exists moves, shown by a test that every existing subnet keeps its address.
+  - On AWS only, the edge subnets have a route table of their own with a default route to a new internet gateway, and the private route table still has only its local route, with no other tier's
+    subnet in the edge table, shown by tests of the module.
+  - The edge tier's security group stays default-deny, with no rule made in this task, and no edge subnet gives a public address on launch, shown by tests.
+  - Azure and Google Cloud make no edge resource, shown by tests of their modules.
+  notes: The AWS network has no internet gateway, no NAT and one route table with only the local route, by design, so the load balancer needs a place that is allowed to face the internet. The private
+    tiers must never share that route table. A person reads the plan before applying it.
+  refs:
+  - docs/infrastructure.md
+- id: K-23b
+  title: A load balancer in front of the AWS API, from named ranges only
+  phase: P1
+  workstream: I
+  size: M
+  status: todo
+  depends_on:
+  - K-23a
+  decisions:
+  - D-22
+  deliverables:
+  - infra/modules/api-front-aws
+  - infra/envs/europe/api
+  - tests/test_api_front_aws.py
+  acceptance:
+  - An internet-facing application load balancer in the edge subnets takes HTTPS on port 443 only, with a certificate from AWS Certificate Manager for a name the person gives, no port 80 listener, and
+    a current TLS policy, shown by tests of the module.
+  - It forwards to the API machine's port 8443 over HTTPS with its health check on /healthz, so a cell that is draining or not ready takes no traffic, shown by tests.
+  - It takes connections only from the ranges in edge_client_cidrs. With none, no ingress rule is made, and a range of 0.0.0.0/0 or ::/0 is refused by validation until K-23d is done, shown by tests.
+  - The API machine's group takes port 8443 from the load balancer's group for this path, and the load balancer's egress is that port to the API group and nothing else, shown by tests.
+  - A web ACL with a rate limit for each address is attached, shown by tests.
+  - The layer prints the DNS record the person must make to validate the certificate, and no account identifier, shown by a test of the outputs.
+  notes: The load balancer does not check the machine's certificate, so the private authority's certificate on the machine still works behind it. Each cell has one API machine, so there is one target.
+    Nothing is applied by an agent. A person reads the plan, supplies the name, makes the validation record and approves the apply.
+  refs:
+  - docs/infrastructure.md
+- id: K-23c
+  title: Runbook for putting the AWS API and page on the internet, and taking them off
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - K-23b
+  decisions: []
+  deliverables:
+  - docs/runbooks/exposing-the-api-in-aws.md
+  acceptance:
+  - The runbook gives the steps in order, the name and the certificate's validation record, the edge and api layers through infra-apply, the allow-list, the check from an allowed range, and turning it
+    off, with what it exposes and what it costs.
+  - It says plainly that opening it to 0.0.0.0/0 is refused until K-23d, and what that task changes.
+  - A test holds its workflow names, inputs, layers, variables and files to the ones that exist.
+  notes: Written once the load balancer exists, so that no step in it cannot be done.
+  refs:
+  - docs/runbooks/rolling-the-api-image.md
+- id: K-23d
+  title: Limit sign-in failures for each address, not only each username
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-21
+  decisions:
+  - D-21
+  deliverables:
+  - crates/api
+  - docs/api-design.md
+  acceptance:
+  - Five failures from one address for one username lock that address out of that username for a minute, and the same username from another address is not locked, shown by tests. This replaces
+    K-21's lock on the username alone, which would let anyone lock a person out from anywhere.
+  - An address with many failures across different usernames is slowed for a minute, and the answer is the same 429 whether or not the username exists, shown by tests.
+  - The client address is taken from the load balancer's forwarded header only when the connection comes from a range the service is told to trust, and from the connection otherwise, shown by tests, so a
+    caller cannot choose its own address.
+  - No address, username or password is logged or returned, shown by tests.
+  notes: Behind a load balancer every request arrives from the load balancer, and the lock on a username alone becomes a way to lock a real person out. This changes an acceptance line of K-21, so it needs
+    a person's review. K-23b keeps 0.0.0.0/0 refused until this is done.
+  refs:
+  - docs/api-design.md#identity-and-authorisation
 - id: K-22
   title: The proving run makes a test user for the UI
   phase: P1
