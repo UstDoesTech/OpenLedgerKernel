@@ -14,6 +14,10 @@ const session = { token: null, timer: null };
 // The key of an account opening that has been sent and not yet answered, so that sending the same
 // form again after a lost reply opens one account, not two.
 let pending = null;
+// The key of the transfer on the page. It is made when the details are first sent and kept while
+// they stay the same, even after the cell answers, so pressing the button again is a repeat and
+// never a second transfer. Changing any detail, or starting a new transfer, makes a new key.
+let moving = null;
 
 const SIGN_IN_MESSAGES = {
   401: "That username and password were not accepted.",
@@ -26,6 +30,9 @@ function say(status) {
   if (status === 404) return "There is no such account on this cell.";
   if (status === 409) return "That was used before with different details. Change something and try again.";
   if (status === 421) return "That account is kept at a different cell. Use that cell's page.";
+  if (status === 422) {
+    return "The cell declined that. The paying account may not have enough available, or the currency may not match the accounts.";
+  }
   if (status === 429) return "Too many requests. Wait a moment, then try again.";
   if (status === 503) return "This cell is not ready, or is draining. Check the cell, then try again.";
   if (status >= 500) return "Something went wrong at the cell. Try again.";
@@ -77,12 +84,16 @@ function forget() {
   session.token = null;
   session.timer = null;
   pending = null;
+  moving = null;
   $("who").textContent = "";
   $("ready").textContent = "Not checked yet.";
   $("currency").value = "GBP";
   $("overdraft").value = "0";
   $("account").value = "";
-  for (const id of ["open-error", "read-error"]) showError(id, "");
+  for (const id of ["open-error", "read-error", "move-error"]) showError(id, "");
+  clearTransfer();
+  $("payer").value = "";
+  $("payee").value = "";
   $("opened").hidden = true;
   $("opened").textContent = "";
   $("account-view").hidden = true;
@@ -305,9 +316,123 @@ async function readAccount(event) {
   $("account-heading").focus();
 }
 
+// ---- Move money ----
+
+function clearTransfer() {
+  moving = null;
+  $("amount").value = "";
+  $("move-currency").value = "GBP";
+  $("key-line").hidden = true;
+  $("key").textContent = "";
+  $("move-new").hidden = true;
+  $("moved").hidden = true;
+  $("moved-repeat").textContent = "";
+  for (const id of ["m-status", "m-journal", "m-amount", "m-payer", "m-payee", "m-key"]) $(id).textContent = "";
+  $("m-watermarks").replaceChildren();
+  for (const id of ["payer", "payee", "amount", "move-currency"]) $(id).removeAttribute("aria-invalid");
+}
+
+function watermarkRows(list) {
+  const rows = [];
+  for (const item of list) {
+    if (typeof item?.cell !== "string" || !Number.isSafeInteger(item?.watermark)) return null;
+    const row = document.createElement("tr");
+    const cell = document.createElement("th");
+    cell.scope = "row";
+    cell.textContent = item.cell;
+    const mark = document.createElement("td");
+    mark.textContent = String(item.watermark);
+    row.append(cell, mark);
+    rows.push(row);
+  }
+  return rows;
+}
+
+async function moveMoney(event) {
+  event.preventDefault();
+  showError("move-error", "");
+  for (const id of ["payer", "payee", "amount", "move-currency"]) $(id).removeAttribute("aria-invalid");
+  const payer = $("payer").value.trim();
+  const payee = $("payee").value.trim();
+  const amount = $("amount").value.trim();
+  const currency = $("move-currency").value.trim().toUpperCase();
+  const mistake = (id, text) => {
+    $(id).setAttribute("aria-invalid", "true");
+    showError("move-error", text);
+    $(id).focus();
+  };
+  if (!/^acc_[A-Za-z0-9]{1,64}$/.test(payer)) return mistake("payer", "The account to pay from starts with acc_ and has no spaces.");
+  if (!/^acc_[A-Za-z0-9]{1,64}$/.test(payee)) return mistake("payee", "The account to pay to starts with acc_ and has no spaces.");
+  if (payer === payee) return mistake("payee", "Choose two different accounts.");
+  if (!/^[1-9][0-9]{0,14}$/.test(amount)) {
+    return mistake("amount", "An amount is a whole number of minor units above 0, such as 2500.");
+  }
+  if (!/^[A-Z]{3}$/.test(currency)) return mistake("move-currency", "A currency is three letters, such as GBP.");
+
+  const form = `${payer} ${payee} ${amount} ${currency}`;
+  if (moving === null || moving.form !== form) {
+    moving = { form, key: crypto.randomUUID() };
+  }
+  $("key").textContent = moving.key;
+  $("key-line").hidden = false;
+  const button = $("move-button");
+  button.disabled = true;
+  const result = await call("/v1/transfers", {
+    method: "POST",
+    key: moving.key,
+    body: {
+      payer_account_id: payer,
+      payee_account_id: payee,
+      amount: { minor: Number(amount), currency },
+    },
+  });
+  button.disabled = false;
+  if (result.status !== 201 && result.status !== 200) {
+    $("moved").hidden = true;
+    fail("move-error", result);
+    return;
+  }
+  const body = result.body;
+  const shown = money(body?.amount);
+  const rows = Array.isArray(body?.watermarks) ? watermarkRows(body.watermarks) : null;
+  if (
+    shown === null ||
+    rows === null ||
+    typeof body?.journal_id !== "string" ||
+    typeof body?.status !== "string" ||
+    typeof body?.replayed !== "boolean" ||
+    typeof body?.payer_account_id !== "string" ||
+    typeof body?.payee_account_id !== "string"
+  ) {
+    showError("move-error", "The cell's answer could not be shown exactly. Check the accounts before you try again.");
+    return;
+  }
+  $("moved-repeat").textContent = body.replayed
+    ? "This was a repeat of an earlier request with the same key. The cell wrote nothing new."
+    : "The transfer was posted. Pressing the button again sends the same key, so it is a repeat and writes nothing new.";
+  $("m-status").textContent = body.status;
+  $("m-journal").textContent = body.journal_id;
+  $("m-amount").textContent = shown;
+  $("m-payer").textContent = body.payer_account_id;
+  $("m-payee").textContent = body.payee_account_id;
+  $("m-key").textContent = moving.key;
+  $("m-watermarks").replaceChildren(...rows);
+  $("moved").hidden = false;
+  $("move-new").hidden = false;
+  $("moved-heading").focus();
+}
+
+function newTransfer() {
+  clearTransfer();
+  showError("move-error", "");
+  $("payer").focus();
+}
+
 $("sign-in").addEventListener("submit", signIn);
 $("sign-out").addEventListener("click", signOut);
 $("check").addEventListener("click", checkCell);
 $("open").addEventListener("submit", openAccount);
 $("read").addEventListener("submit", readAccount);
+$("move").addEventListener("submit", moveMoney);
+$("move-new").addEventListener("click", newTransfer);
 checkCell();
