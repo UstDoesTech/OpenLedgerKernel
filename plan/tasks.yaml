@@ -1446,7 +1446,7 @@ tasks:
   phase: P1
   workstream: U
   size: S
-  status: todo
+  status: done
   depends_on:
   - UI-02
   decisions:

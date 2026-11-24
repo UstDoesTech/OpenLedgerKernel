@@ -93,7 +93,10 @@ jobs:
           etcd --version | head -n 1
       - name: Integration tests
         run: cargo test -p conformance -p control-plane --features conformance/etcd -- --ignored
-      - name: API integration tests
+      - name: Install the browser test's two packages (Node and Chrome are on the runner)
+        working-directory: scripts/ui_a11y
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: API integration tests (includes the basic page in a real browser)
         run: cargo test -p api -- --ignored --test-threads=1
       - name: Rotation integration tests (a real Postgres with the issued certificates)
         run: cargo test -p pki -- --ignored --test-threads=1

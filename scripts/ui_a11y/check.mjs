@@ -35,6 +35,8 @@ const USER = "user@example.test";
 const RIGHT = "the right password";
 const TOKEN = "not-a-real-token";
 let ready = true;
+const seenKeys = new Set();
+const sentKeys = [];
 
 function readBody(req) {
   return new Promise((done) => {
@@ -73,9 +75,42 @@ const server = http.createServer(async (req, res) => {
         draining: !ready,
       }),
     );
-  } else if (path.startsWith("/v1/accounts") && req.headers.authorization !== `Bearer ${TOKEN}`) {
+  } else if (
+    (path.startsWith("/v1/accounts") || path === "/v1/transfers") &&
+    req.headers.authorization !== `Bearer ${TOKEN}`
+  ) {
     res.writeHead(401, { "content-type": "application/json" });
     res.end(JSON.stringify({ code: "unauthenticated" }));
+  } else if (req.method === "POST" && path === "/v1/transfers") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const key = req.headers["idempotency-key"];
+    if (!key) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ title: "no key" }));
+    } else if (body.payee_account_id === "acc_declined") {
+      // The server's own words can carry an identifier. The page must not show them.
+      res.writeHead(422, { "content-type": "application/json" });
+      res.end(JSON.stringify({ title: "acc_declined has too little", detail: "acc_declined" }));
+    } else {
+      const replayed = seenKeys.has(key);
+      seenKeys.add(key);
+      sentKeys.push(key);
+      res.writeHead(201, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          journal_id: "jr_test1",
+          status: "posted",
+          payer_account_id: body.payer_account_id,
+          payee_account_id: body.payee_account_id,
+          amount: body.amount,
+          watermarks: [
+            { cell: "cell-test", watermark: 7 },
+            { cell: "cell-other", watermark: 3 },
+          ],
+          replayed,
+        }),
+      );
+    }
   } else if (req.method === "POST" && path === "/v1/accounts") {
     const body = JSON.parse((await readBody(req)) || "{}");
     if (!req.headers["idempotency-key"]) {
@@ -315,6 +350,72 @@ try {
     await page.waitForFunction(() => document.getElementById("read-error").textContent.includes("starts with"));
     await audit(page, `${scheme} read: not an account number`);
 
+    // Move money: mistakes caught at once, one the cell declines, a transfer, and its repeat.
+    const fill = async (id, text) => {
+      await page.$eval(`#${id}`, (e) => (e.value = ""));
+      await type(page, `#${id}`, text);
+    };
+    await fill("payer", "acc_test1");
+    await fill("payee", "acc_test1");
+    await fill("amount", "2500");
+    await page.click("#move-button");
+    await waitFor("move-error");
+    if (!(await said("move-error")).includes("two different")) problems.push(`${scheme}: same account not refused`);
+    await audit(page, `${scheme} move: same account`);
+    await fill("payee", "acc_test2");
+    await fill("amount", "25.50");
+    await page.click("#move-button");
+    await page.waitForFunction(() => document.getElementById("move-error").textContent.includes("whole number"));
+    await audit(page, `${scheme} move: amount mistake`);
+    await fill("payee", "acc_declined");
+    await fill("amount", "2500");
+    await page.click("#move-button");
+    await page.waitForFunction(() => document.getElementById("move-error").textContent.includes("declined"));
+    if ((await said("move-error")).includes("acc_declined")) {
+      problems.push(`${scheme}: the server's own words were shown`);
+    }
+    if (await visible("moved")) problems.push(`${scheme}: a transfer was shown for a declined one`);
+    await audit(page, `${scheme} move: declined by the cell`);
+    await fill("payee", "acc_test2");
+    await page.keyboard.press("Enter");
+    await waitFor("moved");
+    if (await visible("move-error")) problems.push(`${scheme}: an old error was left showing`);
+    const first = await said("key");
+    if (!/^[0-9a-f-]{36}$/.test(first) || (await said("m-key")) !== first) {
+      problems.push(`${scheme}: the request key was not made and shown`);
+    }
+    if ((await said("m-amount")) !== "2500 GBP" || !(await said("moved-repeat")).includes("was posted")) {
+      problems.push(`${scheme}: the first transfer was not shown as posted`);
+    }
+    if ((await page.evaluate(() => document.activeElement.id)) !== "moved-heading") {
+      problems.push(`${scheme}: focus did not move to the transfer`);
+    }
+    if ((await page.$$eval("#m-watermarks tr", (rows) => rows.length)) !== 2) {
+      problems.push(`${scheme}: the watermarks were not listed`);
+    }
+    await audit(page, `${scheme} move: posted`);
+    // The same details again: the same key, and the cell says it is a repeat.
+    await page.click("#move-button");
+    await page.waitForFunction(() => document.getElementById("moved-repeat").textContent.includes("repeat of"));
+    if ((await said("key")) !== first || (await said("m-key")) !== first) {
+      problems.push(`${scheme}: a second press made a new key`);
+    }
+    await audit(page, `${scheme} move: repeat`);
+    // A different amount is a different request, with a key of its own.
+    await fill("amount", "100");
+    await page.click("#move-button");
+    await page.waitForFunction(() => document.getElementById("m-amount").textContent === "100 GBP");
+    if ((await said("key")) === first) problems.push(`${scheme}: a changed amount kept the old key`);
+    if (!(await said("moved-repeat")).includes("was posted")) {
+      problems.push(`${scheme}: a changed amount was shown as a repeat`);
+    }
+    await page.click("#move-new");
+    if (await visible("moved")) problems.push(`${scheme}: an old transfer was left showing`);
+    if ((await page.evaluate(() => document.activeElement.id)) !== "payer") {
+      problems.push(`${scheme}: focus did not move to the start of the form`);
+    }
+    await audit(page, `${scheme} move: new transfer`);
+
     // A cell that is not ready says so.
     await fetch(`${base}/__ready/off`);
     await page.click("#check");
@@ -322,6 +423,10 @@ try {
     await audit(page, `${scheme} cell draining`);
     await fetch(`${base}/__ready/on`);
 
+    if (new Set(sentKeys).size !== sentKeys.length - 1) {
+      problems.push(`${scheme}: the keys sent were ${sentKeys.length} with ${new Set(sentKeys).size} different`);
+    }
+    sentKeys.length = 0;
     await page.focus("#sign-out");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => !document.getElementById("signed-out").hidden);

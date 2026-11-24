@@ -93,6 +93,55 @@
           </table>
         </section>
       </section>
+
+      <section aria-labelledby="move-heading">
+        <h3 id="move-heading">Move money</h3>
+        <form id="move" novalidate>
+          <p id="move-error" class="error" role="alert" hidden></p>
+          <div class="field">
+            <label for="payer">Pay from</label>
+            <input id="payer" name="payer" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="payer-hint" required>
+            <p id="payer-hint" class="hint">An account number kept at this cell. It starts with acc_.</p>
+          </div>
+          <div class="field">
+            <label for="payee">Pay to</label>
+            <input id="payee" name="payee" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="payee-hint" required>
+            <p id="payee-hint" class="hint">An account number, kept at this cell or at another cell.</p>
+          </div>
+          <div class="field">
+            <label for="amount">Amount, in minor units</label>
+            <input id="amount" name="amount" type="text" inputmode="numeric" autocomplete="off" aria-describedby="amount-hint" required>
+            <p id="amount-hint" class="hint">A whole number of pence, cents or the currency's smallest unit, such as 2500.</p>
+          </div>
+          <div class="field">
+            <label for="move-currency">Currency</label>
+            <input id="move-currency" name="move-currency" type="text" value="GBP" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="move-currency-hint" required>
+            <p id="move-currency-hint" class="hint">Three letters, such as GBP. It must be the accounts' currency.</p>
+          </div>
+          <p id="key-line" class="hint" hidden>Request key: <code id="key"></code>. The page made it. Pressing the button again with the same details sends the same key, so it is a repeat and writes nothing new.</p>
+          <button type="submit" id="move-button">Move money</button>
+          <button type="button" id="move-new" hidden>Start a new transfer</button>
+        </form>
+        <section id="moved" aria-labelledby="moved-heading" hidden>
+          <h3 id="moved-heading" tabindex="-1">Transfer</h3>
+          <p id="moved-repeat" role="status"></p>
+          <dl>
+            <dt>Status</dt><dd id="m-status"></dd>
+            <dt>Journal</dt><dd id="m-journal"></dd>
+            <dt>Amount</dt><dd id="m-amount"></dd>
+            <dt>From</dt><dd id="m-payer"></dd>
+            <dt>To</dt><dd id="m-payee"></dd>
+            <dt>Request key</dt><dd id="m-key"></dd>
+          </dl>
+          <table>
+            <caption>Where it was recorded</caption>
+            <thead>
+              <tr><th scope="col">Cell</th><th scope="col">Watermark</th></tr>
+            </thead>
+            <tbody id="m-watermarks"></tbody>
+          </table>
+        </section>
+      </section>
     </section>
   </main>
 </body>

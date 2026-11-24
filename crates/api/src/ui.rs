@@ -259,10 +259,18 @@ mod tests {
             );
         }
         assert_eq!(
-            inputs, 5,
-            "username, password, currency, overdraft, account"
+            inputs, 9,
+            "username, password, currency, overdraft, account, payer, payee, amount, move-currency"
         );
-        for hint in ["currency-hint", "overdraft-hint", "account-hint"] {
+        for hint in [
+            "currency-hint",
+            "overdraft-hint",
+            "account-hint",
+            "payer-hint",
+            "payee-hint",
+            "amount-hint",
+            "move-currency-hint",
+        ] {
             assert!(
                 INDEX.contains(&format!("aria-describedby=\"{hint}\"")),
                 "{hint}"
