@@ -56,7 +56,7 @@ For each cell:
    | Azure | `module.api_azure.azurerm_linux_virtual_machine.api` |
    | Google Cloud | `module.api_gcp.google_compute_instance.api` |
 
-2. Read the plan: one machine replaced and nothing else deleted. The workflow refuses a plan that deletes a disk, deletes anything but that machine and its disk attachment, or replaces another machine, and says so without printing a name. If it refuses, nothing was applied. Stop and read the plan before you try anything else.
+2. Read the plan: one machine replaced and nothing else deleted. **On Azure the plan also shows two role assignments, `secret` and `registry`, replaced.** The machine's identity is new when the machine is, and they are built from it. That is expected, and it is the only thing besides the machine that the check lets through. On AWS and Google Cloud the plan shows the machine alone. The workflow refuses a plan that deletes a disk, deletes anything but that machine and its disk attachment, or replaces another machine, and says so without printing a name. If it refuses, nothing was applied. Stop and read the plan before you try anything else.
 3. Dispatch it again with `action` = `apply`, the same `replace`, and approve the `infra-apply` environment. The approved fingerprint covers the replacement, and the apply plans again and compares.
 4. Wait for the machine to start, then check the cell. `/healthz` says `status` `ok`. For the first image that has the basic page, `/ui` answers `200` where the old image answers `404`, which shows the new image is the one running. If you made a test user, signing in at `/ui` works.
 5. Only then go to the next cell.

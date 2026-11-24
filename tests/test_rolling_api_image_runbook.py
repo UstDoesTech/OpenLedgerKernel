@@ -128,3 +128,11 @@ def test_it_prints_no_secret_and_no_cell_name():
     assert not re.search(r"sha256:[0-9a-f]{64}", TEXT), "no real digest in the runbook"
     for word in ["bankofmumanddad", "kv-ledger"]:
         assert word not in TEXT
+
+
+def test_it_says_an_azure_plan_shows_two_role_assignments_replaced_and_the_module_has_them():
+    assert "two role assignments" in TEXT and "`secret`" in TEXT and "`registry`" in TEXT
+    azure = (ROOT / "infra" / "modules" / "api" / "azure" / "main.tf").read_text()
+    for name in ["secret", "registry"]:
+        assert f'resource "azurerm_role_assignment" "{name}"' in azure
+    assert "azurerm_linux_virtual_machine.api.identity[0].principal_id" in azure

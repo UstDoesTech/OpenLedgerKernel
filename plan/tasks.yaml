@@ -1238,7 +1238,7 @@ tasks:
   phase: P1
   workstream: I
   size: S
-  status: in_progress
+  status: done
   depends_on:
   - K-20h
   decisions: []
