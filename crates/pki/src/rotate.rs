@@ -13,6 +13,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use argon2::{Argon2, PasswordHasher};
 use rcgen::{
     BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
     KeyPair, KeyUsagePurpose, SanType,
@@ -63,6 +64,8 @@ pub struct Report {
     /// had none. A person's own entries are never counted, and never replaced.
     pub databases: usize,
     pub tokens: usize,
+    /// Test users made for the basic UI, because a proving environment's secret had no user list.
+    pub users: usize,
     /// Cells whose secret still lacks a file the service needs, such as the database connection.
     pub incomplete: usize,
 }
@@ -71,7 +74,7 @@ impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "cells: {}, certificates issued: {}, database node certificates issued: {}, credentials issued: {}, secret versions written: {}, database connections made: {}, login files made: {}, cells still missing a file: {}",
+            "cells: {}, certificates issued: {}, database node certificates issued: {}, credentials issued: {}, secret versions written: {}, database connections made: {}, login files made: {}, test users made: {}, cells still missing a file: {}",
             self.cells,
             self.certificates,
             self.node_certificates,
@@ -79,6 +82,7 @@ impl fmt::Display for Report {
             self.versions,
             self.databases,
             self.tokens,
+            self.users,
             self.incomplete
         )
     }
@@ -102,7 +106,7 @@ pub const SECRET_FILES: [&str; 10] = [
 
 /// Entries the service reads when they are there and does without when they are not. A rotation
 /// writes one only when the manifest gives it, and never removes one.
-pub const OPTIONAL_FILES: [&str; 1] = ["db-ca.crt"];
+pub const OPTIONAL_FILES: [&str; 2] = ["db-ca.crt", "users.json"];
 
 pub struct Rotation<'a> {
     pub manifest: &'a Manifest,
@@ -128,6 +132,37 @@ fn proving_tokens(tenants: &[String]) -> Result<String, PkiError> {
         .map(|tenant| Ok(json!({"token": token()?, "tenant": tenant, "principal": "usr_proving"})))
         .collect::<Result<_, PkiError>>()?;
     Ok(Value::Array(list).to_string())
+}
+
+/// The test user of a proving environment (D-21): a fake domain, so nothing real can be mistaken
+/// for it. Its password is made fresh for each cell and kept in the cell's secret as `ui-test-password`,
+/// which the machines do not read, so a person can. Only its Argon2id hash goes in `users.json`.
+pub const TEST_USER: &str = "user@bankofmumanddad.test";
+const TEST_PRINCIPAL: &str = "usr_uitest";
+pub const TEST_PASSWORD_ENTRY: &str = "ui-test-password";
+
+/// The user list and the password it was made from. Neither is ever printed.
+fn proving_user(tenant: &str) -> Result<(String, String), PkiError> {
+    let mut raw = [0u8; 16];
+    SystemRandom::new()
+        .fill(&mut raw)
+        .map_err(|_| PkiError::Signer("no randomness"))?;
+    let password = hex(&raw);
+    let mut salt = [0u8; 16];
+    SystemRandom::new()
+        .fill(&mut salt)
+        .map_err(|_| PkiError::Signer("no randomness"))?;
+    let hash = Argon2::default()
+        .hash_password_with_salt(password.as_bytes(), &salt)
+        .map_err(|_| PkiError::Signer("a password could not be hashed"))?
+        .to_string();
+    let list = json!([{
+        "username": TEST_USER,
+        "password_hash": hash,
+        "tenant": tenant,
+        "principal": TEST_PRINCIPAL,
+    }]);
+    Ok((list.to_string(), password))
 }
 
 fn token() -> Result<String, PkiError> {
@@ -361,6 +396,14 @@ impl<'a> Rotation<'a> {
                         proving_tokens(&self.manifest.tenants)?,
                     );
                     report.tokens += 1;
+                }
+                // The test user for the basic UI. A list that is there is a person's, or an
+                // earlier run's, and is kept with its password.
+                if entries.get("users.json").is_none_or(String::is_empty) {
+                    let (list, password) = proving_user(&self.manifest.tenants[0])?;
+                    entries.insert("users.json".into(), list);
+                    entries.insert(TEST_PASSWORD_ENTRY.into(), password);
+                    report.users += 1;
                 }
             }
         }

@@ -31,6 +31,7 @@ locals {
   # takes each as "optional:<name>", so a secret without one does not stop the start.
   optional_secret_files = [
     "db-ca.crt",
+    "users.json",
   ]
 
   secret_arguments = "${var.secret} ${join(" ", concat(local.secret_files, [for f in local.optional_secret_files : "optional:${f}"]))}"
@@ -52,6 +53,7 @@ locals {
     LEDGER_DB_FILE            = "${local.secrets_dir}/db.conn"
     LEDGER_DB_CA_FILE         = "${local.secrets_dir}/db-ca.crt"
     LEDGER_TOKENS_FILE        = "${local.secrets_dir}/tokens.json"
+    LEDGER_USERS_FILE         = "${local.secrets_dir}/users.json"
     LEDGER_LISTEN             = "0.0.0.0:${var.public_port}"
     LEDGER_INTERNAL_LISTEN    = "0.0.0.0:${var.internal_port}"
     LEDGER_INTERNAL_AUTH_FILE = "${local.secrets_dir}/internal-auth.json"

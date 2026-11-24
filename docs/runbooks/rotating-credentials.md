@@ -48,7 +48,7 @@ The run works without step 4, and says so: it prints how many cells still lack a
 A run takes about 15 minutes with three cells, almost all of it the two waits. The job prints one line:
 
 ```
-cells: 3, certificates issued: 6, database node certificates issued: 15, credentials issued: 6, secret versions written: 19, database connections made: 0, login files made: 0, cells still missing a file: 0
+cells: 3, certificates issued: 6, database node certificates issued: 15, credentials issued: 6, secret versions written: 19, database connections made: 0, login files made: 0, test users made: 0, cells still missing a file: 0
 ```
 
 | Count | What it is |
@@ -60,6 +60,7 @@ cells: 3, certificates issued: 6, database node certificates issued: 15, credent
 | `secret versions written` | Three for each cell when credentials are made, one when only certificates are, one more for each database machine, and one for the authority's certificate on the first run. |
 | `database connections made` | Cells whose `db.conn` was missing and was filled this run. Only a `proving` run makes any. |
 | `login files made` | Cells whose `tokens.json` was missing and got one fresh token for the tenant. Only a `proving` run makes any. |
+| `test users made` | Cells that got the test user for the basic UI this run, with a new password. Only a `proving` run makes any. A cell that already has a `users.json` keeps it, and keeps its password. |
 | `cells still missing a file` | Cells whose secret lacks a file the service needs. It should be 0 once `db.conn` and `tokens.json` are filled, by a `proving` run or by a person. |
 
 The log shows nothing else. No certificate, key, token, address, secret name or cell name is printed anywhere. Not by the tool, and not by the cloud tools it runs, whose output stays inside it. If you need to know more, ask the cloud: look at a secret's versions with your own sign-in.
@@ -70,7 +71,7 @@ A self-hosted cell's database machines cannot start until their certificates exi
 
 1. **Certificates, `proving` off.** Run with `kind` `all`. The counts line shows `database node certificates issued: 5` for each self-hosted cell (15 for three). The run reads no administrator credential, so it cannot hit the error above.
 2. **Wait about five minutes.** Each machine's unit restarts every ten seconds, and reads its secret each time. Once its files are there it starts, and each primary writes its administrator credential.
-3. **Fill the files, `proving` on.** Run again with `kind` `all`. It copies each cell's administrator credential into `db.conn` and makes a token for the tenant. The counts line shows `database connections made` and `login files made`, and `cells still missing a file: 0`.
+3. **Fill the files, `proving` on.** Run again with `kind` `all`. It copies each cell's administrator credential into `db.conn`, makes a token for the tenant, and makes the test user. The counts line shows `database connections made`, `login files made` and `test users made`, and `cells still missing a file: 0`.
 
 If step 3 still says a cell has no administrator credential after ten minutes, the machines did not start. See "If a run fails" for where to look.
 
@@ -129,4 +130,5 @@ A cell's private key, if it was seen, can be used until its certificate runs out
 - **etcd's own members.** The cells' `etcd-ca.crt` is this authority's certificate, so etcd must trust it and show a certificate it signed. The members' certificates are not issued by this run. Until a task makes them, make them from this authority and keep them in each member's secret.
 - **`db.conn` and `tokens.json`.** A person fills these, unless the environment is a proving one and the run was given `proving` (D-19). Then the run copies the cell's administrator credential into `db.conn` and makes a fresh token for the tenant. K-19d replaces the copy with a role the node agent makes. Real sign-in replaces the tokens in A-06.
 - **Reading the proving token.** Use your own sign-in and keep it out of the log: for AWS, `aws secretsmanager get-secret-value --secret-id <the cell's API secret> --query SecretString --output text | jq -r '."tokens.json" | fromjson | .[0].token' > ~/smoke-token-aws`. Each cell's token is its own.
+- **Reading the test user's password.** A `proving` run makes one user for the basic UI, `user@bankofmumanddad.test` (a fake domain), in each cell. Its password is made fresh for each cell and kept in the cell's API secret as `ui-test-password`. The service never reads that entry, only its hash in `users.json`. Read it with your own sign-in and keep it out of the log: for AWS, `aws secretsmanager get-secret-value --secret-id <the cell's API secret> --query SecretString --output text | jq -r '."ui-test-password"'`. Never put it in the repository, an issue or a pull request. Real sign-in replaces this in A-06.
 - **The 7 day rhythm.** A person dispatches it, because a credentialed workflow runs only when a person starts it.
