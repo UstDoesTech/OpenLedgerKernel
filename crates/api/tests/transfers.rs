@@ -681,8 +681,12 @@ async fn nothing_can_update_or_delete_an_entry_over_http() {
 #[ignore = "needs Postgres on ports 5431 and 5432"]
 async fn every_route_in_the_list_is_served_and_wants_a_token() {
     let p = Pair::start("routes").await;
+    // Signing in and out are the only routes that take no token before they
+    // are called: signing in is how a person gets one. They are named here so
+    // the exemption cannot grow, and `sign_in.rs` tests what they do.
+    const OPEN_BY_DESIGN: [&str; 3] = ["/healthz", "/v1/sessions", "/v1/sessions:end"];
     for (method, path) in ROUTES {
-        if *path == "/healthz" {
+        if OPEN_BY_DESIGN.contains(path) {
             continue;
         }
         let uri = path.replace("{accountId}", "acc_x");
