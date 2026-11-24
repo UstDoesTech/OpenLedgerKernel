@@ -350,7 +350,7 @@ flowchart LR
 | **K-21** Sign in to the API with a username and password | Ledger kernel | K-13 | D-21 | M | Agent | Done |
 | **K-20h** Let infra-apply replace one API machine | Infrastructure | K-20g | None | S | Agent | Done |
 | **K-20i** Runbook for rolling a new API image onto running cells | Infrastructure | K-20h | None | S | Agent | Done |
-| **K-20j** Let replacing an Azure API machine recreate its role assignments | Infrastructure | K-20h | None | S | Agent | To do |
+| **K-20j** Let replacing an Azure API machine recreate its role assignments | Infrastructure | K-20h | None | S | Agent | In progress |
 | **K-22** The proving run makes a test user for the UI | Infrastructure | K-21 | D-21 | S | Agent | Done |
 | **UI-01** Serve a basic page from the API, with sign-in | Basic UI | K-21 | D-20, D-21 | M | Agent | Done |
 | **UI-02** Check a cell, open an account and read its balances in the page | Basic UI | UI-01 | D-20 | M | Agent | To do |
