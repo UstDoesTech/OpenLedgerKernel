@@ -8,7 +8,7 @@
 //
 // It prints counts, and the rule names of any violation. Nothing it uses is a real credential.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -78,8 +78,21 @@ const server = http.createServer(async (req, res) => {
 await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
 const base = `http://127.0.0.1:${server.address().port}`;
 
+// Puppeteer does not search the path, so find the browser here: CHROME_PATH, or the first of the
+// usual names in a directory on PATH.
+function findBrowser() {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  const names = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
+  for (const dir of (process.env.PATH || "").split(":")) {
+    for (const name of names) {
+      if (dir && existsSync(join(dir, name))) return join(dir, name);
+    }
+  }
+  throw new Error("no Chrome found: set CHROME_PATH to its full path");
+}
+
 const browser = await puppeteer.launch({
-  executablePath: process.env.CHROME_PATH || "google-chrome",
+  executablePath: findBrowser(),
   headless: true,
   args: ["--no-sandbox", "--disable-gpu"],
 });
