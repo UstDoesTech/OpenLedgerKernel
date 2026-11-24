@@ -27,7 +27,13 @@ use tower::ServiceExt;
 
 const PORT: u16 = 5431;
 const NAME: &str = "user@bankofmumanddad.test";
-const PASSWORD: &str = "a password made only for this test";
+/// Made when it is used, never written down, so that no password is a literal in the code.
+fn password() -> String {
+    format!("test-{}-password", std::process::id())
+}
+fn wrong() -> String {
+    format!("wrong-{}-password", std::process::id())
+}
 const OTHER_TOKEN: &str = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
 
 async fn connect() -> Client {
@@ -81,7 +87,7 @@ impl Cell {
         let mut state = AppState::new(node, &schema, connect().await, cp, guard, Arc::new(tokens));
         if with_sign_in {
             let hash = Argon2::default()
-                .hash_password_with_salt(PASSWORD.as_bytes(), b"a test salt.....")
+                .hash_password_with_salt(password().as_bytes(), b"a test salt.....")
                 .unwrap()
                 .to_string();
             let users = Users::from_json(
@@ -200,7 +206,7 @@ async fn a_sign_in_makes_a_token_that_works_on_the_other_routes_until_it_is_ende
             "/v1/sessions",
             None,
             None,
-            Some(json!({"username": NAME, "password": PASSWORD})),
+            Some(json!({"username": NAME, "password": &password()})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
@@ -250,7 +256,7 @@ async fn a_sign_in_makes_a_token_that_works_on_the_other_routes_until_it_is_ende
 #[ignore = "needs the local Postgres nodes"]
 async fn another_tenants_account_is_still_not_found_with_a_signed_in_token() {
     let cell = Cell::start("signin_tenant", true).await;
-    let (_, body, _) = cell.sign_in(NAME, PASSWORD).await;
+    let (_, body, _) = cell.sign_in(NAME, &password()).await;
     let token = body["token"].as_str().unwrap().to_owned();
     let (status, _, mine, _) = cell
         .send(
@@ -283,14 +289,16 @@ async fn another_tenants_account_is_still_not_found_with_a_signed_in_token() {
 #[ignore = "needs the local Postgres nodes"]
 async fn an_unknown_user_and_a_wrong_password_get_the_same_answer_and_nothing_sent_comes_back() {
     let cell = Cell::start("signin_same", true).await;
-    let (s1, b1, t1) = cell.sign_in(NAME, "not the password").await;
-    let (s2, b2, t2) = cell.sign_in("nobody@bankofmumanddad.test", PASSWORD).await;
+    let (s1, b1, t1) = cell.sign_in(NAME, &wrong()).await;
+    let (s2, b2, t2) = cell
+        .sign_in("nobody@bankofmumanddad.test", &password())
+        .await;
     assert_eq!((s1, &b1), (s2, &b2));
     assert_eq!(s1, StatusCode::UNAUTHORIZED);
     assert_eq!(b1["code"], "invalid_credentials");
     for text in [t1, t2] {
-        assert!(!text.contains("bankofmumanddad") && !text.contains("not the password"));
-        assert!(!text.contains(PASSWORD));
+        assert!(!text.contains("bankofmumanddad") && !text.contains(&wrong()));
+        assert!(!text.contains(&password()));
     }
     cell.drop_schema().await;
 }
@@ -300,10 +308,10 @@ async fn an_unknown_user_and_a_wrong_password_get_the_same_answer_and_nothing_se
 async fn five_failures_in_a_row_are_a_429_and_a_bad_body_is_refused() {
     let cell = Cell::start("signin_lock", true).await;
     for _ in 0..5 {
-        let (status, ..) = cell.sign_in(NAME, "wrong").await;
+        let (status, ..) = cell.sign_in(NAME, &wrong()).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
-    let (status, body, _) = cell.sign_in(NAME, PASSWORD).await;
+    let (status, body, _) = cell.sign_in(NAME, &password()).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
     assert_eq!(body["code"], "too_many_attempts");
     // A field that is not listed, such as a tenant, is refused.
@@ -312,7 +320,7 @@ async fn five_failures_in_a_row_are_a_429_and_a_bad_body_is_refused() {
             "/v1/sessions",
             None,
             None,
-            Some(json!({"username": "other@bankofmumanddad.test", "password": PASSWORD, "tenant": "ten_zed"})),
+            Some(json!({"username": "other@bankofmumanddad.test", "password": &password(), "tenant": "ten_zed"})),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -323,7 +331,7 @@ async fn five_failures_in_a_row_are_a_429_and_a_bad_body_is_refused() {
 #[ignore = "needs the local Postgres nodes"]
 async fn a_cell_with_no_sign_in_says_so_and_still_takes_bearer_tokens() {
     let cell = Cell::start("signin_off", false).await;
-    let (status, body, _) = cell.sign_in(NAME, PASSWORD).await;
+    let (status, body, _) = cell.sign_in(NAME, &password()).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(body["code"], "sign_in_not_available");
     let (status, ..) = cell
@@ -382,7 +390,7 @@ async fn the_page_can_open_an_account_and_read_it_and_nothing_the_api_says_is_ca
             "/v1/sessions",
             None,
             None,
-            Some(json!({"username": NAME, "password": PASSWORD})),
+            Some(json!({"username": NAME, "password": &password()})),
         )
         .await;
     let token = body["token"].as_str().unwrap().to_owned();
@@ -487,19 +495,19 @@ async fn behind_the_balancer_a_lock_is_for_the_real_address_and_a_made_up_one_is
     for i in 0..5 {
         let claim = format!("192.0.2.{i}, 198.51.100.7");
         let (status, ..) = cell
-            .sign_in_from(BALANCER, Some(&claim), NAME, "wrong")
+            .sign_in_from(BALANCER, Some(&claim), NAME, &wrong())
             .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
     let (status, body, text) = cell
-        .sign_in_from(BALANCER, Some("198.51.100.7"), NAME, PASSWORD)
+        .sign_in_from(BALANCER, Some("198.51.100.7"), NAME, &password())
         .await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
     assert_eq!(body["code"], "too_many_attempts");
     assert!(!text.contains("198.51.100") && !text.contains(NAME));
     // The person, from another address behind the same balancer, signs in.
     let (status, ..) = cell
-        .sign_in_from(BALANCER, Some("203.0.113.9"), NAME, PASSWORD)
+        .sign_in_from(BALANCER, Some("203.0.113.9"), NAME, &password())
         .await;
     assert_eq!(status, StatusCode::CREATED);
     cell.drop_schema().await;
@@ -513,12 +521,12 @@ async fn a_caller_that_is_not_the_balancer_cannot_choose_its_address() {
     for i in 0..5 {
         let claim = format!("192.0.2.{i}");
         let (status, ..) = cell
-            .sign_in_from("198.51.100.7", Some(&claim), NAME, "wrong")
+            .sign_in_from("198.51.100.7", Some(&claim), NAME, &wrong())
             .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
     let (status, ..) = cell
-        .sign_in_from("198.51.100.7", Some("192.0.2.200"), NAME, PASSWORD)
+        .sign_in_from("198.51.100.7", Some("192.0.2.200"), NAME, &password())
         .await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     // With no trusted range at all, the header is never read, even from the balancer's address.
@@ -526,11 +534,11 @@ async fn a_caller_that_is_not_the_balancer_cannot_choose_its_address() {
     for i in 0..5 {
         let claim = format!("192.0.2.{i}");
         let _ = cell2
-            .sign_in_from(BALANCER, Some(&claim), NAME, "wrong")
+            .sign_in_from(BALANCER, Some(&claim), NAME, &wrong())
             .await;
     }
     let (status, ..) = cell2
-        .sign_in_from(BALANCER, Some("192.0.2.99"), NAME, PASSWORD)
+        .sign_in_from(BALANCER, Some("192.0.2.99"), NAME, &password())
         .await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     cell.drop_schema().await;
@@ -547,20 +555,20 @@ async fn one_address_trying_many_names_gets_the_same_429_whether_or_not_the_name
                 "198.51.100.7",
                 None,
                 &format!("nobody{i}@bankofmumanddad.test"),
-                "x",
+                &wrong(),
             )
             .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
     let (s1, b1, t1) = cell
-        .sign_in_from("198.51.100.7", None, NAME, PASSWORD)
+        .sign_in_from("198.51.100.7", None, NAME, &password())
         .await;
     let (s2, b2, t2) = cell
         .sign_in_from(
             "198.51.100.7",
             None,
             "nobody@bankofmumanddad.test",
-            PASSWORD,
+            &password(),
         )
         .await;
     assert_eq!((s1, &b1), (s2, &b2));
