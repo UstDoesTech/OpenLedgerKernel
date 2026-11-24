@@ -191,7 +191,107 @@ mod tests {
         }
         assert!(SCRIPT.contains("session.token = issued.token"));
         // Where the token is sent: a header, never a query string.
-        assert!(SCRIPT.contains("authorization: `Bearer ${token}`"));
+        assert!(SCRIPT.contains("authorization: `Bearer ${session.token}`"));
         assert!(!SCRIPT.contains("?token"));
+    }
+
+    #[test]
+    fn money_is_whole_minor_units_and_a_currency_and_never_a_decimal() {
+        for decimal in [
+            "parseFloat",
+            "toFixed",
+            "toLocale",
+            "NumberFormat",
+            "Math.round",
+            "Math.floor",
+        ] {
+            assert!(!SCRIPT.contains(decimal), "app.js must not use {decimal}");
+        }
+        // No scaling by a hundred, which is how pounds and pence get mixed up. (`* 1000` for a timer
+        // is not that, so only a standalone 100 counts.)
+        for op in ["/ 100", "* 100", "/100", "*100"] {
+            for (at, _) in SCRIPT.match_indices(op) {
+                let next = SCRIPT[at + op.len()..].chars().next().unwrap_or(' ');
+                assert!(next.is_ascii_digit(), "app.js scales by 100 with {op}");
+            }
+        }
+        // The only way an amount is shown, and an amount that is not exact is refused.
+        assert!(SCRIPT.contains("`${value.minor} ${value.currency}`"));
+        assert!(SCRIPT.contains("Number.isSafeInteger(value.minor)"));
+        // An amount typed in is digits only.
+        assert!(SCRIPT.contains("/^[0-9]{1,15}$/"));
+    }
+
+    #[test]
+    fn no_failure_shows_what_the_server_said() {
+        // The server's title, detail and type can quote an identifier, so none is ever read.
+        for read in [
+            ".detail",
+            ".title",
+            ".type",
+            ".code",
+            "[\"detail\"]",
+            "[\"title\"]",
+        ] {
+            assert!(
+                !SCRIPT.contains(read),
+                "app.js must not read {read} from an error"
+            );
+        }
+        // Each failure is said from the status alone.
+        assert!(SCRIPT.contains("function say(status)"));
+        assert!(SCRIPT.contains("say(result.status)"));
+        // Values from the server are put on the page as text, never as markup.
+        assert!(!SCRIPT.contains("innerHTML"));
+        assert!(!SCRIPT.contains("insertAdjacentHTML"));
+        assert!(!SCRIPT.contains("document.write"));
+    }
+
+    #[test]
+    fn every_input_has_a_label_and_every_hint_is_tied_to_its_input() {
+        let mut inputs = 0;
+        for piece in INDEX.split("<input id=\"").skip(1) {
+            let id = piece.split('"').next().unwrap();
+            inputs += 1;
+            assert!(
+                INDEX.contains(&format!("<label for=\"{id}\">")),
+                "{id} has no label"
+            );
+        }
+        assert_eq!(
+            inputs, 5,
+            "username, password, currency, overdraft, account"
+        );
+        for hint in ["currency-hint", "overdraft-hint", "account-hint"] {
+            assert!(
+                INDEX.contains(&format!("aria-describedby=\"{hint}\"")),
+                "{hint}"
+            );
+            assert!(INDEX.contains(&format!("<p id=\"{hint}\"")), "{hint}");
+        }
+        assert!(INDEX.contains("<caption>"));
+        assert!(INDEX.contains("scope=\"col\""));
+        assert!(INDEX.contains("scope=\"row\""));
+    }
+
+    #[test]
+    fn every_element_the_script_looks_for_is_in_the_page() {
+        let mut checked = 0;
+        for piece in SCRIPT.split("$(\"").skip(1) {
+            let id = piece.split('"').next().unwrap();
+            assert!(
+                INDEX.contains(&format!("id=\"{id}\"")),
+                "app.js looks for #{id}"
+            );
+            checked += 1;
+        }
+        assert!(checked > 20);
+    }
+
+    #[test]
+    fn opening_an_account_sends_an_idempotency_key_and_keeps_it_for_a_repeat_of_the_same_form() {
+        assert!(SCRIPT.contains("\"idempotency-key\""));
+        assert!(SCRIPT.contains("crypto.randomUUID()"));
+        assert!(SCRIPT.contains("pending.form !== form"));
     }
 }
