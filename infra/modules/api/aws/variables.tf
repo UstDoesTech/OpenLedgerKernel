@@ -64,3 +64,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "trusted_proxy_cidrs" {
+  description = "The ranges a load balancer in front of this machine connects from (the edge subnets). The service believes the forwarded client address only from these, to limit sign-in for each address. None means it never reads the header."
+  type        = list(string)
+  default     = []
+}

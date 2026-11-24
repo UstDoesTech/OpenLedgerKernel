@@ -1294,7 +1294,7 @@ tasks:
   phase: P1
   workstream: I
   size: M
-  status: todo
+  status: done
   depends_on:
   - K-23a
   decisions:

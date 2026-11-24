@@ -40,3 +40,27 @@ variable "edge_enabled" {
   type        = bool
   default     = false
 }
+
+variable "front_domain_name" {
+  description = "The name the page is served on. Empty means no load balancer. The owner gives it when applying, as the TF_VAR_front_domain_name secret, so it is not written in this public repository."
+  type        = string
+  default     = ""
+}
+
+variable "certificate_validated" {
+  description = "False makes only the certificate and prints the DNS record that proves the name. Set it true once that record exists, to make the load balancer. Not a secret."
+  type        = bool
+  default     = false
+}
+
+variable "edge_client_cidrs" {
+  description = "Public address ranges that may reach the load balancer on 443, for example one person's /32. None means no ingress rule is made. the whole internet is refused here: use open_to_internet. Not a secret."
+  type        = list(string)
+  default     = []
+}
+
+variable "open_to_internet" {
+  description = "Takes connections from any address, with the API told the load balancer's ranges so each address has its own sign-in limit, and the web ACL's rate limit in front. A deliberate switch. Not a secret."
+  type        = bool
+  default     = false
+}

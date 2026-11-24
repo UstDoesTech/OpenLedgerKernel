@@ -50,7 +50,9 @@ def test_the_boot_module_refuses_a_tag():
 @pytest.mark.parametrize("cloud", CLOUDS)
 def test_outputs_are_references_and_never_a_secret(cloud):
     text = code(API / cloud / "outputs.tf")
-    assert set(re.findall(r'^output "(\w+)"', text, re.M)) == {"address", "secret_ref", "secret_files", "tls_terminates"}
+    # The AWS machine also gives its id, so a load balancer can send it traffic (K-23b).
+    expected = {"address", "secret_ref", "secret_files", "tls_terminates"} | ({"instance_id"} if cloud == "aws" else set())
+    assert set(re.findall(r'^output "(\w+)"', text, re.M)) == expected
 
 
 def test_nothing_secret_is_in_any_module_file():

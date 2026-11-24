@@ -17,3 +17,8 @@ output "tls_terminates" {
   description = "Where TLS ends: the service."
   value       = module.boot.tls_terminates
 }
+
+output "instance_id" {
+  description = "The machine's id, so a load balancer can send it traffic."
+  value       = aws_instance.api.id
+}

@@ -35,3 +35,12 @@ output "apis" {
     }
   }
 }
+
+output "front" {
+  description = "The load balancer's DNS records for the owner to make, and nothing else. Empty with no name. No account identifier is in it."
+  value = length(module.front_aws) == 0 ? null : {
+    certificate_validation_records = module.front_aws[0].certificate_validation_records
+    load_balancer_dns_name         = module.front_aws[0].load_balancer_dns_name
+    web_acl_attached               = module.front_aws[0].web_acl_attached
+  }
+}
