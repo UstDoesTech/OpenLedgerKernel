@@ -104,8 +104,19 @@ decisions:
   status: open
   proposed: Plain HTML, CSS and JavaScript modules with no framework, no build step and no request to any
     other site. The API serves the files itself at /ui from copies compiled into the binary, so the page
-    and the API share an origin and need no cross-origin setup. A person types a token, which the page
-    keeps in memory only. Each cell serves its own page and talks to that cell.
+    and the API share an origin and need no cross-origin setup. A person signs in with a username and
+    password, and the page keeps the token it gets in memory only. Each cell serves its own page and talks
+    to that cell.
+- id: D-21
+  title: How a person signs in to the kernel's basic UI
+  status: open
+  proposed: A username and password, checked by the API against a list of users in the cell's API secret.
+    Passwords are kept only as Argon2id hashes. A correct password gets a random token that lasts 30
+    minutes, held in the cell's memory, which the existing bearer check accepts. Repeated failures lock the
+    username out for a minute. A user's tenant and principal come from the list, never from the request.
+    The proving run makes one test user, user@bankofmumanddad.test (a fake domain), with a generated
+    password that a person reads from the cell's secret. The password is never in the repository. This is
+    a stand-in for A-06, which replaces it behind the same trait.
 tasks:
 - id: F-01
   title: Rust workspace and CI
@@ -1154,23 +1165,67 @@ tasks:
   notes: A workflow on GitHub's runners cannot reach the APIs, which have no public address, and the API machines cannot call each other's client port. So this is a script for a machine inside the network. smoke_write.sh gains a token file for a payee at another cell, because each cell has its own token and the cross-cell step would otherwise get a 401. A workflow needs a machine inside the network that the platform makes, which is a separate task.
   refs:
   - docs/runbooks/first-entry.md
-- id: UI-01
-  title: Serve a basic page from the API
+- id: K-21
+  title: Sign in to the API with a username and password
   phase: P1
-  workstream: U
-  size: S
+  workstream: K
+  size: M
   status: todo
   depends_on:
   - K-13
   decisions:
+  - D-21
+  deliverables:
+  - crates/api
+  - api/openapi.yaml
+  acceptance:
+  - POST /v1/sessions takes a username and password and returns a random token and how long it lasts, or the same 401 for an unknown user and a wrong password, in the same time as far as a test can tell.
+  - The token is accepted by every other route as a bearer token, names the user's tenant and principal from the user list and never from the request, and stops working at its expiry and after DELETE /v1/sessions.
+  - Passwords are checked against Argon2id hashes. No password, hash or username is logged or returned, and no username reaches a journal.
+  - Five failures in a row lock the username out for a minute, said as 429, and a correct password does not clear the lock early.
+  - The users are read from a file and reloaded while the service runs, as the tokens are.
+  - The OpenAPI file and the route list agree, shown by the existing test.
+  notes: A stand-in for A-06, behind the same trait, so that a person can sign in to the basic UI. The users live in the cell's API secret, and a username is personal data, so it stays out of the ledger.
+  refs:
+  - docs/api-design.md#identity-and-authorisation
+- id: K-22
+  title: The proving run makes a test user for the UI
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - K-21
+  decisions:
+  - D-21
+  deliverables:
+  - crates/pki
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - A proving run adds the test user user@bankofmumanddad.test to each cell's user list, with a generated password kept as an Argon2id hash, and writes the password where a person can read it from the cell's secret. A run that finds the user keeps it, as it does tokens.
+  - Without proving, no user is made, and no password is in the repository, a log or a printed count.
+  - The counts line says how many users were made.
+  refs:
+  - docs/runbooks/rotating-credentials.md
+- id: UI-01
+  title: Serve a basic page from the API, with sign-in
+  phase: P1
+  workstream: U
+  size: M
+  status: todo
+  depends_on:
+  - K-21
+  decisions:
   - D-20
+  - D-21
   deliverables:
   - crates/api
   - ui
   acceptance:
   - The API serves a page at /ui with no token needed, from files compiled into the binary, and the page names the cell it is served by.
+  - A person signs in with a username and password, sees who they are signed in as by principal name only, and signs out. The token is held in memory only, never in storage, a URL or a log.
   - Every response for the page carries a content security policy that allows only its own files, no framing, and no caching of anything that holds a token or a balance.
-  - The page works with the keyboard alone and has a heading, a main region, labelled controls and visible focus. An automated accessibility check runs in CI and fails on any violation.
+  - The page works with the keyboard alone and has a heading, a main region, labelled controls and visible focus. An automated accessibility check runs in CI and fails on any violation, in every state including a failed sign-in.
   notes: A simple interface for a person to try the kernel, not a product. The commercial console is separate.
   refs:
   - docs/api-design.md
@@ -1187,8 +1242,8 @@ tasks:
   deliverables:
   - ui
   acceptance:
-  - A person can enter a token and see whether the cell is ready, open an account in a currency with an overdraft limit, and read an account and its posted, held and available balances.
-  - The token is held in memory only, never in storage, a URL or a log, and every failure is said in plain words with no identifier from the server repeated in a title or an address.
+  - A signed-in person can see whether the cell is ready, open an account in a currency with an overdraft limit, and read an account and its posted, held and available balances.
+  - Every failure is said in plain words with no identifier from the server repeated in a title or an address.
   - Money is shown in minor units with its currency, and never as a floating point number.
   - The accessibility check covers each state, including errors.
   refs:
