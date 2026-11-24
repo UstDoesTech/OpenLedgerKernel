@@ -1212,7 +1212,7 @@ tasks:
   phase: P1
   workstream: U
   size: M
-  status: todo
+  status: done
   depends_on:
   - K-21
   decisions:

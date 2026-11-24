@@ -293,3 +293,38 @@ async fn a_cell_with_no_sign_in_says_so_and_still_takes_bearer_tokens() {
     assert_eq!(status, StatusCode::CREATED);
     cell.drop_schema().await;
 }
+
+#[tokio::test]
+#[ignore = "needs the local Postgres nodes"]
+async fn the_page_is_served_by_the_real_router_with_no_token_and_the_policy_headers() {
+    let cell = Cell::start("page", true).await;
+    for path in ["/ui", "/ui/app.js", "/ui/style.css"] {
+        let response = cell
+            .app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let headers = response.headers();
+        assert_eq!(
+            headers["content-security-policy"],
+            ledger_api::ui::CONTENT_SECURITY_POLICY
+        );
+        assert_eq!(headers["cache-control"], "no-store");
+        assert_eq!(headers["x-frame-options"], "DENY");
+    }
+    // The page does not open the API: a route that needs a token still does.
+    let response = cell
+        .app
+        .clone()
+        .oneshot(
+            Request::get("/v1/accounts/acc_x")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    cell.drop_schema().await;
+}

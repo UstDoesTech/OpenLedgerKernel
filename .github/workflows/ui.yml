@@ -1,0 +1,34 @@
+name: ui
+
+# Runs the accessibility check on the basic page (UI-01) when the page, its check or the policy it
+# is served under changes. It needs no secret and no cloud: Chrome (already on the runner) opens the
+# page's own files from a small local server, with the API's answers faked.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ui/**"
+      - "scripts/ui_a11y/**"
+      - "crates/api/src/ui.rs"
+      - ".github/workflows/ui.yml"
+  pull_request:
+    paths:
+      - "ui/**"
+      - "scripts/ui_a11y/**"
+      - "crates/api/src/ui.rs"
+      - ".github/workflows/ui.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  accessibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the check's two packages
+        working-directory: scripts/ui_a11y
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check every state of the page
+        working-directory: scripts/ui_a11y
+        run: node check.mjs

@@ -1,0 +1,13 @@
+{
+  "name": "ui-a11y",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Accessibility check for the kernel's basic page: axe-core in a real browser, in every state.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": { "check": "node check.mjs" },
+  "dependencies": {
+    "axe-core": "4.10.3",
+    "puppeteer-core": "24.10.0"
+  }
+}
