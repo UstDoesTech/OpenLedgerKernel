@@ -139,6 +139,28 @@ def test_azure_reaches_registry_and_vault_over_private_endpoints_with_private_dn
     assert "is_manual_connection           = false" in text
 
 
+def test_azure_machines_may_send_https_to_the_endpoints_and_the_endpoints_accept_it():
+    # The network denies everything in and out, so without these the machines time out
+    # reaching the vault and the registry.
+    text = body(MODULES / "private-access-azure")
+    assert text.count('resource "azurerm_network_security_rule"') == 2
+    assert text.count('destination_port_range       = "443"') == 2
+    assert 'direction                    = "Outbound"' in text
+    assert 'direction                    = "Inbound"' in text
+    assert text.count('access                       = "Allow"') == 2
+    assert "for_each = var.client_groups" in text
+    assert "length(var.client_groups) > 0" in text, "a standalone deployment passes no groups and gets no rules"
+    assert "var.endpoint_cidrs" in text
+    assert "*" not in re.findall(r"destination_address_prefixes\s*=\s*(.*)", text)[0]
+    assert "Internet" not in text and "0.0.0.0/0" not in text
+
+
+def test_the_private_access_layer_gives_the_cells_the_api_and_the_control_plane_the_rules():
+    text = (ROOT / "infra" / "envs" / "europe" / "private-access" / "main.tf").read_text()
+    assert '["cell", "api", "control_plane"]' in text
+    assert 'endpoint_cidrs                       = local.plan.azure.subnets["control_plane"]' in text
+
+
 def test_gcp_reaches_google_apis_over_private_service_connect_with_private_dns():
     text = body(MODULES / "private-access-gcp")
     assert 'purpose      = "PRIVATE_SERVICE_CONNECT"' in text
