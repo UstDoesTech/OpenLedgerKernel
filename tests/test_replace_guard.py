@@ -22,6 +22,10 @@ GOOD = [
     'module.cells["ten_x"].module.postgres.azurerm_linux_virtual_machine.node[1]',
     "module.control_plane.module.members.google_compute_instance.member[0]",
     'module.cp.aws_instance.member["etcd-n1"]',
+    # An API machine: one for each cell, so no index.
+    "module.api_aws.aws_instance.api",
+    "module.api_azure.azurerm_linux_virtual_machine.api",
+    "module.api_gcp.google_compute_instance.api",
 ]
 BAD = [
     "",
@@ -34,6 +38,22 @@ BAD = [
     "aws_instance.node[0] aws_instance.node[1]",
     "$(id)aws_instance.node[0]",
     "module.x.aws_instance.node[0]\nmodule.y.aws_instance.node[1]",
+    # An API machine is one machine in a module, and nothing wider.
+    "aws_instance.api",  # not in a module
+    "module.api_aws.aws_instance.api[0]",
+    "module.api_aws.aws_instance.api[*]",
+    "module.api_aws.aws_instance.apis",
+    "module.api_aws.aws_instance.api_extra",
+    "module.api_aws.aws_ebs_volume.api",
+    "module.api_aws.aws_iam_role.api",
+    "module.api_aws.aws_instance.api -target=module.api_azure",
+    "module.api_aws.aws_instance.api; echo",
+    "module.api_aws.aws_instance.api module.api_azure.azurerm_linux_virtual_machine.api",
+    "module.api_aws.aws_instance.api\nmodule.api_azure.azurerm_linux_virtual_machine.api",
+    "$(id)module.api_aws.aws_instance.api",
+    "module.api_aws.aws_instance.node",  # a node still needs its index
+    "module.api_aws",
+    "module.api_aws.aws_instance",
 ]
 
 
@@ -93,6 +113,50 @@ def test_a_plan_that_deletes_anything_else_is_refused():
 def test_updates_and_creates_elsewhere_do_not_block_it():
     plan = {"resource_changes": [REPLACE, change("a.b", "terraform_data", "update"), change("c.d", "aws_x", "create")]}
     assert guard.check_plan(MACHINE, plan) is None
+
+
+API = "module.api_aws.aws_instance.api"
+API_REPLACE = change(API, "aws_instance", "delete", "create")
+
+
+def test_a_plan_that_replaces_one_api_machine_is_accepted():
+    assert guard.check_plan(API, {"resource_changes": [API_REPLACE]}) is None
+    r = change(API, "aws_instance", "create", "delete")
+    assert guard.check_plan(API, {"resource_changes": [r, change("t.image", "terraform_data", "update")]}) is None
+
+
+def test_a_plan_that_replaces_another_api_machine_too_is_refused():
+    other = change("module.api_azure.azurerm_linux_virtual_machine.api",
+                   "azurerm_linux_virtual_machine", "delete", "create")
+    assert guard.check_plan(API, {"resource_changes": [API_REPLACE, other]})
+    assert guard.check_plan(API, {"resource_changes": [other]})
+
+
+@pytest.mark.parametrize("kind", ["aws_ebs_volume", "azurerm_managed_disk", "google_compute_disk"])
+def test_an_api_plan_that_deletes_a_disk_is_refused(kind):
+    assert guard.check_plan(API, {"resource_changes": [API_REPLACE, change("d.x", kind, "delete")]})
+
+
+@pytest.mark.parametrize("kind", ["aws_iam_role", "aws_iam_instance_profile", "aws_security_group",
+                                  "aws_secretsmanager_secret", "aws_kms_key"])
+def test_an_api_plan_that_deletes_the_cells_identity_secret_or_network_is_refused(kind):
+    assert guard.check_plan(API, {"resource_changes": [API_REPLACE, change("k.x", kind, "delete", "create")]})
+
+
+def test_an_api_plan_that_replaces_a_database_node_is_refused():
+    node = change("module.c.aws_instance.node[1]", "aws_instance", "delete", "create")
+    assert guard.check_plan(API, {"resource_changes": [API_REPLACE, node]})
+
+
+def test_the_script_accepts_an_api_address_and_prints_nothing_about_it(tmp_path):
+    out = run("address", API)
+    assert out.returncode == 0 and out.stdout == "" and out.stderr == ""
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps({"resource_changes": [API_REPLACE]}))
+    out = run("plan", API, str(path))
+    assert out.returncode == 0 and out.stdout == ""
+    out = run("address", API + "[0]")
+    assert out.returncode == 1 and "api_aws" not in out.stdout + out.stderr
 
 
 def run(*args):

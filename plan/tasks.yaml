@@ -1193,7 +1193,7 @@ tasks:
   phase: P1
   workstream: I
   size: S
-  status: todo
+  status: done
   depends_on:
   - K-20g
   decisions: []
