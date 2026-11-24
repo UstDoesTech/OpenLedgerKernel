@@ -353,7 +353,7 @@ flowchart LR
 | **K-20j** Let replacing an Azure API machine recreate its role assignments | Infrastructure | K-20h | None | S | Agent | Done |
 | **K-22** The proving run makes a test user for the UI | Infrastructure | K-21 | D-21 | S | Agent | Done |
 | **UI-01** Serve a basic page from the API, with sign-in | Basic UI | K-21 | D-20, D-21 | M | Agent | Done |
-| **UI-02** Check a cell, open an account and read its balances in the page | Basic UI | UI-01 | D-20 | M | Agent | To do |
+| **UI-02** Check a cell, open an account and read its balances in the page | Basic UI | UI-01 | D-20 | M | Agent | In progress |
 | **UI-03** Make a transfer in the page | Basic UI | UI-02 | D-20 | S | Agent | To do |
 | **K-19d** Make each cell's application role in the node agent | Ledger kernel | K-19b | D-19 | M | Agent | To do |
 | **T-03** Randomised fault testing | Testing and fault injection | T-02 | None | M | Agent | Done |
