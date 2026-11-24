@@ -55,6 +55,8 @@ These are human decisions. A task that lists one can still be built up to its in
 | **D-17** Where the certificate authority's key lives | Decided | One central authority, held in AWS, not one per cloud. Its key is in a KMS that the signer can use but nobody can export. Certificates last 30 days and are re-issued every 10. Cell credentials are re-issued every 7 days, and when a cell is removed. Every cell trusts the authority's public certificate, so no cell calls AWS to check one. (Ust Oldfield, 2026-11-20) | None |
 | **D-18** How the rotation identities are made, and who may make them | Decided | OpenTofu makes the rotation identities, in a layer applied by infra-apply. The applying identity may create only those identities, bounded by a permissions boundary in AWS, a custom role in Azure and a deny policy in Google Cloud. Entering the outputs as the environment's secrets stays a person's step. (Ust Oldfield, 2026-11-20) | None |
 | **D-19** Which database credential the API uses, and who writes it | Decided | A dedicated application role per cell, made by the node agent on the primary's first start, which writes that role's connection string into the cell's API secret. Until then the run copies the administrator's connection into db.conn, for proving environments only. (Ust Oldfield, 2026-11-20) | None |
+| **D-20** How the kernel's basic UI is built and served | Open | Plain HTML, CSS and JavaScript modules with no framework, no build step and no request to any other site. The API serves the files itself at /ui from copies compiled into the binary, so the page and the API share an origin and need no cross-origin setup. A person signs in with a username and password, and the page keeps the token it gets in memory only. Each cell serves its own page and talks to that cell. | UI-01, UI-02, UI-03 |
+| **D-21** How a person signs in to the kernel's basic UI | Open | A username and password, checked by the API against a list of users in the cell's API secret. Passwords are kept only as Argon2id hashes. A correct password gets a random token that lasts 30 minutes, held in the cell's memory, which the existing bearer check accepts. Repeated failures lock the username out for a minute. A user's tenant and principal come from the list, never from the request. The proving run makes one test user, user@bankofmumanddad.test (a fake domain), with a generated password that a person reads from the cell's secret. The password is never in the repository. This is a stand-in for A-06, which replaces it behind the same trait. | K-21, K-22, UI-01 |
 <!-- /generated:decisions -->
 
 ## Tasks
@@ -62,7 +64,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-72 of 84 tasks done.
+72 of 89 tasks done.
 
 ```mermaid
 flowchart LR
@@ -112,6 +114,11 @@ flowchart LR
   K_20e["K-20e<br/>Boot Flatcar on Google Cloud without Secure Boot"]
   K_20f["K-20f<br/>Let Google Cloud machines be stopped for an update to their shielded settings"]
   K_20g["K-20g<br/>Run steps 4 to 6 of the first entry in one script"]
+  K_21["K-21<br/>Sign in to the API with a username and password"]
+  K_22["K-22<br/>The proving run makes a test user for the UI"]
+  UI_01["UI-01<br/>Serve a basic page from the API, with sign-in"]
+  UI_02["UI-02<br/>Check a cell, open an account and read its balances in the page"]
+  UI_03["UI-03<br/>Make a transfer in the page"]
   K_19d["K-19d<br/>Make each cell's application role in the node agent"]
   T_03["T-03<br/>Randomised fault testing"]
   I_01a["I-01a<br/>Infrastructure code scaffold, CI checks and UK-region guard"]
@@ -213,6 +220,11 @@ flowchart LR
   K_20d --> K_20e
   K_20e --> K_20f
   K_20f --> K_20g
+  K_13 --> K_21
+  K_21 --> K_22
+  K_21 --> UI_01
+  UI_01 --> UI_02
+  UI_02 --> UI_03
   K_19b --> K_19d
   T_02 --> T_03
   F_01 --> I_01a
@@ -329,6 +341,11 @@ flowchart LR
 | **K-20e** Boot Flatcar on Google Cloud without Secure Boot | Infrastructure | K-20d | None | S | Agent | Done |
 | **K-20f** Let Google Cloud machines be stopped for an update to their shielded settings | Infrastructure | K-20e | None | S | Agent | Done |
 | **K-20g** Run steps 4 to 6 of the first entry in one script | Infrastructure | K-20f | None | S | Agent | Done |
+| **K-21** Sign in to the API with a username and password | Ledger kernel | K-13 | D-21 | M | Agent | To do |
+| **K-22** The proving run makes a test user for the UI | Infrastructure | K-21 | D-21 | S | Agent | To do |
+| **UI-01** Serve a basic page from the API, with sign-in | Basic UI | K-21 | D-20, D-21 | M | Agent | To do |
+| **UI-02** Check a cell, open an account and read its balances in the page | Basic UI | UI-01 | D-20 | M | Agent | To do |
+| **UI-03** Make a transfer in the page | Basic UI | UI-02 | D-20 | S | Agent | To do |
 | **K-19d** Make each cell's application role in the node agent | Ledger kernel | K-19b | D-19 | M | Agent | To do |
 | **T-03** Randomised fault testing | Testing and fault injection | T-02 | None | M | Agent | Done |
 | **I-01a** Infrastructure code scaffold, CI checks and UK-region guard | Infrastructure | F-01 | None | M | Agent | Done |
