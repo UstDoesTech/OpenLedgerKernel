@@ -1233,6 +1233,30 @@ tasks:
   notes: Written once K-20h lets the workflow replace an API machine, so that nothing in it is a step that cannot be done. A person runs every step, because each one changes a real cloud account.
   refs:
   - docs/runbooks/rolling-the-node-image.md
+- id: K-20j
+  title: Let replacing an Azure API machine recreate its role assignments
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - K-20h
+  decisions: []
+  deliverables:
+  - scripts/replace_guard.py
+  - tests/test_replace_guard.py
+  - docs/credentialed-workflows.md
+  - docs/runbooks/rolling-the-api-image.md
+  acceptance:
+  - The plan check accepts a plan that replaces one API machine and also replaces the role assignments in the same module, because an Azure machine's identity is new when the machine is, and
+    refuses a role assignment that is deleted without being created again, one in another module, and one in the plan of a database node, shown by tests.
+  - Every other refusal stays, shown by the existing tests, and no other resource type is added.
+  - The address error says what is accepted now, including an API machine, and still prints no address or plan content, shown by a test.
+  - The runbook says that an Azure replacement plan shows two role assignments replaced.
+  notes: The first plan to replace an Azure API machine was refused, because its two role assignments are built from the machine's system-assigned identity and are recreated with it. AWS and Google
+    Cloud use a role or a service account that is separate from the machine, so they are not affected. This widens the guard of a credentialed workflow, so it needs a person's review.
+  refs:
+  - docs/credentialed-workflows.md
 - id: K-22
   title: The proving run makes a test user for the UI
   phase: P1
