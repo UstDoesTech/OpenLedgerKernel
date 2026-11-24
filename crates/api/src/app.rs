@@ -26,6 +26,7 @@ use tokio_postgres::Client;
 
 use crate::auth::{Authenticator, PeerAuthenticator, Principal};
 use crate::error::ApiError;
+use crate::login::{Login, Refusal};
 use crate::peer::{PeerClient, PeerError};
 use crate::reload::Reloadable;
 
@@ -58,6 +59,8 @@ pub(crate) struct Inner<C> {
     pub(crate) peers: Reloadable<Peers>,
     /// Who may call this cell's internal endpoints. None means nobody may.
     pub(crate) peer_auth: Option<Arc<dyn PeerAuthenticator>>,
+    /// Sign-in with a username and password. None means this cell only takes bearer tokens.
+    pub(crate) login: Option<Arc<Login>>,
     /// The pairs of cells already made ready for in-transit value, so each is done once.
     pub(crate) prepared: Mutex<HashSet<(String, String, String, String)>>,
 }
@@ -84,6 +87,7 @@ impl<C: ControlPlane> AppState<C> {
                 admission: Admission::new(),
                 peers: Reloadable::new(HashMap::new()),
                 peer_auth: None,
+                login: None,
                 prepared: Mutex::new(HashSet::new()),
             }),
         }
@@ -114,6 +118,16 @@ impl<C: ControlPlane> AppState<C> {
         self
     }
 
+    /// Lets a person sign in with a username and password, and accepts the tokens that gives.
+    /// Call it before the state is shared.
+    #[must_use]
+    pub fn with_login(mut self, login: Arc<Login>) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("sign-in is set before the state is shared")
+            .login = Some(login);
+        self
+    }
+
     /// What a healthy cell does on a timer: confirm the lease of every account homed here, which
     /// renews it. Returns how many were confirmed.
     pub async fn renew(&self) -> Result<usize, ControlError> {
@@ -134,6 +148,8 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("get", "/v1/accounts/{accountId}"),
     ("get", "/v1/accounts/{accountId}/balances"),
     ("post", "/v1/transfers"),
+    ("post", "/v1/sessions"),
+    ("post", "/v1/sessions:end"),
 ];
 
 /// The routes.
@@ -144,6 +160,8 @@ pub fn router<C: ControlPlane + 'static>(state: AppState<C>) -> Router {
         .route("/v1/accounts/{account_id}", get(get_account::<C>))
         .route("/v1/accounts/{account_id}/balances", get(get_balances::<C>))
         .route("/v1/transfers", post(post_transfer::<C>))
+        .route("/v1/sessions", post(sign_in::<C>))
+        .route("/v1/sessions:end", post(sign_out::<C>))
         .with_state(state)
 }
 
@@ -164,6 +182,13 @@ impl<C: ControlPlane + 'static> FromRequestParts<AppState<C>> for Caller {
             .inner
             .auth
             .authenticate(token)
+            .or_else(|| {
+                state
+                    .inner
+                    .login
+                    .as_ref()
+                    .and_then(|login| login.authenticate(token))
+            })
             .map(Caller)
             .ok_or_else(ApiError::unauthenticated)
     }
@@ -832,4 +857,67 @@ async fn payer_elsewhere<C: ControlPlane + 'static>(
         return ApiError::wrong_home(home.as_str());
     }
     ApiError::not_found()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignIn {
+    username: String,
+    password: String,
+}
+
+/// `POST /v1/sessions`: a username and password for a token that lasts half an hour. It needs no
+/// token. It says the same for an unknown user and a wrong password, and nothing it receives is
+/// logged or sent back.
+async fn sign_in<C: ControlPlane + 'static>(
+    State(s): State<AppState<C>>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let login = s
+        .inner
+        .login
+        .as_ref()
+        .ok_or_else(ApiError::sign_in_not_available)?;
+    let request: SignIn = serde_json::from_slice(&body)
+        .map_err(|_| ApiError::invalid("send a username and a password, and nothing else"))?;
+    let issued = login
+        .sign_in(&request.username, &request.password)
+        .await
+        .map_err(|refusal| match refusal {
+            Refusal::Refused => ApiError::invalid_credentials(),
+            Refusal::Locked => ApiError::too_many_attempts(),
+            Refusal::Unavailable => ApiError::home_unavailable("sign-in cannot be done just now"),
+        })?;
+    let mut response = (
+        StatusCode::CREATED,
+        Json(json!({
+            "token": issued.token,
+            "expires_in": issued.expires_in,
+            "principal": issued.principal,
+        })),
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert("cache-control", HeaderValue::from_static("no-store"));
+    Ok(response)
+}
+
+/// `POST /v1/sessions:end`: ends the token that was sent. A token that was not made by a sign-in
+/// is left as it is. It answers the same either way.
+async fn sign_out<C: ControlPlane + 'static>(
+    State(s): State<AppState<C>>,
+    Caller(_): Caller,
+    headers: HeaderMap,
+) -> StatusCode {
+    if let (Some(login), Some(token)) = (
+        s.inner.login.as_ref(),
+        headers
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer ")),
+    ) {
+        login.sign_out(token);
+    }
+    StatusCode::NO_CONTENT
 }

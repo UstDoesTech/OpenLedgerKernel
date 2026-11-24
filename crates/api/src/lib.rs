@@ -21,6 +21,7 @@ pub mod auth;
 pub mod dbconn;
 pub mod error;
 mod internal;
+pub mod login;
 pub mod peer;
 pub mod reload;
 pub mod tls;

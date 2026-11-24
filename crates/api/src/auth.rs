@@ -44,6 +44,18 @@ pub enum TokenError {
     Invalid(String),
 }
 
+/// Whether a name is a principal name: `usr_`, `agt_` or `sys_` and lower-case letters or digits.
+pub fn is_principal_name(name: &str) -> bool {
+    ["usr_", "agt_", "sys_"].iter().any(|p| {
+        name.strip_prefix(p).is_some_and(|b| {
+            !b.is_empty()
+                && b.len() <= 64
+                && b.bytes()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        })
+    })
+}
+
 impl StaticTokens {
     pub fn new() -> Self {
         Self::default()
@@ -55,15 +67,7 @@ impl StaticTokens {
         if token.len() < 32 {
             return Err(TokenError::TooShort);
         }
-        let ok = ["usr_", "agt_", "sys_"].iter().any(|p| {
-            name.strip_prefix(p).is_some_and(|b| {
-                !b.is_empty()
-                    && b.len() <= 64
-                    && b.bytes()
-                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-            })
-        });
-        if !ok {
+        if !is_principal_name(name) {
             return Err(TokenError::Invalid(format!(
                 "{name:?} is not a principal name"
             )));

@@ -38,6 +38,15 @@ Every call carries a short-lived token that names the tenant, the kind of princi
 - **On behalf of.** A colleague or agent acting for a customer names the party in `on_behalf_of`, and the audit trail records both.
 - **Tokens last minutes.** Agent tokens are re-issued at most every 15 minutes, so pausing an agent stops it within one token lifetime, and immediately at the policy engine.
 
+### Sign-in with a username and password (basic UI)
+
+Until real sign-in (A-06) replaces it, a person can sign in to a cell with a username and password, so the basic UI has something to use. It is not one of the principals above. It makes the same kind of bearer token, so every rule above still holds.
+
+- `POST /v1/sessions` takes `{username, password}` and needs no token. A correct pair returns `{token, expires_in, principal}`. The token is 64 hexadecimal characters, lasts 30 minutes and is held in the cell's memory as a hash, so a restart ends every sign-in. `POST /v1/sessions:end` ends the token that was sent.
+- The users are a list in the cell's API secret, read from `LEDGER_USERS_FILE` and read again when it changes: `{username, password_hash, tenant, principal}`. Passwords are kept only as Argon2id hashes. The tenant and principal come from the list and never from the request, and a username is personal data, so it never reaches a journal, a log or a reply. The `principal` is an opaque name such as `usr_ada`.
+- An unknown user and a wrong password get the same `401` (`invalid_credentials`), and an unknown user is checked against a throwaway hash, so the time does not tell them apart. Five failures in a row lock the username for a minute with `429` (`too_many_attempts`), and a correct password does not lift the lock early. A cell with no `LEDGER_USERS_FILE` answers `404` (`sign_in_not_available`).
+- At most four hashes run at once, so a flood of sign-ins cannot starve the ledger.
+
 ## Command lifecycle
 
 A command is simulated against the home cell's current state, decided by policy, approved by a person when policy requires it, and committed only if its effect still matches the hash that was simulated and approved.
