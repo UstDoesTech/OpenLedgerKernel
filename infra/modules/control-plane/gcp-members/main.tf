@@ -92,6 +92,10 @@ resource "google_compute_disk" "data" {
 }
 
 resource "google_compute_instance" "member" {
+  # A change to the machine's shielded settings needs it stopped and started again. Without
+  # this the provider refuses the change on a running machine.
+  allow_stopping_for_update = true
+
   for_each = local.members
 
   name         = each.key

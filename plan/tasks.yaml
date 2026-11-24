@@ -1108,6 +1108,24 @@ tasks:
   notes: Found in the first live proving run. The primary of the Google Cloud cell never started. Its console showed Security Violation from the firmware, because Flatcar's public image for Google Cloud is not signed for Google's Secure Boot keys. Loosens a security setting and one existing test, so it needs a person's review. Secure Boot comes back with an image of our own that is signed for it, which is a later task.
   refs:
   - docs/self-hosted-postgres.md
+- id: K-20f
+  title: Let Google Cloud machines be stopped for an update to their shielded settings
+  phase: P1
+  workstream: I
+  size: S
+  status: done
+  depends_on:
+  - K-20e
+  decisions: []
+  deliverables:
+  - infra/modules/postgres/gcp-self-hosted
+  - infra/modules/api/gcp
+  - infra/modules/control-plane/gcp-members
+  acceptance:
+  - Each Google Cloud machine module sets allow_stopping_for_update, so a change to a running machine's shielded settings applies, shown by a test of the three modules.
+  notes: The apply of K-20e failed on every cell machine with a message asking for allow_stopping_for_update. The change is made in place by stopping the machine, not by replacing it. Nothing else changes.
+  refs:
+  - docs/self-hosted-postgres.md
 - id: K-19d
   title: Make each cell's application role in the node agent
   phase: P1

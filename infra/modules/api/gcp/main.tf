@@ -61,6 +61,10 @@ resource "google_artifact_registry_repository_iam_member" "reader" {
 }
 
 resource "google_compute_instance" "api" {
+  # A change to the machine's shielded settings needs it stopped and started again. Without
+  # this the provider refuses the change on a running machine.
+  allow_stopping_for_update = true
+
   name         = var.name
   zone         = local.zone
   machine_type = var.machine_type

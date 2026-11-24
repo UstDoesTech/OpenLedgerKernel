@@ -147,6 +147,7 @@ def test_every_google_cloud_machine_boots_flatcar_without_secure_boot_and_keeps_
         assert "enable_secure_boot          = false" in text, path
         assert "enable_vtpm                 = true" in text, path
         assert "enable_integrity_monitoring = true" in text, path
+        assert "allow_stopping_for_update = true" in text, path
 
 
 def test_azure_machines_may_send_https_to_the_endpoints_and_the_endpoints_accept_it():
