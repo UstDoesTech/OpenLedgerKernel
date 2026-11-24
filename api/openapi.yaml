@@ -258,6 +258,72 @@ paths:
               schema: { $ref: '#/components/schemas/CatalogueEntry' }
         '404': { $ref: '#/components/responses/Problem' }
 
+  /v1/sessions:
+    post:
+      tags: [Accounts]
+      operationId: signInSkeleton
+      summary: Sign in with a username and password (skeleton)
+      description: |
+        A stand-in for real sign-in (A-06), so that a person can use the basic UI. It needs no
+        token. A correct username and password return a random bearer token that lasts the number
+        of seconds in `expires_in`. The token names the user's tenant and principal from the cell's
+        list of users, never from the request. An unknown user and a wrong password get the same
+        `401`, and five failures in a row lock the username for a minute with a `429`. Nothing sent
+        here is logged or returned. A cell that has no list of users answers `404`.
+      x-skeleton: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              additionalProperties: false
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        '201':
+          description: Signed in
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expires_in, principal]
+                properties:
+                  token: { type: string }
+                  expires_in: { type: integer }
+                  principal: { type: string }
+        '401':
+          description: The username or password is not right
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429':
+          description: Too many failures in a row for this username
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /v1/sessions:end:
+    post:
+      tags: [Accounts]
+      operationId: signOutSkeleton
+      summary: End a sign-in (skeleton)
+      description: |
+        Ends the bearer token that was sent, if a sign-in made it. It answers the same for any
+        valid token.
+      x-skeleton: true
+      responses:
+        '204':
+          description: Ended
+        '401':
+          description: A valid bearer token is needed
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
   /v1/accounts:
     post:
       tags: [Accounts]

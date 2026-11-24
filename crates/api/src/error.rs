@@ -63,6 +63,39 @@ impl ApiError {
         )
     }
 
+    /// A sign-in that did not work. The same answer for an unknown user and a wrong password.
+    pub fn invalid_credentials() -> Self {
+        Self::new(
+            StatusCode::UNAUTHORIZED,
+            "invalid_credentials",
+            "The username or password is not right",
+            "Check them and try again.",
+            false,
+        )
+    }
+
+    /// Too many failed sign-ins for a username in a row.
+    pub fn too_many_attempts() -> Self {
+        Self::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too_many_attempts",
+            "Too many failed sign-ins",
+            "Wait a minute and try again.",
+            true,
+        )
+    }
+
+    /// Sign-in is not set up for this cell.
+    pub fn sign_in_not_available() -> Self {
+        Self::new(
+            StatusCode::NOT_FOUND,
+            "sign_in_not_available",
+            "Sign-in is not set up on this cell",
+            "Use a bearer token.",
+            false,
+        )
+    }
+
     pub fn unauthenticated() -> Self {
         Self::new(
             StatusCode::UNAUTHORIZED,

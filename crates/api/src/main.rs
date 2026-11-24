@@ -12,6 +12,8 @@
 //!   LEDGER_SCHEMA          the ledger schema, default `ledger`
 //!   LEDGER_LISTEN          the address to listen on, default `127.0.0.1:8080`
 //!   LEDGER_TOKENS_FILE     a JSON list of `{token, tenant, principal}` (see `ledger_api::auth`)
+//!   LEDGER_USERS_FILE      optional: a JSON list of `{username, password_hash, tenant, principal}` for
+//!                          sign-in with a username and password (see `ledger_api::login`)
 //!   LEDGER_INTERNAL_LISTEN the address of the internal listener, for calls from other cells. Not
 //!                          set means none, and then only transfers within this cell can be made
 //!   LEDGER_INTERNAL_AUTH_FILE  a JSON list of `{token, cell, tenants}`: the cells that may call it
@@ -248,6 +250,24 @@ async fn run() -> Result<(), String> {
     if let Some(auth) = &peer_auth {
         state = state.with_peer_auth(Arc::new(auth.clone()));
     }
+    // Sign-in with a username and password, when the cell has a list of users.
+    let users = if std::env::var_os("LEDGER_USERS_FILE").is_some() {
+        // A file that is not there yet means no one can sign in yet, not that the service stops: the
+        // file is read again when it appears. One that is there and not valid is a mistake.
+        let first = match file("LEDGER_USERS_FILE") {
+            Ok(text) => ledger_api::login::Users::from_json(&text).map_err(|e| e.to_string())?,
+            Err(_) => ledger_api::login::Users::empty(),
+        };
+        let users = Reloadable::new(first);
+        let login = ledger_api::login::Login::new(
+            users.clone(),
+            Arc::new(ledger_api::login::MonotonicClock::new()),
+        );
+        state = state.with_login(login);
+        Some(users)
+    } else {
+        None
+    };
 
     // Certificates, tokens and the list of cells rotate while the service runs. Each is read
     // again when its file changes. A file that cannot be used leaves what is in force alone.
@@ -264,6 +284,21 @@ async fn run() -> Result<(), String> {
             match StaticTokens::from_json(&text) {
                 Ok(t) => {
                     handle.set(Arc::new(t));
+                    true
+                }
+                Err(_) => false,
+            }
+        });
+    }
+    if let Some(handle) = users {
+        let from = path("LEDGER_USERS_FILE").into_iter().collect();
+        reload::spawn_watch("users", from, reload_every, move || {
+            let Ok(text) = file("LEDGER_USERS_FILE") else {
+                return false;
+            };
+            match ledger_api::login::Users::from_json(&text) {
+                Ok(u) => {
+                    handle.set(Arc::new(u));
                     true
                 }
                 Err(_) => false,
