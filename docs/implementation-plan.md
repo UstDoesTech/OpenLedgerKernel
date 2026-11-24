@@ -65,7 +65,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-79 of 96 tasks done.
+80 of 96 tasks done.
 
 ```mermaid
 flowchart LR
@@ -305,7 +305,7 @@ flowchart LR
   S_04 --> S_05
   S_05 --> S_07
   classDef done fill:#E8F5EC,stroke:#166534,color:#14171C
-  class F_01,F_02,F_03,K_01,K_02,K_03,K_04,K_05,K_06,K_07,C_01,C_02,R_01,R_02,R_03,C_03,T_01,T_02,K_08,K_11,K_12,K_14,K_15,K_13,K_16,K_17,K_19a,K_19b,K_19c,K_19e,K_19f,K_19g,K_19h,K_19i,K_19j,K_19k,K_20a,K_20b,K_20c,K_20d,K_20e,K_20f,K_20g,K_21,K_20h,K_20i,K_20j,K_22,UI_01,UI_02,T_03,I_01a,I_01g,I_01h,I_01b,I_01c,I_01d,I_01e,I_01i,I_01j,I_01ka,I_01kb,I_01kc,I_01m,I_01n,I_01oa,I_01ob,I_01oca,I_01ocb,I_01occ,I_01p,I_01q,I_01r,I_01t,I_01u,I_01va,S_04,S_05,S_07 done
+  class F_01,F_02,F_03,K_01,K_02,K_03,K_04,K_05,K_06,K_07,C_01,C_02,R_01,R_02,R_03,C_03,T_01,T_02,K_08,K_11,K_12,K_14,K_15,K_13,K_16,K_17,K_19a,K_19b,K_19c,K_19e,K_19f,K_19g,K_19h,K_19i,K_19j,K_19k,K_20a,K_20b,K_20c,K_20d,K_20e,K_20f,K_20g,K_21,K_20h,K_20i,K_20j,K_23a,K_22,UI_01,UI_02,T_03,I_01a,I_01g,I_01h,I_01b,I_01c,I_01d,I_01e,I_01i,I_01j,I_01ka,I_01kb,I_01kc,I_01m,I_01n,I_01oa,I_01ob,I_01oca,I_01ocb,I_01occ,I_01p,I_01q,I_01r,I_01t,I_01u,I_01va,S_04,S_05,S_07 done
 ```
 
 | Task | Workstream | Depends on | Decisions | Size | Owner | Status |
@@ -360,7 +360,7 @@ flowchart LR
 | **K-20h** Let infra-apply replace one API machine | Infrastructure | K-20g | None | S | Agent | Done |
 | **K-20i** Runbook for rolling a new API image onto running cells | Infrastructure | K-20h | None | S | Agent | Done |
 | **K-20j** Let replacing an Azure API machine recreate its role assignments | Infrastructure | K-20h | None | S | Agent | Done |
-| **K-23a** Edge subnets and a route to the internet on AWS, for the load balancer only | Infrastructure | K-20h | D-22 | S | Agent | To do |
+| **K-23a** Edge subnets and a route to the internet on AWS, for the load balancer only | Infrastructure | K-20h | D-22 | S | Agent | Done |
 | **K-23b** A load balancer in front of the AWS API, from named ranges only | Infrastructure | K-23a | D-22 | M | Agent | To do |
 | **K-23c** Runbook for putting the AWS API and page on the internet, and taking them off | Infrastructure | K-23b | None | S | Agent | To do |
 | **K-23d** Limit sign-in failures for each address, not only each username | Ledger kernel | K-21 | D-21 | M | Agent | To do |

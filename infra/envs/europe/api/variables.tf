@@ -34,3 +34,9 @@ variable "client_cidrs" {
     error_message = "Each client range must be a private range (10/8, 172.16/12 or 192.168/16) with a prefix of /8 or longer."
   }
 }
+
+variable "edge_enabled" {
+  description = "Whether to make the internet gateway and the route table for the edge subnets (D-22). Off by default, so the AWS network has no route to the internet. The load balancer's module needs it on. Not a secret."
+  type        = bool
+  default     = false
+}

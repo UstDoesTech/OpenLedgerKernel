@@ -149,6 +149,19 @@ locals {
   }
 }
 
+# The way in from the internet for the load balancer (D-22, K-23a): an internet gateway and a route
+# table for the edge subnets only. Off until the load balancer's module (K-23b) turns it on, so
+# nothing about the network changes by adding this.
+module "edge_aws" {
+  source = "../../../modules/edge-aws"
+  count  = var.edge_enabled ? 1 : 0
+
+  name       = "${local.names.aws}-api"
+  vpc_id     = local.network.aws.vpc_id
+  subnet_ids = local.network.aws.subnet_ids["edge"]
+  tags       = { managed_by = "opentofu", component = "edge", tenant = local.tenant }
+}
+
 module "api_aws" {
   source = "../../../modules/api/aws"
 
