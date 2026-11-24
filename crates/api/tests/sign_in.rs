@@ -354,7 +354,7 @@ async fn the_page_can_open_an_account_and_read_it_and_nothing_the_api_says_is_ca
             ),
         )
         .await;
-    assert_eq!(status, StatusCode::CREATED, "{account}");
+    assert_eq!(status, StatusCode::CREATED, "opening the account failed");
     assert_eq!(headers["cache-control"], "no-store");
     let id = account["account_id"].as_str().unwrap().to_owned();
     assert!(id.starts_with("acc_"));
@@ -405,7 +405,10 @@ async fn the_page_can_open_an_account_and_read_it_and_nothing_the_api_says_is_ca
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers["cache-control"], "no-store");
     for name in ["posted", "held", "available", "arranged_overdraft"] {
-        assert!(balances[name]["minor"].is_i64(), "{name}: {balances}");
+        assert!(
+            balances[name]["minor"].is_i64(),
+            "{name} is not whole minor units"
+        );
         assert_eq!(balances[name]["currency"], "GBP", "{name}");
     }
     assert_eq!(balances["posted"]["minor"], 0);
