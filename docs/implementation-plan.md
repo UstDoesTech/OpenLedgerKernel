@@ -342,7 +342,7 @@ flowchart LR
 | **K-20f** Let Google Cloud machines be stopped for an update to their shielded settings | Infrastructure | K-20e | None | S | Agent | Done |
 | **K-20g** Run steps 4 to 6 of the first entry in one script | Infrastructure | K-20f | None | S | Agent | Done |
 | **K-21** Sign in to the API with a username and password | Ledger kernel | K-13 | D-21 | M | Agent | Done |
-| **K-22** The proving run makes a test user for the UI | Infrastructure | K-21 | D-21 | S | Agent | To do |
+| **K-22** The proving run makes a test user for the UI | Infrastructure | K-21 | D-21 | S | Agent | In progress |
 | **UI-01** Serve a basic page from the API, with sign-in | Basic UI | K-21 | D-20, D-21 | M | Agent | To do |
 | **UI-02** Check a cell, open an account and read its balances in the page | Basic UI | UI-01 | D-20 | M | Agent | To do |
 | **UI-03** Make a transfer in the page | Basic UI | UI-02 | D-20 | S | Agent | To do |
