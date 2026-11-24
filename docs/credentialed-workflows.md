@@ -29,7 +29,7 @@ Agents never dispatch these workflows and never hold these roles.
 
 ## Replacing one machine
 
-`infra-apply` has an optional `replace` input for rolling a new node image (see [Rolling a new node image](runbooks/rolling-the-node-image.md)). It takes the address of **one** machine: a `node` or `member` of an instance or virtual machine resource, with its index, such as `module.<name>.aws_instance.node[1]`. A pattern, a list, a resource without an index or anything else is refused before tofu runs (`scripts/replace_guard.py`).
+`infra-apply` has an optional `replace` input for rolling a new node image (see [Rolling a new node image](runbooks/rolling-the-node-image.md)). It takes the address of **one** machine. That is a `node` or `member` of an instance or virtual machine resource, with its index, such as `module.<name>.aws_instance.node[1]`, or an API machine, which has no index because each cell has one, such as `module.api_aws.aws_instance.api` (use the `api` layer; the Azure and Google Cloud machines are `module.api_azure.azurerm_linux_virtual_machine.api` and `module.api_gcp.google_compute_instance.api`). A pattern, a list, any other resource without an index or anything else is refused before tofu runs (`scripts/replace_guard.py`).
 
 The plan job then refuses a plan that deletes a data disk, deletes anything except the machine and its disk attachment, or replaces any other machine. The approved fingerprint covers the replacement, and the apply job plans again with the same address and compares. A replacement of that kind is one apply: the disk is detached (on AWS the machine is stopped first), the machine is replaced, and the same disk is attached to the new machine. Replace one machine per run, and check the cell is healthy between runs.
 

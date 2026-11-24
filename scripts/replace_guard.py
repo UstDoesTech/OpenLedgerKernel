@@ -2,6 +2,7 @@
 """Guards for replacing one machine through the infra-apply workflow.
 
   replace_guard.py address <address>   Is this the address of one machine, and nothing else?
+                                       (a node or member with its index, or one API machine)
   replace_guard.py plan <address> <plan.json>
                                        Does the plan replace that machine, keep every data disk
                                        and delete nothing else?
@@ -19,10 +20,15 @@ ATTACHMENTS = {"aws_volume_attachment", "azurerm_virtual_machine_data_disk_attac
 DISKS = {"aws_ebs_volume", "azurerm_managed_disk", "google_compute_disk"}
 
 _INDEX = r'(\[([0-9]+|"[a-z0-9_.-]+")\])?'
+_MODULES = rf"(module\.[a-z0-9_]+{_INDEX}\.)"
+_KINDS = "|".join(sorted(MACHINES))
+# Two shapes, and nothing else:
+#   a database node or a control-plane member, which always has an index;
+#   an API machine, which has none, because each cell has one, and which is always inside a module.
 ADDRESS = re.compile(
-    rf"^(module\.[a-z0-9_]+{_INDEX}\.)*"
-    rf"({'|'.join(sorted(MACHINES))})\.(node|member)"
+    rf"^{_MODULES}*({_KINDS})\.(node|member)"
     r'(\[([0-9]+|"[a-z0-9_.-]+")\])$'
+    rf"|^{_MODULES}+({_KINDS})\.api$"
 )
 
 
