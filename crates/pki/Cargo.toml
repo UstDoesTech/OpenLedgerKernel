@@ -16,6 +16,7 @@ name = "ledger-pki"
 path = "src/main.rs"
 
 [dependencies]
+argon2 = { version = "0.6", default-features = false, features = ["alloc", "password-hash"] }
 base64 = "0.22"
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
 ring = "0.17"

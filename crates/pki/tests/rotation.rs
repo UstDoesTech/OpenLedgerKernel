@@ -713,7 +713,7 @@ fn a_run_prints_one_line_of_counts() {
 /// `cells: N, certificates issued: N, ...` and nothing else.
 fn regex_free_counts(line: &str) -> bool {
     let parts: Vec<&str> = line.split(", ").collect();
-    parts.len() == 8
+    parts.len() == 9
         && parts.iter().all(|p| {
             p.rsplit_once(": ").is_some_and(|(label, n)| {
                 label.chars().all(|c| c.is_ascii_lowercase() || c == ' ')
@@ -997,6 +997,135 @@ mod proving {
         let report = run_with(&m, &s, Some(&copy)).unwrap();
         assert_eq!((report.databases, report.tokens), (0, 0));
         assert_eq!(entries(&s, &m.cells[0])["db.conn"], "their own");
+    }
+
+    // ---- K-22: the test user for the basic UI ----
+
+    fn verifies(hash: &str, password: &str) -> bool {
+        use argon2::password_hash::phc::PasswordHash;
+        use argon2::{Argon2, PasswordVerifier};
+        let parsed = PasswordHash::new(hash).expect("a PHC string");
+        Argon2::default()
+            .verify_password(password.as_bytes(), &parsed)
+            .is_ok()
+    }
+
+    #[test]
+    fn a_proving_run_makes_the_test_user_with_a_hash_and_keeps_the_password_in_the_secret() {
+        let m = proving_manifest(&["cell-one", "cell-two", "cell-three"]);
+        let s = empty_store(&m);
+        let copy = AdministratorCopy::new(&s);
+        let report = run_with(&m, &s, Some(&copy)).unwrap();
+        assert_eq!(report.users, 3);
+
+        let mut passwords = Vec::new();
+        let mut hashes = Vec::new();
+        for c in &m.cells {
+            let e = entries(&s, c);
+            let list: Value = serde_json::from_str(&e["users.json"]).unwrap();
+            assert_eq!(list.as_array().unwrap().len(), 1);
+            let user = &list[0];
+            assert_eq!(user["username"], "user@bankofmumanddad.test");
+            assert_eq!(user["tenant"], "ten_acme");
+            assert_eq!(user["principal"], "usr_uitest");
+            let hash = user["password_hash"].as_str().unwrap();
+            assert!(hash.starts_with("$argon2id$"), "an Argon2id hash only");
+            let password = &e["ui-test-password"];
+            assert!(password.len() >= 32);
+            assert!(
+                verifies(hash, password),
+                "the password in the secret opens the hash"
+            );
+            assert!(
+                !e["users.json"].contains(password.as_str()),
+                "the list holds the hash and never the password"
+            );
+            // The service reads this list as it is.
+            let users =
+                ledger_api::login::Users::from_json(&e["users.json"]).expect("the API accepts it");
+            assert_eq!(users.len(), 1);
+            passwords.push(password.clone());
+            hashes.push(hash.to_owned());
+        }
+        passwords.sort();
+        passwords.dedup();
+        assert_eq!(passwords.len(), 3, "each cell has its own password");
+        hashes.sort();
+        hashes.dedup();
+        assert_eq!(hashes.len(), 3);
+    }
+
+    #[test]
+    fn the_counts_line_says_how_many_users_were_made_and_never_the_password_or_the_hash() {
+        let m = proving_manifest(&["cell-one", "cell-two"]);
+        let s = empty_store(&m);
+        let copy = AdministratorCopy::new(&s);
+        let report = run_with(&m, &s, Some(&copy)).unwrap();
+        let line = report.to_string();
+        assert!(line.contains("test users made: 2"), "{line}");
+        for c in &m.cells {
+            let e = entries(&s, c);
+            assert!(!line.contains(&e["ui-test-password"]));
+            assert!(!line.contains("argon2"));
+            assert!(!line.contains("bankofmumanddad"));
+        }
+    }
+
+    #[test]
+    fn a_second_run_keeps_the_user_and_the_password_and_a_persons_own_list_is_never_touched() {
+        let m = proving_manifest(&["cell-one", "cell-two"]);
+        let s = empty_store(&m);
+        let copy = AdministratorCopy::new(&s);
+        let sg = signer();
+        let run = |m: &Manifest, s: &MemoryStore, copy: &AdministratorCopy<'_>| {
+            Rotation {
+                manifest: m,
+                signer: sg.clone(),
+                store: s,
+                now: OffsetDateTime::now_utc(),
+                settle: Duration::ZERO,
+                sleep: &|_| {},
+                database: Some(copy),
+            }
+            .run(Kind::All)
+            .unwrap()
+        };
+        run(&m, &s, &copy);
+        let before = entries(&s, &m.cells[0]);
+        let again = run(&m, &s, &copy);
+        assert_eq!(again.users, 0);
+        let after = entries(&s, &m.cells[0]);
+        assert_eq!(after["users.json"], before["users.json"]);
+        assert_eq!(after["ui-test-password"], before["ui-test-password"]);
+
+        let m = proving_manifest(&["cell-one"]);
+        let s = empty_store(&m);
+        s.put(
+            m.cells[0].cloud,
+            &m.cells[0].secret,
+            r#"{"users.json":"[]-theirs"}"#,
+        );
+        let copy = AdministratorCopy::new(&s);
+        let report = run_with(&m, &s, Some(&copy)).unwrap();
+        assert_eq!(report.users, 0);
+        let e = entries(&s, &m.cells[0]);
+        assert_eq!(e["users.json"], "[]-theirs");
+        assert!(
+            !e.contains_key("ui-test-password"),
+            "no password for a list that is not ours"
+        );
+    }
+
+    #[test]
+    fn without_proving_no_user_and_no_password_are_made() {
+        let mut m = proving_manifest(&["cell-one"]);
+        m.proving = false;
+        let s = empty_store(&m);
+        let report = run_with(&m, &s, None).unwrap();
+        assert_eq!(report.users, 0);
+        let e = entries(&s, &m.cells[0]);
+        assert!(!e.contains_key("users.json"));
+        assert!(!e.contains_key("ui-test-password"));
     }
 
     #[test]
