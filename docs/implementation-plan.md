@@ -360,7 +360,7 @@ flowchart LR
 | **K-20h** Let infra-apply replace one API machine | Infrastructure | K-20g | None | S | Agent | Done |
 | **K-20i** Runbook for rolling a new API image onto running cells | Infrastructure | K-20h | None | S | Agent | Done |
 | **K-20j** Let replacing an Azure API machine recreate its role assignments | Infrastructure | K-20h | None | S | Agent | Done |
-| **K-23a** Edge subnets and a route to the internet on AWS, for the load balancer only | Infrastructure | K-20h | D-22 | S | Agent | To do |
+| **K-23a** Edge subnets and a route to the internet on AWS, for the load balancer only | Infrastructure | K-20h | D-22 | S | Agent | In progress |
 | **K-23b** A load balancer in front of the AWS API, from named ranges only | Infrastructure | K-23a | D-22 | M | Agent | To do |
 | **K-23c** Runbook for putting the AWS API and page on the internet, and taking them off | Infrastructure | K-23b | None | S | Agent | To do |
 | **K-23d** Limit sign-in failures for each address, not only each username | Ledger kernel | K-21 | D-21 | M | Agent | To do |
