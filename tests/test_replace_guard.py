@@ -210,6 +210,63 @@ def test_only_one_machine_is_replaced_even_with_role_assignments():
     assert guard.check_plan(AZ, {"resource_changes": [SECRET, REGISTRY]})
 
 
+LB = "module.front_aws[0].aws_lb_target_group_attachment.api[0]"
+LB_REPLACE = change(LB, "aws_lb_target_group_attachment", "delete", "create")
+
+
+def test_replacing_the_aws_api_machine_may_recreate_the_load_balancers_attachment():
+    assert guard.check_plan(API, {"resource_changes": [API_REPLACE, LB_REPLACE]}) is None
+    flipped = change(LB, "aws_lb_target_group_attachment", "create", "delete")
+    assert guard.check_plan(API, {"resource_changes": [API_REPLACE, flipped, change("t.image", "terraform_data", "update")]}) is None
+
+
+def test_an_attachment_that_is_only_deleted_is_refused():
+    gone = change(LB, "aws_lb_target_group_attachment", "delete")
+    assert guard.check_plan(API, {"resource_changes": [API_REPLACE, gone]})
+
+
+@pytest.mark.parametrize("address", [
+    "module.front_other[0].aws_lb_target_group_attachment.api[0]",
+    "module.front_aws[1].aws_lb_target_group_attachment.api[0]",
+    "module.front_aws.aws_lb_target_group_attachment.api[0]",
+    "module.front_aws[0].aws_lb_target_group_attachment.other[0]",
+    "module.front_aws[0].aws_lb_target_group_attachment.api",
+    "aws_lb_target_group_attachment.api[0]",
+    "module.x.module.front_aws[0].aws_lb_target_group_attachment.api[0]",
+])
+def test_only_the_one_attachment_in_the_load_balancers_module_may_be_recreated(address):
+    other = change(address, "aws_lb_target_group_attachment", "delete", "create")
+    assert guard.check_plan(API, {"resource_changes": [API_REPLACE, other]})
+
+
+def test_the_attachment_is_refused_when_the_machine_is_not_the_aws_api_machine():
+    az = "module.api_azure.azurerm_linux_virtual_machine.api"
+    azure = change(az, "azurerm_linux_virtual_machine", "delete", "create")
+    assert guard.check_plan(az, {"resource_changes": [azure, LB_REPLACE]})
+    node = "module.c.aws_instance.node[1]"
+    assert guard.check_plan(node, {"resource_changes": [REPLACE, LB_REPLACE]})
+    assert guard.check_plan(node, {"resource_changes": [REPLACE, ATTACH, LB_REPLACE]})
+
+
+def test_the_attachment_alone_is_refused_when_no_machine_is_replaced():
+    assert guard.check_plan(API, {"resource_changes": [LB_REPLACE]})
+
+
+@pytest.mark.parametrize("kind", ["aws_lb", "aws_lb_listener", "aws_lb_target_group", "aws_wafv2_web_acl",
+                                  "aws_vpc_security_group_ingress_rule", "aws_acm_certificate"])
+def test_nothing_else_of_the_load_balancer_may_be_recreated_with_the_machine(kind):
+    other = change(f"module.front_aws[0].{kind}.this[0]", kind, "delete", "create")
+    assert guard.check_plan(API, {"resource_changes": [API_REPLACE, other]})
+
+
+def test_the_guard_names_the_attachment_the_load_balancer_module_really_makes():
+    main = (ROOT / "infra" / "modules" / "api-front-aws" / "main.tf").read_text()
+    layer = (ROOT / "infra" / "envs" / "europe" / "api" / "main.tf").read_text()
+    assert 'resource "aws_lb_target_group_attachment" "api"' in main
+    assert "count = local.live" in main[main.index('resource "aws_lb_target_group_attachment"'):][:200]
+    assert 'module "front_aws"' in layer and "count  = var.front_domain_name" in layer
+
+
 def test_the_address_error_says_an_api_machine_is_accepted_and_prints_nothing_it_was_given():
     out = run("address", "module.secretname.azure_instance.api")
     assert out.returncode == 1

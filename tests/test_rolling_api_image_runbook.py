@@ -136,3 +136,10 @@ def test_it_says_an_azure_plan_shows_two_role_assignments_replaced_and_the_modul
     for name in ["secret", "registry"]:
         assert f'resource "azurerm_role_assignment" "{name}"' in azure
     assert "azurerm_linux_virtual_machine.api.identity[0].principal_id" in azure
+
+
+def test_it_says_what_the_aws_plan_shows_once_a_load_balancer_is_in_front():
+    assert "aws_lb_target_group_attachment.api" in TEXT
+    assert "exposing-the-api-in-aws.md" in TEXT
+    assert (RUNBOOKS / "exposing-the-api-in-aws.md").is_file()
+    assert "that one attachment and nothing else of the load balancer" in TEXT

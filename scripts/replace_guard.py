@@ -23,6 +23,11 @@ DISKS = {"aws_ebs_volume", "azurerm_managed_disk", "google_compute_disk"}
 # alongside an API machine, and only in the machine's own module.
 DEPENDENTS = {"azurerm_role_assignment"}
 
+# The AWS load balancer's attachment of the API machine to its target group is built from the
+# machine's id, so it is recreated with the machine. It is the one other thing that may be replaced
+# alongside the AWS API machine, and only this one, in the load balancer's module.
+BALANCER_ATTACHMENT = re.compile(r"^module\.front_aws\[0\]\.aws_lb_target_group_attachment\.api\[0\]$")
+
 _INDEX = r'(\[([0-9]+|"[a-z0-9_.-]+")\])?'
 _MODULES = rf"(module\.[a-z0-9_]+{_INDEX}\.)"
 _KINDS = "|".join(sorted(MACHINES))
@@ -49,6 +54,7 @@ def check_plan(address: str, plan: dict) -> str | None:
     """Return None if the plan is the one asked for, otherwise a reason with no names in it."""
     replaced = 0
     api = address.endswith(".api") and _module_of(address) != ""
+    aws_api = api and address.rsplit(".", 2)[-2] == "aws_instance"
     for change in plan.get("resource_changes", []):
         actions = set(change["change"]["actions"])
         kind = change["type"]
@@ -64,6 +70,11 @@ def check_plan(address: str, plan: dict) -> str | None:
             # Replaced with the machine, in its own module: deleted and made again, never just deleted.
             inside = change["address"].startswith(_module_of(address) + ".")
             if actions != {"create", "delete"} or not inside:
+                return "the plan deletes something other than the machine and what is made again with it"
+        elif aws_api and kind == "aws_lb_target_group_attachment":
+            # Replaced with the machine: deleted and made again, never just deleted, and only the
+            # one that sends traffic to this machine.
+            if actions != {"create", "delete"} or not BALANCER_ATTACHMENT.fullmatch(change["address"]):
                 return "the plan deletes something other than the machine and what is made again with it"
         elif kind not in ATTACHMENTS:
             return "the plan deletes something other than the machine and its disk attachment"

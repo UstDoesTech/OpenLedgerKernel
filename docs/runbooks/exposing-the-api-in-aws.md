@@ -60,9 +60,9 @@ In Cloudflare, add a **CNAME** record with that name and value, set to **DNS onl
 
 Certificate Manager shows the certificate as **Issued** within a few minutes of the record being visible.
 
-## 4. Replace the machine now, before the load balancer exists
+## 4. Replace the machine
 
-The service reads `LEDGER_TRUSTED_PROXIES` when it starts, and a machine reads its boot configuration only when it is made. So the AWS API machine must be **replaced once** to learn which addresses are the load balancer's. Do it now, while the load balancer does not exist. Once it does, replacing the machine also replaces the load balancer's attachment, and the workflow's plan check refuses that until K-23e is done.
+The service reads `LEDGER_TRUSTED_PROXIES` when it starts, and a machine reads its boot configuration only when it is made. So the AWS API machine must be **replaced once** to learn which addresses are the load balancer's. Do it before step 7, which opens the page to everyone. It is simplest here, while there is no load balancer, because the plan then shows the machine alone. Since K-23e the workflow also accepts the replacement once the load balancer exists, and the plan then also shows its attachment replaced.
 
 Follow step 7 of [Rolling a new API image](rolling-the-api-image.md) for the AWS cell only. `replace` is `module.api_aws.aws_instance.api`. Plan, read, apply, and check `/healthz` from inside the network, as it says. If you also have a new image to roll, do the earlier steps of that runbook first. Its cell is down for a few minutes while the machine is replaced.
 
@@ -107,7 +107,7 @@ Do not test the rate limit by hammering the page. The WAF blocks the address and
 | The apply in step 5 waits and then fails at the certificate | The validation record is missing, wrong, or proxied. Check the name was not doubled and the record is DNS only. Nothing else was made. Fix the record and apply again. |
 | *"The edge tier's internet gateway must exist first"* | `TF_VAR_edge_enabled` is not `true`. Set it and plan again. |
 | The plan in step 5 shows the API machine replaced | Stop. Something other than the setting you changed moved. Read [Troubleshooting](troubleshooting.md). |
-| The workflow refuses the machine replacement with *"the plan deletes something other than the machine"*, and a load balancer exists | The attachment is replaced with the machine, and the check does not allow it until K-23e. Do not work around it. Set `TF_VAR_certificate_validated` back to `false`, apply, replace the machine, and set it to `true` again. |
+| The plan for a machine replacement shows the load balancer's attachment replaced | Expected once a load balancer exists. The check lets through that one attachment and nothing else of the load balancer. A plan that shows the listener, the web ACL or the load balancer itself changing is not expected: do not apply it. |
 | `502` or `503` from the page | The load balancer sees no healthy API machine. The machine may not be ready, or its secret may lack a file: check `/healthz` from inside the network and see [First entry](first-entry.md#when-a-step-fails). |
 | `403` from one address, others work | The WAF's rate limit blocked it. It ends when the window does. |
 | Sign-in says too many attempts for everyone, from the start | The service is not told the load balancer's ranges, so every caller counts as one address. The machine has not been replaced since K-23b (step 4). |

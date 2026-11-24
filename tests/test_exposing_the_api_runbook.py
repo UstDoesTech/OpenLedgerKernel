@@ -139,3 +139,11 @@ def test_it_is_in_the_index_and_writes_no_name_secret_or_account():
     assert not re.search(r"sha256:[0-9a-f]{64}", TEXT)
     for word in ("bankofmumanddad", "kv-ledger"):
         assert word not in TEXT
+
+
+def test_it_no_longer_says_the_workflow_refuses_the_replacement_and_says_what_the_plan_shows():
+    assert "refuses the machine replacement" not in TEXT
+    assert "does not allow it until K-23e" not in TEXT
+    assert "that one attachment and nothing else of the load balancer" in TEXT
+    guard_text = (ROOT / "scripts" / "replace_guard.py").read_text()
+    assert "aws_lb_target_group_attachment" in guard_text
