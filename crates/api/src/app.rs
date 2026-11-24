@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{FromRequestParts, Path, State};
+use axum::extract::{ConnectInfo, FromRequestParts, Path, State};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
@@ -25,6 +25,7 @@ use sha2::{Digest, Sha256};
 use tokio_postgres::Client;
 
 use crate::auth::{Authenticator, PeerAuthenticator, Principal};
+use crate::client_addr::{self, TrustedProxies};
 use crate::error::ApiError;
 use crate::login::{Login, Refusal};
 use crate::peer::{PeerClient, PeerError};
@@ -61,6 +62,9 @@ pub(crate) struct Inner<C> {
     pub(crate) peer_auth: Option<Arc<dyn PeerAuthenticator>>,
     /// Sign-in with a username and password. None means this cell only takes bearer tokens.
     pub(crate) login: Option<Arc<Login>>,
+    /// The ranges whose forwarded client address is believed, for the limits on sign-in. None by
+    /// default, so a caller cannot choose its own address.
+    pub(crate) trusted_proxies: TrustedProxies,
     /// The pairs of cells already made ready for in-transit value, so each is done once.
     pub(crate) prepared: Mutex<HashSet<(String, String, String, String)>>,
 }
@@ -88,6 +92,7 @@ impl<C: ControlPlane> AppState<C> {
                 peers: Reloadable::new(HashMap::new()),
                 peer_auth: None,
                 login: None,
+                trusted_proxies: TrustedProxies::none(),
                 prepared: Mutex::new(HashSet::new()),
             }),
         }
@@ -125,6 +130,16 @@ impl<C: ControlPlane> AppState<C> {
         Arc::get_mut(&mut self.inner)
             .expect("sign-in is set before the state is shared")
             .login = Some(login);
+        self
+    }
+
+    /// Believes the forwarded client address when the connection comes from one of these ranges,
+    /// such as the load balancer's subnets. Call it before the state is shared.
+    #[must_use]
+    pub fn with_trusted_proxies(mut self, trusted: TrustedProxies) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("trusted proxies are set before the state is shared")
+            .trusted_proxies = trusted;
         self
     }
 
@@ -883,6 +898,8 @@ struct SignIn {
 /// logged or sent back.
 async fn sign_in<C: ControlPlane + 'static>(
     State(s): State<AppState<C>>,
+    connection: Option<axum::Extension<ConnectInfo<client_addr::Peer>>>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let login = s
@@ -892,8 +909,16 @@ async fn sign_in<C: ControlPlane + 'static>(
         .ok_or_else(ApiError::sign_in_not_available)?;
     let request: SignIn = serde_json::from_slice(&body)
         .map_err(|_| ApiError::invalid("send a username and a password, and nothing else"))?;
+    // The address is only counted. It is not logged, and it is not sent back.
+    let peer = connection.map_or(client_addr::UNKNOWN, |c| c.0.0.0.ip());
+    let forwarded: Vec<&str> = headers
+        .get_all("x-forwarded-for")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .collect();
+    let client = s.inner.trusted_proxies.client(peer, &forwarded);
     let issued = login
-        .sign_in(&request.username, &request.password)
+        .sign_in(client, &request.username, &request.password)
         .await
         .map_err(|refusal| match refusal {
             Refusal::Refused => ApiError::invalid_credentials(),

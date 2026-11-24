@@ -1190,7 +1190,7 @@ tasks:
   - POST /v1/sessions takes a username and password and returns a random token and how long it lasts, or the same 401 for an unknown user and a wrong password, in the same time as far as a test can tell.
   - The token is accepted by every other route as a bearer token, names the user's tenant and principal from the user list and never from the request, and stops working at its expiry and after POST /v1/sessions:end.
   - Passwords are checked against Argon2id hashes. No password, hash or username is logged or returned, and no username reaches a journal.
-  - Five failures in a row lock the username out for a minute, said as 429, and a correct password does not clear the lock early.
+  - Five failures in a row from one address for one username lock that address out of that username for a minute, said as 429, and a correct password does not clear the lock early (changed by K-23d, which made the lock per address).
   - The users are read from a file and reloaded while the service runs, as the tokens are.
   - The OpenAPI file and the route list agree, shown by the existing test.
   notes: A stand-in for A-06, behind the same trait, so that a person can sign in to the basic UI. The users live in the cell's API secret, and a username is personal data, so it stays out of the ledger.
@@ -1339,7 +1339,7 @@ tasks:
   phase: P1
   workstream: K
   size: M
-  status: todo
+  status: done
   depends_on:
   - K-21
   decisions:
