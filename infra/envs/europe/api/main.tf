@@ -162,6 +162,28 @@ module "edge_aws" {
   tags       = { managed_by = "opentofu", component = "edge", tenant = local.tenant }
 }
 
+# The load balancer in front of the AWS API (D-22, K-23b). Off until the owner gives a name. It is
+# made in two steps: first the certificate, whose DNS record is printed, then, with
+# certificate_validated true, the load balancer. See docs/runbooks/exposing-the-api-in-aws.md.
+module "front_aws" {
+  source = "../../../modules/api-front-aws"
+  count  = var.front_domain_name != "" ? 1 : 0
+
+  name                   = "${local.names.aws}-api"
+  vpc_id                 = local.network.aws.vpc_id
+  edge_subnet_ids        = local.network.aws.subnet_ids["edge"]
+  edge_security_group_id = local.network.aws.security_group_ids["edge"]
+  api_security_group_id  = local.network.aws.security_group_ids["api"]
+  api_port               = local.client_port
+  target_instance_id     = module.api_aws.instance_id
+  domain_name            = var.front_domain_name
+  certificate_validated  = var.certificate_validated
+  internet_gateway_id    = try(module.edge_aws[0].internet_gateway_id, "")
+  edge_client_cidrs      = var.edge_client_cidrs
+  open_to_internet       = var.open_to_internet
+  tags                   = { managed_by = "opentofu", component = "api-front", tenant = local.tenant }
+}
+
 module "api_aws" {
   source = "../../../modules/api/aws"
 
@@ -175,6 +197,7 @@ module "api_aws" {
   security_group_ids        = [local.network.aws.security_group_ids["api"], local.private_access.aws_client_security_group_id]
   kms_key_arn               = local.cell_first.aws.kms_key_arn
   etcd_endpoints            = local.etcd_endpoints
+  trusted_proxy_cidrs       = local.plan.aws.subnets["edge"]
   tags                      = { managed_by = "opentofu", component = "api", tenant = local.tenant }
 }
 

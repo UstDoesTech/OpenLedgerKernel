@@ -12,6 +12,8 @@ module "boot" {
   secret         = aws_secretsmanager_secret.api.arn
   etcd_endpoints = var.etcd_endpoints
   aws_region     = var.region
+
+  trusted_proxy_cidrs = var.trusted_proxy_cidrs
 }
 
 # The secret is made empty. Whoever issues the certificates and tokens puts the values in, so

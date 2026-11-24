@@ -82,3 +82,9 @@ variable "azure_tenant_id" {
   type        = string
   default     = null
 }
+
+variable "trusted_proxy_cidrs" {
+  description = "Ranges whose forwarded client address the service believes (LEDGER_TRUSTED_PROXIES). None leaves it unset, so the header is never read."
+  type        = list(string)
+  default     = []
+}

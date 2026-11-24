@@ -68,6 +68,12 @@ locals {
     LEDGER_ETCD_KEY_FILE      = "${local.secrets_dir}/etcd-client.key"
   }
 
+  # Set only when a load balancer is in front of the machine. The service believes the forwarded
+  # client address only from these ranges, to limit sign-in for each address (K-23d).
+  proxy_environment = length(var.trusted_proxy_cidrs) > 0 ? {
+    LEDGER_TRUSTED_PROXIES = join(",", var.trusted_proxy_cidrs)
+  } : {}
+
   file_mode = {
     executable = 493
   }
@@ -107,7 +113,7 @@ locals {
             secret_arguments      = local.secret_arguments
             public_port           = var.public_port
             internal_port         = var.internal_port
-            environment_arguments = join(" ", [for k, v in local.environment : "--env ${k}=${v}"])
+            environment_arguments = join(" ", [for k, v in merge(local.environment, local.proxy_environment) : "--env ${k}=${v}"])
           })
         },
         {
