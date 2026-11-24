@@ -1,6 +1,7 @@
 {
   "layout": {
     "tiers": ["cell", "control_plane", "api"],
+    "aws_only_tiers": ["edge"],
     "zones": 3,
     "subnet_newbits": 4,
     "tier_stride": 4,

@@ -1,5 +1,6 @@
 # A private network in one AWS region: three subnets per tier, one per availability zone, no
-# internet gateway, no NAT, no public addresses, and default-deny security groups. Later
+# internet gateway, no NAT, no public addresses, and default-deny security groups. (The edge tier's
+# route to the internet is in modules/edge-aws, not here.) Later
 # modules add the routes and rules they need. Flow logs go to CloudWatch Logs.
 data "aws_availability_zones" "available" {
   state = "available"
@@ -42,14 +43,18 @@ resource "aws_subnet" "this" {
   tags                    = merge(local.tags, { Name = "${var.name}-${each.key}", tier = each.value.tier })
 }
 
-# One route table with only the local route. Private links add their routes to it later.
+# One route table with only the local route. Private links add their routes to it later. The edge
+# tier (the load balancer's subnets, D-22) is not on it: it is on a table of its own, made by
+# modules/edge-aws, so that no private link's route and no private tier ever shares a table with a
+# route to the internet. Until that module is used, edge subnets sit on the VPC's main table, which
+# has only the local route.
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.this.id
   tags   = merge(local.tags, { Name = "${var.name}-private" })
 }
 
 resource "aws_route_table_association" "private" {
-  for_each = aws_subnet.this
+  for_each = { for key, subnet in aws_subnet.this : key => subnet if local.subnets[key].tier != "edge" }
 
   subnet_id      = each.value.id
   route_table_id = aws_route_table.private.id

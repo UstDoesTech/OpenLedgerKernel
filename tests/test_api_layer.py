@@ -87,7 +87,7 @@ def test_nothing_secret_is_a_value_here_and_the_one_variable_is_named_as_a_secre
     s = src()
     assert not re.search(r"password|secret_version|BEGIN|postgres://", s, re.I)
     variables = {name for name, _ in blocks(s, "variable")}
-    assert variables == {"azure_subscription_id", "state_bucket", "azure_flatcar_image_id", "administrator_ssh_public_key", "client_cidrs"}
+    assert variables == {"azure_subscription_id", "state_bucket", "azure_flatcar_image_id", "administrator_ssh_public_key", "client_cidrs", "edge_enabled"}
 
 
 def test_outputs_say_where_each_secret_is_and_hold_no_contents():

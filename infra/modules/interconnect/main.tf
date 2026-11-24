@@ -29,7 +29,11 @@ locals {
 
   preshared_key_names = flatten([for pair, cidrs in local.tunnels : [for index, cidr in cidrs : "${pair}-${index}"]])
 
-  tiers = keys(var.plans.aws.subnets)
+  # The tiers every cloud has. A tier that only one cloud has, such as AWS's edge, is not linked.
+  tiers = [
+    for tier in keys(var.plans.aws.subnets) : tier
+    if alltrue([for plan in values(var.plans) : contains(keys(plan.subnets), tier)])
+  ]
 
   # Every subnet of a tier on all three clouds.
   tier_cidrs = {
