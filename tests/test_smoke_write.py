@@ -18,6 +18,7 @@ class Api(BaseHTTPRequestHandler):
     accounts: dict
     journals: dict
     broken = False
+    token = TOKEN
 
     def log_message(self, *args):
         pass
@@ -36,7 +37,7 @@ class Api(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
 
     def do_POST(self):
-        if self.headers.get("Authorization") != f"Bearer {TOKEN}":
+        if self.headers.get("Authorization") != f"Bearer {self.token}":
             return self.reply(401, {"code": "unauthenticated"})
         if self.broken:
             return self.reply(500, {"code": "home_unavailable"})
@@ -114,11 +115,15 @@ def test_a_wrong_token_is_reported_as_a_status_class_only(server, tmp_path):
 
 def test_the_token_is_never_a_command_line_argument():
     lines = [l for l in SCRIPT.read_text().splitlines() if not l.lstrip().startswith("#")]
-    assert sum("Bearer" in l for l in lines) == 1
-    bearer = next(l for l in lines if "Bearer" in l)
-    assert bearer.startswith("printf") and bearer.endswith('> "$work/auth"'), "it goes to a file, not an argument"
+    # One header file for the payer's cell and one for the payee's cell, each written from a token
+    # file, and nothing else that mentions the header.
+    bearers = [l for l in lines if "Bearer" in l]
+    assert len(bearers) == 2
+    for bearer in bearers:
+        assert bearer.startswith("printf") and bearer.endswith(('> "$work/auth"', '> "$work/auth_payee"')), "it goes to a file, not an argument"
     assert not any("curl" in l and "Authorization" in l for l in lines)
-    assert any('--header "@$work/auth"' in l for l in lines)
+    assert any('--header "@$work/$auth"' in l for l in lines)
+    assert not any('--header "$' in l and "token" in l for l in lines)
 
 
 def test_it_refuses_to_run_without_a_token_file(tmp_path):
@@ -127,3 +132,29 @@ def test_it_refuses_to_run_without_a_token_file(tmp_path):
         env={**os.environ, "LEDGER_API_URL": "http://127.0.0.1:1", "LEDGER_API_TOKEN_FILE": str(tmp_path / "missing")},
     )
     assert result.returncode == 2
+
+
+def test_a_payee_at_another_cell_uses_its_own_token(server, tmp_path):
+    first, url = server
+    handler = type("Handler", (Api,), {"accounts": first.accounts, "journals": first.journals, "broken": False, "token": "tok_other_cell"})
+    other = HTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=other.serve_forever, daemon=True).start()
+    try:
+        payee_token = tmp_path / "payee_token"
+        payee_token.write_text("tok_other_cell\n")
+        result = run(url, tmp_path, LEDGER_API_URL_PAYEE=f"http://127.0.0.1:{other.server_port}",
+                     LEDGER_API_TOKEN_FILE_PAYEE=str(payee_token))
+        out = result.stdout + result.stderr
+        assert result.returncode == 0, out
+        assert "tok_other_cell" not in out
+        # Both accounts exist, so the payee was opened at the other cell with that cell's token:
+        # the first cell would have refused it, and the other would have refused the first token.
+        assert len(first.accounts) == 2
+    finally:
+        other.shutdown()
+
+
+def test_a_payee_token_file_that_cannot_be_read_stops_it(server, tmp_path):
+    _, url = server
+    result = run(url, tmp_path, LEDGER_API_TOKEN_FILE_PAYEE=str(tmp_path / "nothing"))
+    assert result.returncode == 2 and "LEDGER_API_TOKEN_FILE_PAYEE cannot be read" in result.stdout

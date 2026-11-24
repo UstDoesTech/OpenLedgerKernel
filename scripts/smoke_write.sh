@@ -8,9 +8,11 @@
 # Usage:
 #   LEDGER_API_URL=https://<api address> LEDGER_API_TOKEN_FILE=<file> \
 #     [LEDGER_API_CA_FILE=<file>] [LEDGER_API_URL_PAYEE=https://<another cell's api address>] \
-#     scripts/smoke_write.sh
+#     [LEDGER_API_TOKEN_FILE_PAYEE=<file>] scripts/smoke_write.sh
 #
-# With LEDGER_API_URL_PAYEE the payee is opened at that cell, so the transfer crosses cells.
+# With LEDGER_API_URL_PAYEE the payee is opened at that cell, so the transfer crosses cells. Each
+# cell has its own token, so a payee at another cell takes its own file in
+# LEDGER_API_TOKEN_FILE_PAYEE. Without it, the one token is used for both.
 # The token is read from a file, never from the command line, so it does not show in a process
 # list. Use a test tenant. The proving environment holds no real money and no customer data.
 set -uo pipefail
@@ -18,7 +20,9 @@ set -uo pipefail
 url="${LEDGER_API_URL:?LEDGER_API_URL is not set}"
 payee_url="${LEDGER_API_URL_PAYEE:-$url}"
 token_file="${LEDGER_API_TOKEN_FILE:?LEDGER_API_TOKEN_FILE is not set}"
+payee_token_file="${LEDGER_API_TOKEN_FILE_PAYEE:-$token_file}"
 [ -r "$token_file" ] || { echo "LEDGER_API_TOKEN_FILE cannot be read"; exit 2; }
+[ -r "$payee_token_file" ] || { echo "LEDGER_API_TOKEN_FILE_PAYEE cannot be read"; exit 2; }
 command -v curl > /dev/null && command -v jq > /dev/null || { echo "curl and jq are needed"; exit 2; }
 
 umask 077
@@ -27,15 +31,19 @@ trap 'rm -rf "$work"' EXIT
 
 # The token goes to curl in a header file, so it is never an argument.
 printf 'Authorization: Bearer %s\n' "$(tr -d '\n' < "$token_file")" > "$work/auth"
+printf 'Authorization: Bearer %s\n' "$(tr -d '\n' < "$payee_token_file")" > "$work/auth_payee"
 
-curl_args=(--silent --max-time 20 --header "@$work/auth" --header 'Content-Type: application/json')
+curl_args=(--silent --max-time 20 --header 'Content-Type: application/json')
 [ -n "${LEDGER_API_CA_FILE:-}" ] && curl_args+=(--cacert "$LEDGER_API_CA_FILE")
 
 # call <name> <base url> <method> <path> [idempotency key] [body]
 # The status goes to <name>.status and the body to <name>.json, both in the private work folder.
 call() {
   local name="$1" base="$2" method="$3" path="$4" key="${5:-}" body="${6:-}"
-  local args=("${curl_args[@]}" --request "$method" --output "$work/$name.json" --write-out '%{http_code}')
+  # A call to the payee's cell, when it is another cell, carries that cell's token.
+  local auth=auth
+  [ "$base" = "$payee_url" ] && [ "$payee_url" != "$url" ] && auth=auth_payee
+  local args=("${curl_args[@]}" --header "@$work/$auth" --request "$method" --output "$work/$name.json" --write-out '%{http_code}')
   [ -n "$key" ] && args+=(--header "Idempotency-Key: $key")
   [ -n "$body" ] && args+=(--data "$body")
   curl "${args[@]}" "${base%/}$path" > "$work/$name.status" 2> /dev/null || echo 000 > "$work/$name.status"
