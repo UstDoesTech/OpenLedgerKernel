@@ -6,6 +6,8 @@ This file is for AI agents (Claude and others) and for the people supervising th
 
 The open ledger kernel: an active-active ledger over Postgres, across three UK clouds, with the infrastructure to run and prove it. The commercial add-on (command engine, products, payments, agents, data, console and launch) is planned in a separate private repository and builds on a tagged release of this one. Nothing about that add-on, or about any customer, belongs here.
 
+This repository does have a basic UI (workstream `U` in the plan): a page the API serves, so a person can check a cell, open accounts and make transfers. It is a way to try the kernel, not the add-on's console, and it holds no product, customer or tenant detail.
+
 Read in this order: the task you are working on in `plan/tasks.yaml`, then the design sections its `refs` point to in [`docs/design.md`](docs/design.md) and [`docs/api-design.md`](docs/api-design.md), then the code. The Python package in `ledger/` and its tests are the reference implementation the Rust kernel must match.
 
 ## This repository is public
