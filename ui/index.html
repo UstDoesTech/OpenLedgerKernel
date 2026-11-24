@@ -34,7 +34,65 @@
     <section id="signed-in" aria-labelledby="signed-in-heading" hidden>
       <h2 id="signed-in-heading" tabindex="-1">Signed in</h2>
       <p>You are signed in as <strong id="who"></strong>.</p>
-      <button type="button" id="sign-out">Sign out</button>
+      <p><button type="button" id="sign-out">Sign out</button></p>
+
+      <section aria-labelledby="check-heading">
+        <h3 id="check-heading">This cell</h3>
+        <p id="ready" role="status">Not checked yet.</p>
+        <button type="button" id="check">Check this cell</button>
+      </section>
+
+      <section aria-labelledby="open-heading">
+        <h3 id="open-heading">Open an account</h3>
+        <form id="open" novalidate>
+          <p id="open-error" class="error" role="alert" hidden></p>
+          <div class="field">
+            <label for="currency">Currency</label>
+            <input id="currency" name="currency" type="text" value="GBP" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="currency-hint" required>
+            <p id="currency-hint" class="hint">Three letters, such as GBP.</p>
+          </div>
+          <div class="field">
+            <label for="overdraft">Overdraft limit, in minor units</label>
+            <input id="overdraft" name="overdraft" type="text" inputmode="numeric" value="0" autocomplete="off" aria-describedby="overdraft-hint" required>
+            <p id="overdraft-hint" class="hint">Whole pence, cents or the currency's smallest unit. 0 means none.</p>
+          </div>
+          <button type="submit" id="open-button">Open account</button>
+        </form>
+        <p id="opened" role="status" hidden></p>
+      </section>
+
+      <section aria-labelledby="read-heading">
+        <h3 id="read-heading">Read an account</h3>
+        <form id="read" novalidate>
+          <p id="read-error" class="error" role="alert" hidden></p>
+          <div class="field">
+            <label for="account">Account number</label>
+            <input id="account" name="account" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="account-hint" required>
+            <p id="account-hint" class="hint">It starts with acc_.</p>
+          </div>
+          <button type="submit" id="read-button">Read account</button>
+        </form>
+        <section id="account-view" aria-labelledby="account-heading" hidden>
+          <h3 id="account-heading" tabindex="-1">Account</h3>
+          <dl>
+            <dt>Currency</dt><dd id="v-currency"></dd>
+            <dt>Status</dt><dd id="v-status"></dd>
+            <dt>Kept at cell</dt><dd id="v-cell"></dd>
+          </dl>
+          <table>
+            <caption>Balances, in minor units</caption>
+            <thead>
+              <tr><th scope="col">Balance</th><th scope="col">Amount</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">Posted</th><td id="b-posted"></td></tr>
+              <tr><th scope="row">Held</th><td id="b-held"></td></tr>
+              <tr><th scope="row">Available</th><td id="b-available"></td></tr>
+              <tr><th scope="row">Arranged overdraft</th><td id="b-overdraft"></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
     </section>
   </main>
 </body>

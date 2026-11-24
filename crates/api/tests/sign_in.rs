@@ -328,3 +328,105 @@ async fn the_page_is_served_by_the_real_router_with_no_token_and_the_policy_head
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     cell.drop_schema().await;
 }
+
+#[tokio::test]
+#[ignore = "needs the local Postgres nodes"]
+async fn the_page_can_open_an_account_and_read_it_and_nothing_the_api_says_is_cached() {
+    let cell = Cell::start("page_flow", true).await;
+    let (_, _, body, _) = cell
+        .send(
+            "/v1/sessions",
+            None,
+            None,
+            Some(json!({"username": NAME, "password": PASSWORD})),
+        )
+        .await;
+    let token = body["token"].as_str().unwrap().to_owned();
+
+    // Exactly what the page sends to open an account: an overdraft limit as minor units and a currency.
+    let (status, headers, account, _) = cell
+        .send(
+            "/v1/accounts",
+            Some(&token),
+            Some("page-open-1"),
+            Some(
+                json!({"currency": "GBP", "overdraft_limit": {"minor": 50000, "currency": "GBP"}}),
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "opening the account failed");
+    assert_eq!(headers["cache-control"], "no-store");
+    let id = account["account_id"].as_str().unwrap().to_owned();
+    assert!(id.starts_with("acc_"));
+
+    // Sending the same form again with the same key opens the same account, not another.
+    let (status, _, again, _) = cell
+        .send(
+            "/v1/accounts",
+            Some(&token),
+            Some("page-open-1"),
+            Some(
+                json!({"currency": "GBP", "overdraft_limit": {"minor": 50000, "currency": "GBP"}}),
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(again["account_id"], id);
+
+    let get = |uri: String, token: Option<String>| {
+        let app = cell.app.clone();
+        async move {
+            let mut req = Request::get(uri);
+            if let Some(t) = token {
+                req = req.header("authorization", format!("Bearer {t}"));
+            }
+            let response = app.oneshot(req.body(Body::empty()).unwrap()).await.unwrap();
+            let status = response.status();
+            let headers = response.headers().clone();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            (
+                status,
+                headers,
+                serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null),
+            )
+        }
+    };
+
+    // What the page reads: the account, and its balances as whole minor units with a currency.
+    let (status, headers, view) = get(format!("/v1/accounts/{id}"), Some(token.clone())).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers["cache-control"], "no-store");
+    assert_eq!(view["currency"], "GBP");
+    assert_eq!(view["status"], "open");
+    assert!(view["home"]["cell"].is_string());
+
+    let (status, headers, balances) =
+        get(format!("/v1/accounts/{id}/balances"), Some(token.clone())).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers["cache-control"], "no-store");
+    for name in ["posted", "held", "available", "arranged_overdraft"] {
+        assert!(
+            balances[name]["minor"].is_i64(),
+            "{name} is not whole minor units"
+        );
+        assert_eq!(balances[name]["currency"], "GBP", "{name}");
+    }
+    assert_eq!(balances["posted"]["minor"], 0);
+    assert_eq!(balances["arranged_overdraft"]["minor"], 50000);
+    assert_eq!(balances["available"]["minor"], 50000);
+
+    // Failures are not cached either, and a missing account and a wrong token say so plainly.
+    let (status, headers, _) = get(
+        "/v1/accounts/acc_nosuch/balances".into(),
+        Some(token.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(headers["cache-control"], "no-store");
+    let (status, headers, _) = get(format!("/v1/accounts/{id}/balances"), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(headers["cache-control"], "no-store");
+    let (_, headers, _) = get("/healthz".into(), None).await;
+    assert_eq!(headers["cache-control"], "no-store");
+    cell.drop_schema().await;
+}

@@ -33,6 +33,8 @@ const files = {
 
 const USER = "user@example.test";
 const RIGHT = "the right password";
+const TOKEN = "not-a-real-token";
+let ready = true;
 
 function readBody(req) {
   return new Promise((done) => {
@@ -52,9 +54,72 @@ const server = http.createServer(async (req, res) => {
       "cache-control": "no-store",
     });
     res.end(readFileSync(join(root, "ui", page[0])));
+  } else if (req.method === "GET" && path === "/__ready/off") {
+    ready = false;
+    res.writeHead(204);
+    res.end();
+  } else if (req.method === "GET" && path === "/__ready/on") {
+    ready = true;
+    res.writeHead(204);
+    res.end();
   } else if (req.method === "GET" && path === "/healthz") {
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ cell: "cell-test", status: "ok" }));
+    res.writeHead(ready ? 200 : 503, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        cell: "cell-test",
+        status: ready ? "ok" : "draining",
+        accounts_homed: 2,
+        leases_held: 2,
+        draining: !ready,
+      }),
+    );
+  } else if (path.startsWith("/v1/accounts") && req.headers.authorization !== `Bearer ${TOKEN}`) {
+    res.writeHead(401, { "content-type": "application/json" });
+    res.end(JSON.stringify({ code: "unauthenticated" }));
+  } else if (req.method === "POST" && path === "/v1/accounts") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    if (!req.headers["idempotency-key"]) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ title: "no key" }));
+    } else if (body.currency === "XXX") {
+      // The server's own words can carry an identifier. The page must not show them.
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ title: "acc_secretword is not allowed", detail: "acc_secretword" }));
+    } else {
+      res.writeHead(201, { "content-type": "application/json" });
+      res.end(JSON.stringify({ account_id: "acc_test1", currency: body.currency, status: "open" }));
+    }
+  } else if (req.method === "GET" && path.startsWith("/v1/accounts/")) {
+    const [, , , id, rest] = path.split("/");
+    if (id === "acc_missing") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ title: "acc_missing was not found" }));
+    } else if (id !== "acc_test1") {
+      res.writeHead(404);
+      res.end();
+    } else if (rest === "balances") {
+      const m = (minor) => ({ minor, currency: "GBP" });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          account_id: id,
+          posted: m(12345),
+          held: m(2000),
+          available: m(60345),
+          arranged_overdraft: m(50000),
+        }),
+      );
+    } else {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          account_id: id,
+          currency: "GBP",
+          status: "open",
+          home: { cell: "cell-test", epoch: 1 },
+        }),
+      );
+    }
   } else if (req.method === "POST" && path === "/v1/sessions") {
     const body = JSON.parse((await readBody(req)) || "{}");
     if (body.username === "locked@example.test") {
@@ -62,7 +127,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ code: "too_many_attempts" }));
     } else if (body.username === USER && body.password === RIGHT) {
       res.writeHead(201, { "content-type": "application/json" });
-      res.end(JSON.stringify({ token: "not-a-real-token", expires_in: 1800, principal: "usr_test" }));
+      res.end(JSON.stringify({ token: TOKEN, expires_in: 1800, principal: "usr_test" }));
     } else {
       res.writeHead(401, { "content-type": "application/json" });
       res.end(JSON.stringify({ code: "invalid_credentials" }));
@@ -173,11 +238,91 @@ try {
     if ((await page.evaluate(() => document.activeElement.id)) !== "signed-in-heading") {
       problems.push(`${scheme}: focus did not move to the signed-in heading`);
     }
+    await page.waitForFunction(() => document.getElementById("ready").textContent.includes("ready"));
     await audit(page, `${scheme} signed in`);
-    await page.keyboard.press("Tab");
-    if ((await page.evaluate(() => document.activeElement.id)) !== "sign-out") {
-      problems.push(`${scheme}: sign out is not the next stop`);
+
+    // The keyboard alone, through the whole signed-in page.
+    const stops = [];
+    for (let i = 0; i < 7; i += 1) {
+      await page.keyboard.press("Tab");
+      stops.push(await page.evaluate(() => document.activeElement.id));
+      const outline = await page.evaluate(() => {
+        const s = getComputedStyle(document.activeElement);
+        return s.outlineStyle !== "none" && parseFloat(s.outlineWidth) >= 2;
+      });
+      if (!outline) problems.push(`${scheme}: no visible focus on ${stops.at(-1)}`);
     }
+    if (stops.join() !== "sign-out,check,currency,overdraft,open-button,account,read-button") {
+      problems.push(`${scheme}: signed-in tab order was ${stops.join()}`);
+    }
+
+    const said = (id) => page.$eval(`#${id}`, (e) => e.textContent);
+    const visible = (id) => page.$eval(`#${id}`, (e) => !e.hidden);
+    const waitFor = (id) => page.waitForFunction((i) => !document.getElementById(i).hidden, {}, id);
+
+    // Open an account: first a mistake caught at once, then one the server refuses, then it works.
+    await page.$eval("#currency", (e) => (e.value = ""));
+    await type(page, "#currency", "GB");
+    await page.click("#open-button");
+    await waitFor("open-error");
+    await audit(page, `${scheme} open: currency mistake`);
+    await page.$eval("#currency", (e) => (e.value = ""));
+    await type(page, "#currency", "XXX");
+    await page.click("#open-button");
+    await page.waitForFunction(() => document.getElementById("open-error").textContent.includes("did not accept"));
+    if ((await said("open-error")).includes("acc_secretword")) {
+      problems.push(`${scheme}: the server's own words were shown`);
+    }
+    await audit(page, `${scheme} open: refused by the cell`);
+    await page.$eval("#currency", (e) => (e.value = ""));
+    await type(page, "#currency", "gbp");
+    await page.$eval("#overdraft", (e) => (e.value = ""));
+    await type(page, "#overdraft", "50000");
+    await page.keyboard.press("Enter");
+    await waitFor("opened");
+    if ((await page.$eval("#account", (e) => e.value)) !== "acc_test1") {
+      problems.push(`${scheme}: the new account number was not put in the box`);
+    }
+    if (await visible("open-error")) problems.push(`${scheme}: an old error was left showing`);
+    await audit(page, `${scheme} open: account opened`);
+
+    // Read it: the amounts are whole minor units and a currency, never a decimal.
+    await page.focus("#account");
+    await page.keyboard.press("Enter");
+    await waitFor("account-view");
+    const amounts = [];
+    for (const id of ["b-posted", "b-held", "b-available", "b-overdraft"]) amounts.push(await said(id));
+    if (amounts.join() !== "12345 GBP,2000 GBP,60345 GBP,50000 GBP") {
+      problems.push(`${scheme}: amounts were shown as ${amounts.join()}`);
+    }
+    if (amounts.some((a) => /[.,£$]/.test(a))) problems.push(`${scheme}: an amount has a decimal or a symbol`);
+    if ((await page.evaluate(() => document.activeElement.id)) !== "account-heading") {
+      problems.push(`${scheme}: focus did not move to the account`);
+    }
+    await audit(page, `${scheme} read: account shown`);
+    await page.$eval("#account", (e) => (e.value = ""));
+    await type(page, "#account", "acc_missing");
+    await page.keyboard.press("Enter");
+    await waitFor("read-error");
+    if (await visible("account-view")) problems.push(`${scheme}: an old account was left showing`);
+    if ((await said("read-error")).includes("acc_missing")) {
+      problems.push(`${scheme}: an identifier was repeated in an error`);
+    }
+    await audit(page, `${scheme} read: not found`);
+    await page.$eval("#account", (e) => (e.value = ""));
+    await type(page, "#account", "nope");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.getElementById("read-error").textContent.includes("starts with"));
+    await audit(page, `${scheme} read: not an account number`);
+
+    // A cell that is not ready says so.
+    await fetch(`${base}/__ready/off`);
+    await page.click("#check");
+    await page.waitForFunction(() => document.getElementById("ready").textContent.includes("draining"));
+    await audit(page, `${scheme} cell draining`);
+    await fetch(`${base}/__ready/on`);
+
+    await page.focus("#sign-out");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => !document.getElementById("signed-out").hidden);
     if ((await page.evaluate(() => document.activeElement.id)) !== "username") {
@@ -189,9 +334,15 @@ try {
       cookies: document.cookie.length,
       password: document.getElementById("password").value,
       who: document.getElementById("who").textContent,
+      account: document.getElementById("account").value,
+      posted: document.getElementById("b-posted").textContent,
+      opened: document.getElementById("opened").textContent,
       url: location.href,
     }));
-    if (left.stored || left.cookies || left.password || left.who || left.url.includes("?")) {
+    if (
+      left.stored || left.cookies || left.password || left.who || left.account || left.posted ||
+      left.opened || left.url.includes("?")
+    ) {
       problems.push(`${scheme}: something was left behind after signing out`);
     }
     await audit(page, `${scheme} signed out again`);

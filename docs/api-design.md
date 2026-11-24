@@ -258,4 +258,5 @@ Errors use problem details (`application/problem+json`, RFC 9457) with a stable 
 | Versioning | Path version `/v1` for the API; each command type has its own schema version in the catalogue, and changes are additive. A breaking change is a new command type, run side by side until callers move |
 | Deprecation | `Deprecation` and `Sunset` headers on old command versions, and a catalogue flag agents read |
 | Tenancy | From the token only; never in paths or bodies |
+| Caching | Every response from the service says `Cache-Control: no-store`, whatever it holds. A balance, an account and a token are never for a cache to keep. The basic page's own files say the same |
 | Personal data | Only in `/v1/parties`, masked by default; never in commands' effects, events or entries |

@@ -9,7 +9,7 @@ use axum::body::Bytes;
 use axum::extract::{FromRequestParts, Path, State};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use control_plane::{Admission, ControlError, ControlPlane, LeaseGuard, NodeId};
@@ -163,7 +163,18 @@ pub fn router<C: ControlPlane + 'static>(state: AppState<C>) -> Router {
         .route("/v1/sessions", post(sign_in::<C>))
         .route("/v1/sessions:end", post(sign_out::<C>))
         .with_state(state)
+        // Nothing the API says is for a cache to keep: a balance, an account or a token.
+        .layer(axum::middleware::map_response(no_store))
         .merge(crate::ui::routes())
+}
+
+/// Adds `Cache-Control: no-store` to a response that has no cache rule of its own.
+async fn no_store(mut response: Response) -> Response {
+    response
+        .headers_mut()
+        .entry(header::CACHE_CONTROL)
+        .or_insert(HeaderValue::from_static("no-store"));
+    response
 }
 
 /// The caller, from the bearer token. A request without one never reaches a handler.
