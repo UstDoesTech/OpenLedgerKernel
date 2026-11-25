@@ -26,6 +26,7 @@ use tokio_postgres::Client;
 
 use crate::auth::{Authenticator, PeerAuthenticator, Principal};
 use crate::client_addr::{self, TrustedProxies};
+use crate::dbconn::Db;
 use crate::error::ApiError;
 use crate::login::{Login, Refusal};
 use crate::peer::{PeerClient, PeerError};
@@ -51,7 +52,7 @@ pub(crate) struct Inner<C> {
     /// The cell this service runs next to.
     pub(crate) node: NodeId,
     pub(crate) schema: String,
-    pub(crate) db: Client,
+    pub(crate) db: Db,
     pub(crate) cp: Arc<C>,
     pub(crate) guard: LeaseGuard,
     pub(crate) auth: Arc<dyn Authenticator>,
@@ -70,6 +71,11 @@ pub(crate) struct Inner<C> {
 }
 
 impl<C: ControlPlane> AppState<C> {
+    /// A handle to the database connection, for whatever makes it again when it is lost.
+    pub fn db_handle(&self) -> Db {
+        self.inner.db.clone()
+    }
+
     /// `db` is a connection to this cell's database, whose schema has been migrated. `cp` is shared
     /// so that whatever runs the service can keep a handle to it.
     pub fn new(
@@ -84,7 +90,7 @@ impl<C: ControlPlane> AppState<C> {
             inner: Arc::new(Inner {
                 node,
                 schema: schema.to_owned(),
-                db,
+                db: Db::new(db),
                 cp,
                 guard,
                 auth,
@@ -331,7 +337,7 @@ async fn open_account<C: ControlPlane + 'static>(
         format!("account.open|{}|{overdraft}", request.currency).as_bytes(),
     ));
     let claim = requests::claim(
-        &s.inner.db,
+        &s.inner.db.get(),
         &s.inner.schema,
         &Request {
             tenant: &caller.tenant,
@@ -361,7 +367,7 @@ async fn open_account<C: ControlPlane + 'static>(
         Err(e) => return Err(e.into()),
     };
     accounts::open(
-        &s.inner.db,
+        &s.inner.db.get(),
         &s.inner.schema,
         &NewAccount {
             tenant: caller.tenant.clone(),
@@ -398,7 +404,7 @@ async fn serve<C: ControlPlane + 'static>(
     raw: &str,
 ) -> Result<(AccountId, accounts::AccountRecord, u64), ApiError> {
     let account: AccountId = raw.parse().map_err(|_| ApiError::not_found())?;
-    let record = accounts::get(&s.inner.db, &s.inner.schema, tenant, &account)
+    let record = accounts::get(&s.inner.db.get(), &s.inner.schema, tenant, &account)
         .await?
         .ok_or_else(ApiError::not_found)?;
     let epoch = s.inner.guard.check(&*s.inner.cp, &account).await?;
@@ -441,7 +447,7 @@ async fn get_balances<C: ControlPlane + 'static>(
 ) -> Result<Json<Balances>, ApiError> {
     let (account, record, _) = serve(&s, &caller.tenant, &raw).await?;
     let available =
-        holds::available(&s.inner.db, &s.inner.schema, &caller.tenant, &account).await?;
+        holds::available(&s.inner.db.get(), &s.inner.schema, &caller.tenant, &account).await?;
     // Available is posted, less holds, plus the overdraft, so what is held is what is left over.
     let held = record.balance + record.overdraft_limit - available;
     Ok(Json(Balances {
@@ -586,7 +592,7 @@ async fn post_transfer<C: ControlPlane + 'static>(
         hash: &hash,
         resource: &journal_id,
     };
-    let claim = requests::claim(&s.inner.db, &s.inner.schema, &claim_request).await?;
+    let claim = requests::claim(&s.inner.db.get(), &s.inner.schema, &claim_request).await?;
     if claim == Claim::Conflict {
         return Err(ApiError::idempotency_conflict());
     }
@@ -608,7 +614,7 @@ async fn post_transfer<C: ControlPlane + 'static>(
             // A decline before anything was written gives the key back. A failure after the first
             // half was written keeps it, so a retry finishes the transfer exactly once.
             if !wrote {
-                let _ = requests::release(&s.inner.db, &s.inner.schema, &claim_request).await;
+                let _ = requests::release(&s.inner.db.get(), &s.inner.schema, &claim_request).await;
             }
             return Err(e);
         }
@@ -642,7 +648,8 @@ async fn run_transfer<C: ControlPlane + 'static>(
 ) -> Result<(Vec<Watermark>, bool), ApiError> {
     let i = &s.inner;
     let currency = amount.currency().to_string();
-    let Some(payer_record) = accounts::get(&i.db, &i.schema, &caller.tenant, payer).await? else {
+    let Some(payer_record) = accounts::get(&i.db.get(), &i.schema, &caller.tenant, payer).await?
+    else {
         return Err(payer_elsewhere(s, &caller.tenant, payer).await);
     };
     if payer_record.currency != currency {
@@ -659,7 +666,7 @@ async fn run_transfer<C: ControlPlane + 'static>(
     };
 
     if payee_home == i.node {
-        let payee_record = accounts::get(&i.db, &i.schema, &caller.tenant, payee)
+        let payee_record = accounts::get(&i.db.get(), &i.schema, &caller.tenant, payee)
             .await?
             .ok_or_else(ApiError::not_found)?;
         if payee_record.currency != currency {
@@ -669,7 +676,7 @@ async fn run_transfer<C: ControlPlane + 'static>(
         }
         let payee_epoch = i.guard.check(&*i.cp, payee).await?;
         let step = same_cell::post(
-            &i.db,
+            &i.db.get(),
             &i.schema,
             &SameCell {
                 tenant: caller.tenant.clone(),
@@ -735,7 +742,7 @@ async fn run_transfer<C: ControlPlane + 'static>(
         receiving_epoch: 1,
         payee_epoch: 0,
     };
-    let sent = cross_cell::send(&i.db, &i.schema, &t).await?;
+    let sent = cross_cell::send(&i.db.get(), &i.schema, &t).await?;
     *wrote = true;
     let received = peer_call(
         peer,
@@ -750,7 +757,7 @@ async fn run_transfer<C: ControlPlane + 'static>(
         })),
     )
     .await?;
-    cross_cell::settle(&i.db, &i.schema, &caller.tenant, journal).await?;
+    cross_cell::settle(&i.db.get(), &i.schema, &caller.tenant, journal).await?;
     let their_watermark = received["watermark"]
         .as_i64()
         .ok_or_else(ApiError::internal)?;
@@ -815,7 +822,7 @@ pub(crate) async fn ensure_prepared<C>(
         .map(|p| p.contains(&marker))
         .unwrap_or(false);
     if !known {
-        cross_cell::prepare(&i.db, &i.schema, pair, here).await?;
+        cross_cell::prepare(&i.db.get(), &i.schema, pair, here).await?;
         if let Ok(mut p) = i.prepared.lock() {
             p.insert(marker);
         }

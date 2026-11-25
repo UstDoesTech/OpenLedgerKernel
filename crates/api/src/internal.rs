@@ -90,7 +90,7 @@ async fn account<C: ControlPlane + 'static>(
     Path(raw): Path<String>,
 ) -> Result<Response, ApiError> {
     let id: AccountId = raw.parse().map_err(|_| ApiError::not_found())?;
-    let record = accounts::get(&s.inner.db, &s.inner.schema, &caller.tenant, &id)
+    let record = accounts::get(&s.inner.db.get(), &s.inner.schema, &caller.tenant, &id)
         .await?
         .ok_or_else(ApiError::not_found)?;
     Ok(Json(json!({"account_id": id.to_string(), "currency": record.currency})).into_response())
@@ -125,7 +125,7 @@ async fn check_payee<C: ControlPlane + 'static>(
         return Err(ApiError::invalid("the amount must be positive"));
     }
     let payee: AccountId = payee.parse().map_err(|_| ApiError::not_found())?;
-    let record = accounts::get(&i.db, &i.schema, &caller.tenant, &payee)
+    let record = accounts::get(&i.db.get(), &i.schema, &caller.tenant, &payee)
         .await?
         .ok_or_else(ApiError::not_found)?;
     let currency = amount.currency().to_string();
@@ -193,7 +193,7 @@ async fn receive<C: ControlPlane + 'static>(
         &request.amount.currency().to_string(),
     )?;
     let step = cross_cell::receive(
-        &i.db,
+        &i.db.get(),
         &i.schema,
         &Transfer {
             tenant: caller.tenant.clone(),

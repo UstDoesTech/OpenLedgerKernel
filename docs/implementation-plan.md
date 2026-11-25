@@ -66,7 +66,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-86 of 102 tasks done.
+87 of 102 tasks done.
 
 ```mermaid
 flowchart LR
@@ -322,7 +322,7 @@ flowchart LR
   S_04 --> S_05
   S_05 --> S_07
   classDef done fill:#E8F5EC,stroke:#166534,color:#14171C
-  class F_01,F_02,F_03,K_01,K_02,K_03,K_04,K_05,K_06,K_07,C_01,C_02,R_01,R_02,R_03,C_03,T_01,T_02,K_08,K_11,K_12,K_14,K_15,K_13,K_16,K_17,K_19a,K_19b,K_19c,K_19e,K_19f,K_19g,K_19h,K_19i,K_19j,K_19k,K_20a,K_20b,K_20c,K_20d,K_20e,K_20f,K_20g,K_21,K_20h,K_20i,K_20j,K_23a,K_23b,K_23c,K_23e,K_23d,K_22,UI_01,UI_02,UI_03,T_03,I_01a,I_01g,I_01h,I_01b,I_01c,I_01d,I_01e,I_01i,I_01j,I_01ka,I_01kb,I_01kc,I_01m,I_01n,I_01oa,I_01ob,I_01oca,I_01ocb,I_01occ,I_01p,I_01q,I_01r,I_01t,I_01u,I_01va,I_01vb,S_04,S_05,S_07 done
+  class F_01,F_02,F_03,K_01,K_02,K_03,K_04,K_05,K_06,K_07,C_01,C_02,R_01,R_02,R_03,C_03,T_01,T_02,K_08,K_11,K_12,K_14,K_15,K_13,K_16,K_17,K_19a,K_19b,K_19c,K_19e,K_19f,K_19g,K_19h,K_19i,K_19j,K_19k,K_20a,K_20b,K_20c,K_20d,K_20e,K_20f,K_20g,K_21,K_20h,K_20i,K_20j,K_24a,K_23a,K_23b,K_23c,K_23e,K_23d,K_22,UI_01,UI_02,UI_03,T_03,I_01a,I_01g,I_01h,I_01b,I_01c,I_01d,I_01e,I_01i,I_01j,I_01ka,I_01kb,I_01kc,I_01m,I_01n,I_01oa,I_01ob,I_01oca,I_01ocb,I_01occ,I_01p,I_01q,I_01r,I_01t,I_01u,I_01va,I_01vb,S_04,S_05,S_07 done
 ```
 
 | Task | Workstream | Depends on | Decisions | Size | Owner | Status |
@@ -377,7 +377,7 @@ flowchart LR
 | **K-20h** Let infra-apply replace one API machine | Infrastructure | K-20g | None | S | Agent | Done |
 | **K-20i** Runbook for rolling a new API image onto running cells | Infrastructure | K-20h | None | S | Agent | Done |
 | **K-20j** Let replacing an Azure API machine recreate its role assignments | Infrastructure | K-20h | None | S | Agent | Done |
-| **K-24a** Let the service sign in to a managed database as its machine's identity | Ledger kernel | K-22 | None | M | Agent | In progress |
+| **K-24a** Let the service sign in to a managed database as its machine's identity | Ledger kernel | K-22 | None | M | Agent | Done |
 | **K-24b** Let each managed cell's API machine sign in to its database by identity | Infrastructure | I-01vb, K-24a | None | M | Agent | To do |
 | **K-24c** Make each managed cell's application role and give it only the ledger's schema | Ledger kernel | K-24b | None | M | Agent | To do |
 | **K-24d** Write a managed cell's connection and database authority in rotate-credentials | Ledger kernel | K-24a, K-22 | None | S | Agent | To do |

@@ -27,6 +27,7 @@ ring = "0.17"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "io-util", "sync"] }
 tokio-postgres = "0.7"
+tokio-native-tls = "0.3"
 native-tls = "0.2"
 postgres-native-tls = "0.5"
 hyper = { version = "1", default-features = false, features = ["client", "http1"] }
