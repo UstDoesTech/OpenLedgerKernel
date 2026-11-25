@@ -38,5 +38,9 @@ elif [ "$(blkid -o value -s LABEL "$disk" || true)" != ledger-data ]; then
 fi
 
 mount -o noatime LABEL=ledger-data "$target"
+# A new ext4 file system holds an empty lost+found folder. The node agent refuses a data
+# directory that is not empty and has no PostgreSQL data, so a new node would stop at once and
+# restart for ever. rmdir removes the folder only while it is empty, so data is never touched.
+rmdir "$target/lost+found" 2>/dev/null || true
 # The container's postgres user is 999.
 chown 999:999 "$target"
