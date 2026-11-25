@@ -8,6 +8,11 @@ Requires=docker.service
 Restart=always
 RestartSec=10
 TimeoutStartSec=0
+# The machine has no way in: no SSH key and no public address. Its output goes to the serial
+# console too, so "Get system log" in the cloud's console shows why a start failed. What the steps
+# and the service print is one line each and never a key, a token or a password (a test holds that).
+StandardOutput=journal+console
+StandardError=journal+console
 ExecStartPre=-/usr/bin/docker rm -f ${name}
 ExecStartPre=/opt/ledger-api/fetch-secrets.sh ${secret_arguments}
 ExecStartPre=/opt/ledger-api/registry-login.sh ${login_arguments}
