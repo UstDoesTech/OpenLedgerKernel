@@ -2202,7 +2202,7 @@ tasks:
   phase: P1
   workstream: I
   size: M
-  status: todo
+  status: done
   depends_on:
   - I-01va
   deliverables:
