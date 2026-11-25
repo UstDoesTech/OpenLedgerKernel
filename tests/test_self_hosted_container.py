@@ -201,6 +201,15 @@ def test_boot_configuration_runs_the_container_locked_down_and_stops_os_updates(
     assert "/etc/ledger/tls:/run/secrets/tls:ro" in unit
 
 
+def test_a_stopped_node_leaves_one_fixed_line_on_the_console_and_never_the_container_output():
+    unit = (MODULES / "node-boot" / "files" / "ledger-postgres.service.tpl").read_text()
+    line = next(l for l in unit.splitlines() if l.startswith("ExecStopPost="))
+    assert "docker inspect --format" in line and "> /dev/console" in line
+    assert "State.ExitCode" in line and "State.OOMKilled" in line
+    assert "docker logs" not in unit
+    assert "StandardOutput" not in unit and "StandardError" not in unit
+
+
 def test_boot_configuration_validation_refuses_a_tag():
     text = code(MODULES / "node-boot" / "variables.tf")
     pattern = re.search(r'regex\("([^"]+)", var\.image\)', text).group(1)
