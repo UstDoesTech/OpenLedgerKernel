@@ -19,6 +19,7 @@
 mod app;
 pub mod auth;
 pub mod client_addr;
+pub mod dbauth;
 pub mod dbconn;
 pub mod error;
 mod internal;

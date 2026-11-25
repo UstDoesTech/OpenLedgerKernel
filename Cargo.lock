@@ -41,6 +41,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "tokio",
+ "tokio-native-tls",
  "tokio-postgres",
  "tokio-rustls",
  "tower",

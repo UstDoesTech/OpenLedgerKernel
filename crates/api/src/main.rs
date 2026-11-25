@@ -6,6 +6,12 @@
 //!
 //!   LEDGER_NODE            the cell this runs next to, such as `aws-lon-03`
 //!   LEDGER_DB_FILE         a file holding this cell's Postgres connection string
+//!   LEDGER_DB_SIGN_IN      password (the default), aws_iam, azure_entra, gcp_iam or lakebase_oauth: with
+//!                          any but password, the file holds no password and the service signs in
+//!                          as its machine's identity, with a new token for each connection
+//!   LEDGER_DB_REGION       aws_iam only: the region, when the host does not carry it
+//!   LEDGER_DB_IDENTITY_CLIENT_ID  azure_entra only: picks a user-assigned managed identity
+//!   LEDGER_DB_OAUTH_FILE   lakebase_oauth only: a file with the service principal and endpoint
 //!   LEDGER_DB_CA_FILE      optional: an authority the database's certificate may come from, as well as
 //!                          the system's roots. Missing or empty means the system's roots only
 //!   LEDGER_DB_TLS          `off` to connect without TLS (tests only); anything else uses TLS
@@ -231,8 +237,32 @@ async fn run() -> Result<(), String> {
     } else {
         None
     };
-    let db =
-        ledger_api::dbconn::connect(&file("LEDGER_DB_FILE")?, tls, db_ca()?.as_deref()).await?;
+    // How the service signs in. Password is the default. For a managed cell the role belongs to an
+    // identity, and db.conn holds no password (D-24).
+    let sign_in = match std::env::var("LEDGER_DB_SIGN_IN") {
+        Ok(text) => ledger_api::dbauth::SignIn::parse(&text)?,
+        Err(_) => ledger_api::dbauth::SignIn::Password,
+    };
+    let (db, identity) = if sign_in.by_identity() {
+        let settings = ledger_api::dbauth::Settings {
+            region: std::env::var("LEDGER_DB_REGION").ok(),
+            identity_client_id: std::env::var("LEDGER_DB_IDENTITY_CLIENT_ID").ok(),
+            oauth_file: std::env::var_os("LEDGER_DB_OAUTH_FILE").map(std::path::PathBuf::from),
+        };
+        let identity = Arc::new(ledger_api::dbconn::Identity::new(
+            sign_in,
+            &file("LEDGER_DB_FILE")?,
+            tls,
+            db_ca()?.as_deref(),
+            &settings,
+        )?);
+        (identity.connect().await?, Some(identity))
+    } else {
+        (
+            ledger_api::dbconn::connect(&file("LEDGER_DB_FILE")?, tls, db_ca()?.as_deref()).await?,
+            None,
+        )
+    };
     // Fail at start, not at the first request, if the schema this needs is not there.
     ledger_store::validate_schema_name(&schema).map_err(|e| e.to_string())?;
     db.query_opt(&format!("select 1 from {schema}.api_request limit 1"), &[])
@@ -258,6 +288,19 @@ async fn run() -> Result<(), String> {
         guard,
         Arc::new(tokens.clone()),
     );
+    if let Some(identity) = identity {
+        // A lost connection is made again with a new token. If that cannot be done within a lease,
+        // the service stops, because it could no longer serve honestly.
+        ledger_api::dbconn::keep_connected(
+            state.db_handle(),
+            identity,
+            guard_config.lease_ttl,
+            |why| {
+                eprintln!("{why}");
+                std::process::exit(1);
+            },
+        );
+    }
     if std::env::var_os("LEDGER_CELLS_FILE").is_some() {
         let peers = load_cells(&file("LEDGER_CELLS_FILE")?, &files)?;
         state.peers_handle().set(Arc::new(peers));

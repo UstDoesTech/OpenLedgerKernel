@@ -1276,7 +1276,7 @@ tasks:
   phase: P1
   workstream: K
   size: M
-  status: todo
+  status: done
   depends_on:
   - K-22
   decisions: []
@@ -1288,7 +1288,7 @@ tasks:
   - A setting names how the service signs in to its database, with password as the default so nothing changes for a cell that is applied. The others are aws_iam, azure_entra, gcp_iam and lakebase_oauth, and
     any other value stops the service at start.
   - With an identity setting, db.conn holds the host, port, role and database and no password, and the service asks a token source for a short-lived token each time it connects. A token source for each
-    cloud and for Lakebase sits behind one trait, with a simulated source for tests. A real source reads only the machine's own identity.
+    cloud and for Lakebase sits behind one trait, with a simulated source for tests. A real source reads only the machine's own identity, except Lakebase, whose source reads a Databricks service principal's secret from a file each time, because a service principal has no machine identity to read.
   - A token that expires never breaks a connection that is open. A connection that is lost is made again with a new token before the lease runs out, or the service stops and says so, shown by a test against
     a real node that closes the connection.
   - No token, password, host or role name is logged, returned or put in a fixture, and a test scans the code for it.

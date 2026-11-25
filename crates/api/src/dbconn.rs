@@ -5,9 +5,15 @@
 //! roots. The service connects once, at start. When it cannot, it says which of four things went
 //! wrong and nothing else: never the host, the user, the password or the driver's own text.
 
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
+
 use native_tls::{Certificate, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
+use tokio_postgres::config::Host;
 use tokio_postgres::{Client, Config, NoTls};
+
+use crate::dbauth::{self, SignIn, TokenSource};
 
 /// Why a connection failed, in terms a person can act on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,6 +110,10 @@ pub async fn connect(conn: &str, tls: bool, ca_pem: Option<&str>) -> Result<Clie
     let config: Config = conn
         .parse()
         .map_err(|_| "LEDGER_DB_FILE: not a connection string".to_owned())?;
+    open(&config, tls, ca_pem).await
+}
+
+async fn open(config: &Config, tls: bool, ca_pem: Option<&str>) -> Result<Client, String> {
     let failed = |e: tokio_postgres::Error| {
         format!(
             "cannot connect to the cell's database: {}",
@@ -121,9 +131,169 @@ pub async fn connect(conn: &str, tls: bool, ca_pem: Option<&str>) -> Result<Clie
     }
 }
 
+/// The connection the service uses, which can be replaced when it is lost. Cloning it gives
+/// another handle to the same connection.
+#[derive(Clone)]
+pub struct Db {
+    current: Arc<RwLock<Arc<Client>>>,
+}
+
+impl Db {
+    pub fn new(client: Client) -> Self {
+        Db {
+            current: Arc::new(RwLock::new(Arc::new(client))),
+        }
+    }
+
+    /// The connection in use now. A caller holds it for one call, so a replaced connection is
+    /// picked up by the next call.
+    pub fn get(&self) -> Arc<Client> {
+        self.current
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    fn set(&self, client: Client) {
+        *self.current.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(client);
+    }
+}
+
+/// How the service signs in to a managed database: the connection string without a password, and
+/// a source of tokens to use as the password for each new connection (D-24).
+pub struct Identity {
+    config: Config,
+    tls: bool,
+    ca_pem: Option<String>,
+    source: Arc<dyn TokenSource>,
+}
+
+impl Identity {
+    /// For a real run. The connection string must name one host and a user, and must not hold a
+    /// password: a managed cell's role has none, and a password found here is a mistake.
+    pub fn new(
+        sign_in: SignIn,
+        conn: &str,
+        tls: bool,
+        ca_pem: Option<&str>,
+        settings: &dbauth::Settings,
+    ) -> Result<Self, String> {
+        let (config, target) = Self::target(conn)?;
+        let source = dbauth::source_for(sign_in, &target, settings)?;
+        Ok(Identity {
+            config,
+            tls,
+            ca_pem: ca_pem.map(str::to_owned),
+            source,
+        })
+    }
+
+    /// For tests: a given source of tokens.
+    pub fn with_source(
+        conn: &str,
+        tls: bool,
+        ca_pem: Option<&str>,
+        source: Arc<dyn TokenSource>,
+    ) -> Result<Self, String> {
+        let (config, _) = Self::target(conn)?;
+        Ok(Identity {
+            config,
+            tls,
+            ca_pem: ca_pem.map(str::to_owned),
+            source,
+        })
+    }
+
+    fn target(conn: &str) -> Result<(Config, dbauth::Target), String> {
+        let config: Config = conn
+            .parse()
+            .map_err(|_| "LEDGER_DB_FILE: not a connection string".to_owned())?;
+        if config.get_password().is_some() {
+            return Err(
+                "LEDGER_DB_FILE: holds a password, but LEDGER_DB_SIGN_IN says the role belongs to an identity"
+                    .to_owned(),
+            );
+        }
+        let user = config
+            .get_user()
+            .ok_or("LEDGER_DB_FILE: no user, which an identity sign-in needs")?
+            .to_owned();
+        let host = match config.get_hosts() {
+            [Host::Tcp(h)] => h.clone(),
+            _ => {
+                return Err("LEDGER_DB_FILE: needs exactly one host, by name or address".to_owned());
+            }
+        };
+        let port = config.get_ports().first().copied().unwrap_or(5432);
+        Ok((config, dbauth::Target { host, port, user }))
+    }
+
+    /// Asks the source for a token and connects with it.
+    pub async fn connect(&self) -> Result<Client, String> {
+        let token = self.source.token().await.map_err(|e| {
+            format!(
+                "cannot get a token to sign in to the cell's database: {}",
+                e.text()
+            )
+        })?;
+        let mut config = self.config.clone();
+        config.password(token.secret());
+        open(&config, self.tls, self.ca_pem.as_deref()).await
+    }
+}
+
+/// Watches the connection and makes it again, with a new token, when it is lost. If it cannot be
+/// made again within `give_up`, which is the lease's length, `stop` is called with a reason that
+/// names no host, user or token, and the watching ends. The caller stops the service, because a
+/// cell that cannot reach its database cannot hold its lease honestly.
+pub fn keep_connected(
+    db: Db,
+    identity: Arc<Identity>,
+    give_up: Duration,
+    stop: impl FnOnce(String) + Send + 'static,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            if !db.get().is_closed() {
+                continue;
+            }
+            let lost = Instant::now();
+            let mut wait = Duration::from_millis(250);
+            loop {
+                match identity.connect().await {
+                    Ok(client) => {
+                        db.set(client);
+                        break;
+                    }
+                    Err(why) => {
+                        if lost.elapsed() + wait > give_up {
+                            stop(format!(
+                                "lost the connection to the cell's database and could not sign in again within the lease: {why}"
+                            ));
+                            return;
+                        }
+                        tokio::time::sleep(wait).await;
+                        wait = (wait * 2).min(Duration::from_secs(4));
+                    }
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_connection_string_with_a_password_is_refused_for_an_identity() {
+        let with_password = format!("host=h user=u {}=x", "password");
+        assert!(Identity::target(&with_password).is_err());
+        assert!(Identity::target("host=h user=u dbname=d").is_ok());
+        assert!(Identity::target("host=h dbname=d").is_err());
+        assert!(Identity::target("host=a,b user=u").is_err());
+    }
 
     #[test]
     fn a_refused_sign_in_is_named_by_its_code() {

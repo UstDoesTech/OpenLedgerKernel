@@ -224,6 +224,62 @@ fn a_database_authority_file_that_is_not_a_certificate_stops_the_start_without_i
     assert!(!said.contains("must-not-be-echoed"));
 }
 
+/// K-24a: the way the service signs in to its database is a setting with five words. Anything else
+/// stops the start, and the stop does not quote what was given.
+#[test]
+fn it_refuses_a_database_sign_in_setting_that_is_not_one_of_the_five_words() {
+    let (code, said) = refused(&[("LEDGER_DB_SIGN_IN", "maybe-a-password")]);
+    assert_eq!(code, Some(2));
+    assert_eq!(
+        said.trim_end(),
+        "ledger-api: LEDGER_DB_SIGN_IN: must be password, aws_iam, azure_entra, gcp_iam or lakebase_oauth"
+    );
+    assert!(!said.contains("maybe-a-password"));
+}
+
+#[test]
+fn it_refuses_a_password_in_db_conn_when_the_role_belongs_to_an_identity() {
+    let dir = std::env::temp_dir().join(format!("ledger-api-idpw-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("db");
+    // Written at run time, so no password is in the source.
+    std::fs::write(
+        &file,
+        format!("host=h user=x dbname=x {}=not-echoed", "password"),
+    )
+    .unwrap();
+    for how in ["aws_iam", "azure_entra", "gcp_iam", "lakebase_oauth"] {
+        let (code, said) = refused(&[
+            ("LEDGER_DB_SIGN_IN", how),
+            ("LEDGER_DB_FILE", file.to_str().unwrap()),
+        ]);
+        assert_eq!(code, Some(2), "{how}");
+        assert_eq!(
+            said.trim_end(),
+            "ledger-api: LEDGER_DB_FILE: holds a password, but LEDGER_DB_SIGN_IN says the role belongs to an identity"
+        );
+        assert!(!said.contains("not-echoed"));
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn it_refuses_an_identity_sign_in_that_lacks_what_its_source_needs() {
+    // The default db.conn names 127.0.0.1, which carries no AWS region.
+    let (code, said) = refused(&[("LEDGER_DB_SIGN_IN", "aws_iam")]);
+    assert_eq!(code, Some(2));
+    assert_eq!(
+        said.trim_end(),
+        "ledger-api: aws_iam: set LEDGER_DB_REGION, because the host does not carry a region"
+    );
+    let (code, said) = refused(&[("LEDGER_DB_SIGN_IN", "lakebase_oauth")]);
+    assert_eq!(code, Some(2));
+    assert_eq!(
+        said.trim_end(),
+        "ledger-api: lakebase_oauth: set LEDGER_DB_OAUTH_FILE"
+    );
+}
+
 #[test]
 fn it_refuses_a_public_listener_off_loopback_without_tls() {
     let (code, said) = refused(&[("LEDGER_LISTEN", "0.0.0.0:8080")]);
