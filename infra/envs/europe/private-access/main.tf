@@ -47,8 +47,10 @@ data "terraform_remote_state" "network" {
 locals {
   network = data.terraform_remote_state.network.outputs
   plan    = module.address_plan
-  # The machines that reach the endpoints sit in the cell and control plane tiers.
-  client_cidrs = concat(local.plan.aws.subnets["cell"], local.plan.aws.subnets["control_plane"])
+  # The machines that reach the endpoints sit in the cell, control plane and API tiers. The API
+  # machine reads its secret and pulls its image through them, so it must be listed: left out, its
+  # connections to the endpoints are dropped and its service never starts.
+  client_cidrs = concat(local.plan.aws.subnets["cell"], local.plan.aws.subnets["control_plane"], local.plan.aws.subnets["api"])
 }
 
 module "private_access_aws" {

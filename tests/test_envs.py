@@ -158,3 +158,16 @@ def test_the_authority_layer_makes_a_signing_key_that_cannot_be_exported_and_hol
     assert "aws_secretsmanager_secret_version" not in src
     assert not re.search(r"secret_string|secret_binary", src)
     assert "variable " not in src
+
+
+def test_the_aws_endpoints_admit_every_tier_that_has_a_machine_which_uses_them():
+    """A machine with no internet route reads its secret and pulls its image through the private
+    endpoints, and their security group admits only the listed ranges. The API tier was once left
+    off, and its machine timed out at the secret store and never started its service."""
+    src = text(ENVS / "europe" / "private-access")
+    listed = re.search(r"client_cidrs\s*=\s*concat\((.*?)\)\n", src, re.S).group(1)
+    tiers = set(re.findall(r'local\.plan\.aws\.subnets\["(\w+)"\]', listed))
+    assert tiers == {"cell", "control_plane", "api"}, tiers
+    # The same three tiers are the ones Azure's endpoint rules are made for.
+    azure = re.search(r"for tier in \[(.*?)\]", src, re.S).group(1)
+    assert set(re.findall(r'"(\w+)"', azure)) == tiers
