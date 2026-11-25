@@ -399,7 +399,7 @@ flowchart LR
 | **I-01t** Build and publish the Postgres node image to GitHub Container Registry | Infrastructure | I-01i, I-01r | None | M | Agent | Done |
 | **I-01u** Publish the Postgres node image to each tenant repository | Infrastructure | I-01t, I-01occ | None | M | Agent | Done |
 | **I-01va** Europe cells layer, self-hosted cells for the first tenant | Infrastructure | I-01u, I-01kb | None | M | Agent | Done |
-| **I-01vb** Europe cells layer, managed cells | Infrastructure | I-01va | None | M | Agent | To do |
+| **I-01vb** Europe cells layer, managed cells | Infrastructure | I-01va | None | M | Agent | In progress |
 | **I-01vc** Europe cells layer, Lakebase cell | Infrastructure | I-01vb | None | M | Agent | To do |
 | **I-01l** Root environment for the UK geo | Infrastructure | I-01e, I-01kc | None | M | Agent | To do |
 | **I-01f** Apply the infrastructure to the three UK accounts | Infrastructure | I-01e, I-01l | None | S | Human | To do |
