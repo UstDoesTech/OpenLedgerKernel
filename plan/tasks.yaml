@@ -1276,7 +1276,7 @@ tasks:
   phase: P1
   workstream: K
   size: M
-  status: todo
+  status: in_progress
   depends_on:
   - K-22
   decisions: []

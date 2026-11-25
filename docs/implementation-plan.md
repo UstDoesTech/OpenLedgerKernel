@@ -377,7 +377,7 @@ flowchart LR
 | **K-20h** Let infra-apply replace one API machine | Infrastructure | K-20g | None | S | Agent | Done |
 | **K-20i** Runbook for rolling a new API image onto running cells | Infrastructure | K-20h | None | S | Agent | Done |
 | **K-20j** Let replacing an Azure API machine recreate its role assignments | Infrastructure | K-20h | None | S | Agent | Done |
-| **K-24a** Let the service sign in to a managed database as its machine's identity | Ledger kernel | K-22 | None | M | Agent | To do |
+| **K-24a** Let the service sign in to a managed database as its machine's identity | Ledger kernel | K-22 | None | M | Agent | In progress |
 | **K-24b** Let each managed cell's API machine sign in to its database by identity | Infrastructure | I-01vb, K-24a | None | M | Agent | To do |
 | **K-24c** Make each managed cell's application role and give it only the ledger's schema | Ledger kernel | K-24b | None | M | Agent | To do |
 | **K-24d** Write a managed cell's connection and database authority in rotate-credentials | Ledger kernel | K-24a, K-22 | None | S | Agent | To do |
