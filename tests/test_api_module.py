@@ -157,6 +157,29 @@ def test_the_unit_runs_the_container_locked_down_and_pulls_by_digest():
     assert "--volume /etc/ledger-api/secrets:/run/secrets/api:ro" in unit
 
 
+def test_the_output_of_the_units_goes_to_the_console_so_a_failed_start_can_be_read():
+    for name in ("ledger-api.service.tpl", "ledger-api-refresh.service.tpl"):
+        unit = (BOOT / "files" / name).read_text()
+        assert "StandardOutput=journal+console" in unit, name
+        assert "StandardError=journal+console" in unit, name
+
+
+def test_nothing_the_boot_scripts_print_can_carry_a_key_a_token_or_a_password():
+    """The console log is kept by the cloud, so a script may print only fixed words and the name
+    of a file or a count. No tracing, and no echo of a variable that holds a credential."""
+    credential = re.compile(r"\$\{?(token|keys|answer|access_key|secret_key|session|bundle|password|secret)\b")
+    for script in sorted((BOOT / "files").glob("*.sh")) + sorted(
+        (MODULES / "node-boot" / "files").glob("registry-login-*.sh")
+    ):
+        text = script.read_text()
+        assert not re.search(r"^\s*set\s+-\w*x", text, re.M), f"{script.name} traces its commands"
+        assert "bash -x" not in text
+        for line in text.splitlines():
+            # A value piped into another command (docker login --password-stdin) is not printed.
+            if re.match(r"\s*(echo|printf)\b", line) and "|" not in line:
+                assert not credential.search(line), f"{script.name} prints a credential: {line.strip()}"
+
+
 def test_the_secret_writer_makes_files_readable_by_the_service_only():
     script = (BOOT / "files" / "write-secrets.sh").read_text()
     assert "umask 077" in script and "chmod 0400" in script
