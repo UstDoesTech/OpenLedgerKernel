@@ -14,7 +14,7 @@ resource "aws_vpc_security_group_ingress_rule" "clients" {
   ip_protocol       = "tcp"
   from_port         = local.client_port
   to_port           = local.client_port
-  description       = "Allow the API's public port from a named client range"
+  description       = "Allow the public port of the API from a named client range"
 }
 
 resource "azurerm_network_security_rule" "clients" {
