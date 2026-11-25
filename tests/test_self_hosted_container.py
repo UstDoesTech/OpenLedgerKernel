@@ -212,6 +212,25 @@ def test_a_stopped_node_leaves_a_fixed_line_and_the_agents_own_lines_on_the_cons
     assert "StandardOutput" not in unit and "StandardError" not in unit
 
 
+def test_a_new_data_disk_has_its_lost_and_found_folder_removed_before_the_agent_sees_it():
+    """mkfs.ext4 makes lost+found, and the node agent refuses a data directory that is not empty
+    and holds no PostgreSQL data, so every new node stopped at once and restarted for ever."""
+    script = (MODULES / "node-boot" / "files" / "prepare-data-disk.sh").read_text()
+    mount = script.index("mount -o noatime")
+    remove = script.index('rmdir "$target/lost+found"')
+    assert mount < remove < script.index("chown 999:999")
+    assert "rm -r" not in script  # only an empty folder may go, never data
+
+
+@pytest.mark.skipif(not shutil.which("mkfs.ext4") or not shutil.which("debugfs"), reason="needs e2fsprogs")
+def test_a_new_ext4_file_system_does_hold_a_lost_and_found_folder(tmp_path):
+    image = tmp_path / "disk.img"
+    image.write_bytes(b"\0" * 8 * 1024 * 1024)
+    subprocess.run(["mkfs.ext4", "-q", "-F", "-L", "ledger-data", str(image)], check=True)
+    listing = subprocess.run(["debugfs", "-R", "ls", str(image)], capture_output=True, text=True).stdout
+    assert "lost+found" in listing
+
+
 def test_boot_configuration_validation_refuses_a_tag():
     text = code(MODULES / "node-boot" / "variables.tf")
     pattern = re.search(r'regex\("([^"]+)", var\.image\)', text).group(1)
