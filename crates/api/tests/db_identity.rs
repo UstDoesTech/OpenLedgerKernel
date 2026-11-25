@@ -290,17 +290,19 @@ async fn when_a_new_token_cannot_be_had_within_the_lease_the_service_says_so_and
         "{why}"
     );
     assert!(why.contains("the identity service did not answer"), "{why}");
-    // Nothing that names the database, the role or a token.
-    for secret in [
+    // Nothing that names the database, the role or a token. A failure says which of them, by
+    // position, and never the value.
+    let secrets = [
         prefix.as_str(),
         "127.0.0.1",
         "ledger_app",
         &node.port.to_string(),
         &node.admin,
-    ] {
+    ];
+    for (n, secret) in secrets.iter().enumerate() {
         assert!(
             !why.contains(secret),
-            "the reason must not contain {secret}"
+            "the reason carries item {n} of the list"
         );
     }
 }
