@@ -195,10 +195,20 @@ resource "aws_instance" "node" {
 # The data disk is its own resource, as on Azure and Google, so replacing a machine to roll a new
 # node image keeps the disk. The machine's boot finds it by size and mounts it; if the disk
 # arrives after the machine starts, the node's own restart picks it up.
+#
+# The disk's zone comes from the node's subnet, never from the machine. A machine being replaced
+# has an unknown zone until it exists, and a volume whose zone is unknown is planned for
+# replacement, which would delete the data.
+data "aws_subnet" "node" {
+  count = 3
+
+  id = var.subnet_ids[count.index]
+}
+
 resource "aws_ebs_volume" "data" {
   count = 3
 
-  availability_zone = aws_instance.node[count.index].availability_zone
+  availability_zone = data.aws_subnet.node[count.index].availability_zone
   type              = "gp3"
   size              = var.storage_gb
   encrypted         = true

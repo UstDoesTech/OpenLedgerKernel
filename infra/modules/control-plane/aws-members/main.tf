@@ -139,10 +139,20 @@ resource "aws_instance" "member" {
 # image keeps the disk and with it the member's identity in the cluster. Replacing the machine
 # detaches the disk, creates the new machine and attaches the disk to it. The machine's boot finds
 # the disk by size, and the member's own restart picks it up if it arrives late.
+#
+# The disk's zone comes from the member's subnet, never from the machine. A machine being replaced
+# has an unknown zone until it exists, and a volume whose zone is unknown is planned for
+# replacement, which would delete the data.
+data "aws_subnet" "member" {
+  for_each = local.members
+
+  id = var.subnet_ids[each.value.zone]
+}
+
 resource "aws_ebs_volume" "data" {
   for_each = local.members
 
-  availability_zone = aws_instance.member[each.key].availability_zone
+  availability_zone = data.aws_subnet.member[each.key].availability_zone
   type              = "gp3"
   size              = var.storage_gb
   encrypted         = true
