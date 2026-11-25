@@ -201,6 +201,17 @@ def test_boot_configuration_runs_the_container_locked_down_and_stops_os_updates(
     assert "/etc/ledger/tls:/run/secrets/tls:ro" in unit
 
 
+def test_a_stopped_node_leaves_a_fixed_line_and_the_agents_own_lines_on_the_console():
+    unit = (MODULES / "node-boot" / "files" / "ledger-postgres.service.tpl").read_text()
+    line = next(l for l in unit.splitlines() if l.startswith("ExecStopPost="))
+    assert "docker inspect --format" in line and "> /dev/console" in line
+    assert "State.ExitCode" in line and "State.OOMKilled" in line
+    # Only the agent's own lines, which begin "ledger-node:", may be taken from the container's log.
+    assert unit.count("docker logs") == 1 and 'grep "^ledger-node:"' in line
+    assert "docker logs ${name} 2>&1 | /usr/bin/grep" in line and "tail -n 5" in line
+    assert "StandardOutput" not in unit and "StandardError" not in unit
+
+
 def test_a_new_data_disk_has_its_lost_and_found_folder_removed_before_the_agent_sees_it():
     """mkfs.ext4 makes lost+found, and the node agent refuses a data directory that is not empty
     and holds no PostgreSQL data, so every new node stopped at once and restarted for ever."""
