@@ -125,6 +125,10 @@ decisions:
     Manager, and passes traffic to the API machine over HTTPS on its own port. It takes connections only from ranges the owner lists, with a rate limit from AWS WAF, and none at all until a range is
     listed. The whole internet (0.0.0.0/0) is refused until each address has its own sign-in limit (K-23d). The page is served by the cell behind it and manages only that cell. The edge subnets and
     their route to the internet are a tier of their own, so the private tiers never get a route to the internet. (Ust Oldfield, 2026-11-24, in conversation. An agent proposed the shape, and merging the pull request that adds this decision approves it.)
+- id: D-24
+  title: Who makes a managed cell's application role, and how the API proves who it is
+  status: open
+  proposed: For now the proving run copies the managed service's administrator connection into db.conn, as it does for self-hosted cells (D-19), and a managed cell's CA bundle comes from the cloud. The end state is a dedicated application role per managed cell, made by a one-off step that a person approves and that is run with the cell's own credential, with the connection string written to the cell's API secret, so the long-lived administrator credential is never read by a run. Signing in to the database with the machine's own cloud identity instead (no password) is a later option that needs the kernel to refresh a token.
 tasks:
 - id: F-01
   title: Rust workspace and CI
@@ -1265,6 +1269,51 @@ tasks:
     Cloud use a role or a service account that is separate from the machine, so they are not affected. This widens the guard of a credentialed workflow, so it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
+- id: K-24a
+  title: Make db.conn and the database authority for a managed cell in rotate-credentials
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-22
+  - I-01vb
+  decisions:
+  - D-24
+  deliverables:
+  - crates/pki
+  - tests/test_managed_cell_credentials.py
+  - docs/credentialed-workflows.md
+  acceptance:
+  - A proving run makes db.conn for a cell whose database is managed, from that cloud's own secret (RDS's managed secret in Secrets Manager, a Key Vault secret on Azure, a Secret Manager secret on Google Cloud),
+    in each cloud's own format, behind the same DatabaseSource interface. A non-proving run still refuses it.
+  - db-ca.crt for a managed cell is the cloud's public CA bundle for its database service, given in the manifest as db_ca, and a test checks the manifest refuses a managed cell with none.
+  - No host, user, password or secret name is printed, logged or put in a fixture, shown by tests with simulated stores for each cloud.
+  - Nothing here reads a credential in a cloud account. The end state in D-24 is built behind the interface as a simulated source only.
+  notes: Found while checking I-01vb. rotate-credentials refuses a managed cell today ("only a self-hosted cell's credential is copied here"), so the API cannot reach a managed database.
+  refs:
+  - docs/credentialed-workflows.md
+  - docs/api-design.md
+- id: I-01vd
+  title: Runbook for moving the proving environment to managed cells, and back
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - K-24a
+  decisions: []
+  deliverables:
+  - docs/runbooks/moving-to-managed-cells.md
+  - docs/runbooks/README.md
+  - tests/test_moving_to_managed_cells_runbook.py
+  acceptance:
+  - It gives the order: set cell_kind, plan and read that each cell is replaced and nothing else (not the network, the API machines or the load balancer), apply, run rotate-credentials for db.conn, replace or restart the API machines, check, and how to go back.
+  - It says plainly that switching kind destroys the old cells with no data carried across, what that means for the control plane's record of each cell, what a managed cell costs while it exists, and that pausing for cost cannot stop an Azure high-availability server.
+  - A test holds its workflow names, inputs, variables, files and counts to the ones that exist, and that no secret or name is written in it.
+  refs:
+  - docs/runbooks/pausing-for-cost.md
+  - docs/runbooks/rolling-the-api-image.md
 - id: K-23a
   title: Edge subnets and a route to the internet on AWS, for the load balancer only
   phase: P1
