@@ -133,7 +133,7 @@ resource "aws_vpc_security_group_ingress_rule" "open" {
   ip_protocol       = "tcp"
   from_port         = 443
   to_port           = 443
-  description       = "Allow HTTPS from any address, behind the web ACL's rate limit"
+  description       = "Allow HTTPS from any address, behind the rate limit of the web ACL"
 }
 
 resource "aws_vpc_security_group_egress_rule" "to_api" {
@@ -144,7 +144,7 @@ resource "aws_vpc_security_group_egress_rule" "to_api" {
   ip_protocol                  = "tcp"
   from_port                    = var.api_port
   to_port                      = var.api_port
-  description                  = "Send traffic and health checks to the API's port, and nowhere else"
+  description                  = "Send traffic and health checks to the port of the API, and nowhere else"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "from_load_balancer" {
@@ -155,7 +155,7 @@ resource "aws_vpc_security_group_ingress_rule" "from_load_balancer" {
   ip_protocol                  = "tcp"
   from_port                    = var.api_port
   to_port                      = var.api_port
-  description                  = "Allow the API's port from the load balancer"
+  description                  = "Allow the port of the API from the load balancer"
 }
 
 # A rate limit for each address. WAF counts the address the load balancer saw.
