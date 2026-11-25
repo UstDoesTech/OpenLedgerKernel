@@ -58,7 +58,7 @@ These are human decisions. A task that lists one can still be built up to its in
 | **D-20** How the kernel's basic UI is built and served | Open | Plain HTML, CSS and JavaScript modules with no framework, no build step and no request to any other site. The API serves the files itself at /ui from copies compiled into the binary, so the page and the API share an origin and need no cross-origin setup. A person signs in with a username and password, and the page keeps the token it gets in memory only. Each cell serves its own page and talks to that cell. | UI-01, UI-02, UI-03 |
 | **D-21** How a person signs in to the kernel's basic UI | Open | A username and password, checked by the API against a list of users in the cell's API secret. Passwords are kept only as Argon2id hashes. A correct password gets a random token that lasts 30 minutes, held in the cell's memory, which the existing bearer check accepts. Repeated failures lock the username out for a minute. A user's tenant and principal come from the list, never from the request. The proving run makes one test user, user@bankofmumanddad.test (a fake domain), with a generated password that a person reads from the cell's secret. The password is never in the repository. This is a stand-in for A-06, which replaces it behind the same trait. | K-21, K-23d, K-22, UI-01 |
 | **D-22** Whether and how a cell's API and page are reachable from the internet | Decided | The AWS cell gets an internet-facing application load balancer, and Azure and Google Cloud stay private. It takes HTTPS only, on a name the owner gives, with a certificate from AWS Certificate Manager, and passes traffic to the API machine over HTTPS on its own port. It takes connections only from ranges the owner lists, with a rate limit from AWS WAF, and none at all until a range is listed. The whole internet (0.0.0.0/0) is refused until each address has its own sign-in limit (K-23d). The page is served by the cell behind it and manages only that cell. The edge subnets and their route to the internet are a tier of their own, so the private tiers never get a route to the internet. (Ust Oldfield, 2026-11-24, in conversation. An agent proposed the shape, and merging the pull request that adds this decision approves it.) | None |
-| **D-24** Who makes a managed cell's application role, and how the API proves who it is | Open | For now the proving run copies the managed service's administrator connection into db.conn, as it does for self-hosted cells (D-19), and a managed cell's CA bundle comes from the cloud. The end state is a dedicated application role per managed cell, made by a one-off step that a person approves and that is run with the cell's own credential, with the connection string written to the cell's API secret, so the long-lived administrator credential is never read by a run. Signing in to the database with the machine's own cloud identity instead (no password) is a later option that needs the kernel to refresh a token. | K-24a |
+| **D-24** Who makes a managed cell's application role, and how the API proves who it is | Decided | For a managed cell, including Lakebase, the application role is an identity that the cell's own cloud or Databricks assigns to a database role, with no password. That is a managed identity, a service account, an IAM role or a service principal. The API signs in as that identity and gets a short-lived token from its machine's own identity when it connects. The administrator's credential is never copied to the API or into any secret the API reads. Self-hosted cells keep D-19. (Ust Oldfield, 2026-11-25) | None |
 <!-- /generated:decisions -->
 
 ## Tasks
@@ -66,7 +66,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-86 of 99 tasks done.
+86 of 102 tasks done.
 
 ```mermaid
 flowchart LR
@@ -120,7 +120,10 @@ flowchart LR
   K_20h["K-20h<br/>Let infra-apply replace one API machine"]
   K_20i["K-20i<br/>Runbook for rolling a new API image onto running cells"]
   K_20j["K-20j<br/>Let replacing an Azure API machine recreate its role assignments"]
-  K_24a["K-24a<br/>Make db.conn and the database authority for a managed cell in rotate-credentials"]
+  K_24a["K-24a<br/>Let the service sign in to a managed database as its machine's identity"]
+  K_24b["K-24b<br/>Let each managed cell's API machine sign in to its database by identity"]
+  K_24c["K-24c<br/>Make each managed cell's application role and give it only the ledger's schema"]
+  K_24d["K-24d<br/>Write a managed cell's connection and database authority in rotate-credentials"]
   I_01vd["I-01vd<br/>Runbook for moving the proving environment to managed cells, and back"]
   K_23a["K-23a<br/>Edge subnets and a route to the internet on AWS, for the load balancer only"]
   K_23b["K-23b<br/>A load balancer in front of the AWS API, from named ranges only"]
@@ -237,8 +240,14 @@ flowchart LR
   K_20h --> K_20i
   K_20h --> K_20j
   K_22 --> K_24a
-  I_01vb --> K_24a
-  K_24a --> I_01vd
+  I_01vb --> K_24b
+  K_24a --> K_24b
+  K_24b --> K_24c
+  K_24a --> K_24d
+  K_22 --> K_24d
+  K_24b --> I_01vd
+  K_24c --> I_01vd
+  K_24d --> I_01vd
   K_20h --> K_23a
   K_23a --> K_23b
   K_23b --> K_23c
@@ -368,8 +377,11 @@ flowchart LR
 | **K-20h** Let infra-apply replace one API machine | Infrastructure | K-20g | None | S | Agent | Done |
 | **K-20i** Runbook for rolling a new API image onto running cells | Infrastructure | K-20h | None | S | Agent | Done |
 | **K-20j** Let replacing an Azure API machine recreate its role assignments | Infrastructure | K-20h | None | S | Agent | Done |
-| **K-24a** Make db.conn and the database authority for a managed cell in rotate-credentials | Ledger kernel | K-22, I-01vb | D-24 | M | Agent | To do |
-| **I-01vd** Runbook for moving the proving environment to managed cells, and back | Infrastructure | K-24a | None | S | Agent | To do |
+| **K-24a** Let the service sign in to a managed database as its machine's identity | Ledger kernel | K-22 | None | M | Agent | To do |
+| **K-24b** Let each managed cell's API machine sign in to its database by identity | Infrastructure | I-01vb, K-24a | None | M | Agent | To do |
+| **K-24c** Make each managed cell's application role and give it only the ledger's schema | Ledger kernel | K-24b | None | M | Agent | To do |
+| **K-24d** Write a managed cell's connection and database authority in rotate-credentials | Ledger kernel | K-24a, K-22 | None | S | Agent | To do |
+| **I-01vd** Runbook for moving the proving environment to managed cells, and back | Infrastructure | K-24b, K-24c, K-24d | None | S | Agent | To do |
 | **K-23a** Edge subnets and a route to the internet on AWS, for the load balancer only | Infrastructure | K-20h | D-22 | S | Agent | Done |
 | **K-23b** A load balancer in front of the AWS API, from named ranges only | Infrastructure | K-23a | D-22 | M | Agent | Done |
 | **K-23c** Runbook for putting the AWS API and page on the internet, and taking them off | Infrastructure | K-23b | None | S | Agent | Done |

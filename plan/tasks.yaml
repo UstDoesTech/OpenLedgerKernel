@@ -127,8 +127,10 @@ decisions:
     their route to the internet are a tier of their own, so the private tiers never get a route to the internet. (Ust Oldfield, 2026-11-24, in conversation. An agent proposed the shape, and merging the pull request that adds this decision approves it.)
 - id: D-24
   title: Who makes a managed cell's application role, and how the API proves who it is
-  status: open
+  status: decided
   proposed: For now the proving run copies the managed service's administrator connection into db.conn, as it does for self-hosted cells (D-19), and a managed cell's CA bundle comes from the cloud. The end state is a dedicated application role per managed cell, made by a one-off step that a person approves and that is run with the cell's own credential, with the connection string written to the cell's API secret, so the long-lived administrator credential is never read by a run. Signing in to the database with the machine's own cloud identity instead (no password) is a later option that needs the kernel to refresh a token.
+  outcome: For a managed cell, including Lakebase, the application role is an identity that the cell's own cloud or Databricks assigns to a database role, with no password. That is a managed identity, a service account, an IAM role or a service principal. The API signs in as that identity and gets a short-lived token from its machine's own identity when it connects. The administrator's credential is never copied to the API or into any secret the API reads. Self-hosted cells keep D-19. (Ust Oldfield, 2026-11-25)
+
 tasks:
 - id: F-01
   title: Rust workspace and CI
@@ -1270,27 +1272,98 @@ tasks:
   refs:
   - docs/credentialed-workflows.md
 - id: K-24a
-  title: Make db.conn and the database authority for a managed cell in rotate-credentials
+  title: Let the service sign in to a managed database as its machine's identity
   phase: P1
   workstream: K
   size: M
   status: todo
   depends_on:
   - K-22
+  decisions: []
+  deliverables:
+  - crates/api
+  - tests/test_database_identity_sign_in.py
+  - docs/api-design.md
+  acceptance:
+  - A setting names how the service signs in to its database, with password as the default so nothing changes for a cell that is applied. The others are aws_iam, azure_entra, gcp_iam and lakebase_oauth, and
+    any other value stops the service at start.
+  - With an identity setting, db.conn holds the host, port, role and database and no password, and the service asks a token source for a short-lived token each time it connects. A token source for each
+    cloud and for Lakebase sits behind one trait, with a simulated source for tests. A real source reads only the machine's own identity.
+  - A token that expires never breaks a connection that is open. A connection that is lost is made again with a new token before the lease runs out, or the service stops and says so, shown by a test against
+    a real node that closes the connection.
+  - No token, password, host or role name is logged, returned or put in a fixture, and a test scans the code for it.
+  notes: The kernel half of D-24. A token is only used when a connection is made. Any new dependency must pass cargo deny. The real sources are checked by tests with recorded responses, and are proven against a real cell by I-03.
+  refs:
+  - docs/api-design.md
+  - docs/credentialed-workflows.md
+- id: K-24b
+  title: Let each managed cell's API machine sign in to its database by identity
+  phase: P1
+  workstream: I
+  size: M
+  status: todo
+  depends_on:
   - I-01vb
-  decisions:
-  - D-24
+  - K-24a
+  decisions: []
+  deliverables:
+  - infra/modules/postgres
+  - infra/modules/api
+  - infra/envs/europe/cells
+  - tests/test_managed_cell_identity.py
+  acceptance:
+  - For each cloud, a managed cell turns on identity sign-in and lets the API machine's own identity connect as one database role, and no other identity, shown by tests of the modules (an IAM role and a database
+    connect grant on AWS, an Entra administrator and the machine's managed identity on Azure, an IAM database user for the service account on Google Cloud).
+  - Lakebase takes a service principal for the API, and a test checks that it gets no long-lived secret on the machine when the workspace allows federation of the machine's own identity. If it does not, the secret
+    is held in the cell's API secret and a test checks that it is never an output or a value.
+  - A cell that is self-hosted is unchanged, and the identity grants are made only when the cell is managed, shown by tests.
+  - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is applied.
+  notes: Edits identities and grants, so it needs a person's review.
+  refs:
+  - docs/infrastructure.md
+- id: K-24c
+  title: Make each managed cell's application role and give it only the ledger's schema
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-24b
+  decisions: []
+  deliverables:
+  - crates/pki
+  - tests/test_managed_cell_role.py
+  - docs/credentialed-workflows.md
+  acceptance:
+  - A one-off step that a person runs and approves makes the database role for each managed cell and ties it to the identity (rds_iam on AWS, the Entra principal on Azure, the IAM user on Google Cloud,
+    the Databricks role on Lakebase). It can be run again and changes nothing the second time, shown by a test against a real Postgres node for the statements that are the same everywhere.
+  - The role can use only the ledger's own schema, has no password, and cannot make roles or change other schemas, shown by a test against a real node.
+  - The administrator's credential or identity is used by this step alone, and is never written to any secret the API reads, shown by a test that fails if it is.
+  - It prints counts and the names of what failed, and never a host, role or token.
+  notes: Edits a role and uses a credential, so it needs a person's review and a person runs it.
+  refs:
+  - docs/credentialed-workflows.md
+- id: K-24d
+  title: Write a managed cell's connection and database authority in rotate-credentials
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-24a
+  - K-22
+  decisions: []
   deliverables:
   - crates/pki
   - tests/test_managed_cell_credentials.py
   - docs/credentialed-workflows.md
   acceptance:
-  - A proving run makes db.conn for a cell whose database is managed, from that cloud's own secret (RDS's managed secret in Secrets Manager, a Key Vault secret on Azure, a Secret Manager secret on Google Cloud),
-    in each cloud's own format, behind the same DatabaseSource interface. A non-proving run still refuses it.
-  - db-ca.crt for a managed cell is the cloud's public CA bundle for its database service, given in the manifest as db_ca, and a test checks the manifest refuses a managed cell with none.
-  - No host, user, password or secret name is printed, logged or put in a fixture, shown by tests with simulated stores for each cloud.
-  - Nothing here reads a credential in a cloud account. The end state in D-24 is built behind the interface as a simulated source only.
-  notes: Found while checking I-01vb. rotate-credentials refuses a managed cell today ("only a self-hosted cell's credential is copied here"), so the API cannot reach a managed database.
+  - For a cell whose database is managed, rotate-credentials writes db.conn with the host, port, role and database and no password, and sets how the service signs in. It never reads the managed service's
+    administrator secret. A cell that is self-hosted is unchanged.
+  - db-ca.crt for a managed cell is the cloud's public CA bundle for its database service, given in the manifest as db_ca, and a test checks that the manifest refuses a managed cell with none or with no sign-in
+    setting.
+  - No host, role or secret name is printed, logged or put in a fixture, shown by tests with simulated stores for each cloud.
+  notes: Found while checking I-01vb. rotate-credentials refuses a managed cell today, so the API cannot reach a managed database.
   refs:
   - docs/credentialed-workflows.md
   - docs/api-design.md
@@ -1301,7 +1374,9 @@ tasks:
   size: S
   status: todo
   depends_on:
-  - K-24a
+  - K-24b
+  - K-24c
+  - K-24d
   decisions: []
   deliverables:
   - docs/runbooks/moving-to-managed-cells.md
