@@ -1389,6 +1389,32 @@ tasks:
   refs:
   - docs/runbooks/pausing-for-cost.md
   - docs/runbooks/rolling-the-api-image.md
+- id: K-25
+  title: Apply the ledger schema to a deployed cell from its API machine
+  phase: P1
+  workstream: K
+  size: M
+  status: todo
+  depends_on:
+  - K-13
+  decisions: []
+  deliverables:
+  - crates/api
+  - infra/modules/api-boot
+  - infra/envs/europe/api
+  - tests/test_api_migration_step.py
+  - docs/runbooks/applying-the-ledger-schema.md
+  acceptance:
+  - '`ledger-api migrate` brings the cell''s ledger schema to the latest version using the connection in db.conn. It can be run again and changes nothing the second time. It prints
+    the version and counts, and never a host, role or password. Shown by a test against a real Postgres node.'
+  - The normal start never changes the schema. It still stops with "migrate it first" when the schema is missing, shown by a test.
+  - A setting in the infrastructure, off by default, makes a one-off unit on the API machine run the command once before the API starts. With the setting off no such unit exists. Shown
+    by tests of the module.
+  - A migration that fails leaves the schema at its last good version, and the API unit does not start after it, shown by tests.
+  - A runbook says how to switch the setting on, apply, check the result and switch it off again.
+  notes: Lets a service change a database schema, so it needs a person's review.
+  refs:
+  - docs/api-design.md
 - id: K-23a
   title: Edge subnets and a route to the internet on AWS, for the load balancer only
   phase: P1
