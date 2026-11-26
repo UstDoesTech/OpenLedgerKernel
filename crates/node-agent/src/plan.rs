@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::config::{NodeConfig, Role};
+use crate::config::{NodeConfig, Role, parse_sync_names};
 
 /// The administrator's database role. The agent gives it a password on first start.
 pub const ADMIN_ROLE: &str = "ledger_admin";
@@ -72,6 +72,19 @@ fn setting(name: &str, value: impl AsRef<str>) -> [String; 2] {
     ["-c".to_string(), format!("{name}={}", value.as_ref())]
 }
 
+/// The standby list as PostgreSQL reads it. A name with a hyphen is not an identifier, so each
+/// name is double-quoted: `ANY 1 ("cell-a-n2", "cell-a-n3")`. The names were checked when the
+/// configuration was read (lower-case letters, digits and hyphens), so none can hold a quote.
+pub fn standby_list(configured: &str) -> String {
+    match parse_sync_names(configured) {
+        Ok((count, names)) => {
+            let quoted: Vec<String> = names.iter().map(|n| format!("\"{n}\"")).collect();
+            format!("ANY {count} ({})", quoted.join(", "))
+        }
+        Err(_) => configured.to_string(),
+    }
+}
+
 /// The arguments for `postgres`. Nothing in them is secret.
 pub fn server_args(config: &NodeConfig, paths: &Paths) -> Vec<String> {
     let tls = paths.tls();
@@ -106,7 +119,7 @@ pub fn server_args(config: &NodeConfig, paths: &Paths) -> Vec<String> {
     match config.role {
         Role::Primary => add(
             "synchronous_standby_names",
-            config.synchronous_standby_names.clone(),
+            standby_list(&config.synchronous_standby_names),
         ),
         Role::Standby => add("primary_conninfo", primary_conninfo(config, paths)),
     }

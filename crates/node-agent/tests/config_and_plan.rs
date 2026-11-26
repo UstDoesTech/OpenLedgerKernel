@@ -158,7 +158,7 @@ fn the_primary_waits_for_a_standby_and_a_standby_follows_the_primary_by_certific
     let primary = plan::server_args(&NodeConfig::from_json(PRIMARY).unwrap(), &paths());
     assert_eq!(
         arg(&primary, "synchronous_standby_names"),
-        Some("ANY 1 (cell-a-n2, cell-a-n3)")
+        Some("ANY 1 (\"cell-a-n2\", \"cell-a-n3\")")
     );
     assert_eq!(arg(&primary, "primary_conninfo"), None);
 
@@ -385,4 +385,19 @@ fn the_kubernetes_init_script_refuses_a_primary_that_does_not_exist() {
         .status()
         .unwrap();
     assert!(!status.success());
+}
+
+#[test]
+fn every_standby_name_is_quoted_because_a_hyphen_is_not_valid_in_an_identifier() {
+    // PostgreSQL refuses `ANY 1 (cell-a-n2, cell-a-n3)` with `syntax error at or near "-"`.
+    assert_eq!(
+        plan::standby_list("ANY 1 (cell-a-n2, cell-a-n3)"),
+        "ANY 1 (\"cell-a-n2\", \"cell-a-n3\")"
+    );
+    assert_eq!(
+        plan::standby_list("ANY 2 (n2, n3, n4)"),
+        "ANY 2 (\"n2\", \"n3\", \"n4\")"
+    );
+    // What the configuration check refuses is passed on unchanged, and is never quoted.
+    assert_eq!(plan::standby_list(""), "");
 }
