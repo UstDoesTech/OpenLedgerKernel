@@ -15,10 +15,10 @@ ExecStartPre=/usr/bin/docker pull ${image}
 ExecStart=/usr/bin/docker run --name ${name} --read-only --cap-drop ALL --security-opt no-new-privileges --stop-timeout 60 --tmpfs /run/ledger:rw,mode=0700,uid=999,gid=999 --tmpfs /tmp:rw,mode=1777 --volume /var/lib/ledger/data:/var/lib/postgresql/data --volume /etc/ledger/node.json:/etc/ledger/node.json:ro --volume /etc/ledger/tls:/run/secrets/tls:ro --publish 5432:5432 ${image}
 ExecStop=/usr/bin/docker stop ${name}
 # After every stop, to the console: one fixed line (the exit code, whether the kernel killed it for
-# memory, and Docker's own error), then the last few lines the node agent wrote about itself. Those
-# start with "ledger-node:" and hold no secret. Nothing from Postgres is printed, because it can
-# log statements.
-ExecStopPost=-/bin/sh -c '/usr/bin/docker inspect --format "ledger-postgres stopped: code {{.State.ExitCode}}, out of memory {{.State.OOMKilled}}, error [{{.State.Error}}]" ${name} > /dev/console 2>&1; /usr/bin/docker logs ${name} 2>&1 | /usr/bin/grep "^ledger-node:" | /usr/bin/tail -n 5 > /dev/console'
+# memory, and Docker's own error), then the last few lines the node agent wrote about itself ("ledger-node:")
+# and the errors Postgres gave while it failed to start (FATAL, PANIC, "could not", HINT). Statements
+# are never printed: Postgres logs them on STATEMENT and LOG lines, which are not matched.
+ExecStopPost=-/bin/sh -c '/usr/bin/docker inspect --format "ledger-postgres stopped: code {{.State.ExitCode}}, out of memory {{.State.OOMKilled}}, error [{{.State.Error}}]" ${name} > /dev/console 2>&1; /usr/bin/docker logs ${name} 2>&1 | /usr/bin/grep -E "^ledger-node:|FATAL|PANIC|^postgres:|could not|HINT" | /usr/bin/tail -n 12 > /dev/console'
 
 [Install]
 WantedBy=multi-user.target

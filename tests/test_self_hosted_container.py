@@ -206,9 +206,12 @@ def test_a_stopped_node_leaves_a_fixed_line_and_the_agents_own_lines_on_the_cons
     line = next(l for l in unit.splitlines() if l.startswith("ExecStopPost="))
     assert "docker inspect --format" in line and "> /dev/console" in line
     assert "State.ExitCode" in line and "State.OOMKilled" in line
-    # Only the agent's own lines, which begin "ledger-node:", may be taken from the container's log.
-    assert unit.count("docker logs") == 1 and 'grep "^ledger-node:"' in line
-    assert "docker logs ${name} 2>&1 | /usr/bin/grep" in line and "tail -n 5" in line
+    # Only the agent's own lines and Postgres's start-up errors may be taken from the container's
+    # log. Statements are logged on STATEMENT and LOG lines, so neither may be matched.
+    assert unit.count("docker logs") == 1 and "docker logs ${name} 2>&1 | /usr/bin/grep -E" in line
+    pattern = re.search(r'grep -E "([^"]+)"', line).group(1)
+    assert set(pattern.split("|")) == {"^ledger-node:", "FATAL", "PANIC", "^postgres:", "could not", "HINT"}
+    assert "STATEMENT" not in pattern and "LOG" not in pattern and "tail -n 12" in line
     assert "StandardOutput" not in unit and "StandardError" not in unit
 
 
