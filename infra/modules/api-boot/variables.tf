@@ -88,3 +88,9 @@ variable "trusted_proxy_cidrs" {
   type        = list(string)
   default     = []
 }
+
+variable "migrate_database" {
+  description = "Makes a one-off unit run `ledger-api migrate` before the API starts, so the cell's ledger schema is applied from inside the network (K-25). Off by default: with it off there is no such unit and the API only checks that the schema is there. It uses the role in db.conn, so switch it on only for the time it takes, and see docs/runbooks/applying-the-ledger-schema.md."
+  type        = bool
+  default     = false
+}

@@ -57,6 +57,14 @@ A self-hosted cell gives the service a role with a password in `db.conn`. A mana
 - A connection that is lost is made again at once with a new token, and the requests that arrive meanwhile fail as they do for any lost connection. If a new connection cannot be made within the length of the lease, the service says so in one line and stops, because it could no longer serve honestly.
 - No token, secret, host, role or reply from an identity service is logged, returned or printed. A failure is one of three fixed phrases: the service did not answer, it refused this machine's identity, or its answer was not a token. Plain HTTP goes only to this machine and to the cloud metadata addresses.
 
+### How a cell gets its ledger schema
+
+A cell's database is built empty. The service checks at start that the schema is there at the version it needs, and stops with "migrate it first" if it is not. It never changes the schema itself (K-25).
+
+- `ledger-api migrate` applies each missing migration in order, each in its own transaction, using the connection the service already has. It can be run again and changes nothing the second time. A migration that fails leaves the schema at its last good version and the command exits with an error.
+- It prints one line with the version and counts, and never a host, a role or a password.
+- A setting in the infrastructure, off by default, adds a one-off unit to the API machine that runs the command before the API starts, and the API will not start if the unit fails. It is switched on for as long as it takes and then off. See [Applying the ledger schema](runbooks/applying-the-ledger-schema.md).
+
 ## Command lifecycle
 
 A command is simulated against the home cell's current state, decided by policy, approved by a person when policy requires it, and committed only if its effect still matches the hash that was simulated and approved.

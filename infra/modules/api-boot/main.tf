@@ -74,6 +74,16 @@ locals {
     LEDGER_TRUSTED_PROXIES = join(",", var.trusted_proxy_cidrs)
   } : {}
 
+  # What the one-off migration step is given: where the database is and how to trust it, and no more.
+  migrate_environment = {
+    LEDGER_DB_FILE    = local.environment.LEDGER_DB_FILE
+    LEDGER_DB_CA_FILE = local.environment.LEDGER_DB_CA_FILE
+  }
+
+  # With the step on, the API waits for it and does not start if it fails. With it off the unit
+  # does not exist and the API's own unit is exactly what it was.
+  migration_lines = var.migrate_database ? "Requires=ledger-api-migrate.service\nAfter=ledger-api-migrate.service\n" : ""
+
   file_mode = {
     executable = 493
   }
@@ -102,7 +112,19 @@ locals {
     }
 
     systemd = {
-      units = [
+      units = concat(var.migrate_database ? [
+        {
+          name    = "ledger-api-migrate.service"
+          enabled = true
+          contents = templatefile("${path.module}/files/ledger-api-migrate.service.tpl", {
+            name                  = var.name
+            image                 = var.image
+            login_arguments       = local.login_arguments
+            secret_arguments      = local.secret_arguments
+            environment_arguments = join(" ", [for k, v in local.migrate_environment : "--env ${k}=${v}"])
+          })
+        },
+        ] : [], [
         {
           name    = "ledger-api.service"
           enabled = true
@@ -114,6 +136,7 @@ locals {
             public_port           = var.public_port
             internal_port         = var.internal_port
             environment_arguments = join(" ", [for k, v in merge(local.environment, local.proxy_environment) : "--env ${k}=${v}"])
+            migration_lines       = local.migration_lines
           })
         },
         {
@@ -133,7 +156,7 @@ locals {
         # replacing the machine, one at a time, on purpose.
         { name = "update-engine.service", mask = true },
         { name = "locksmithd.service", mask = true },
-      ]
+      ])
     }
   }
 }

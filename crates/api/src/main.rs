@@ -42,6 +42,9 @@
 //!                          is refused when they are set.
 //!   LEDGER_LEASE_*         the lease guard's timings (see `control_plane::GuardConfig`)
 //!
+//! `ledger-api migrate` brings the cell's ledger schema to the latest version and exits (K-25). It
+//! reads the same LEDGER_DB_* settings and LEDGER_SCHEMA, and the normal start never does it.
+//!
 //! Exit codes: 2 for a configuration or connection problem at start, 1 for a failure after.
 
 use std::process::ExitCode;
@@ -146,6 +149,45 @@ fn load_cells(text: &str, files: &TlsFiles) -> Result<ledger_api::Peers, String>
     Ok(peers)
 }
 
+/// Connects to the cell's database as `run` and `migrate` both need: with the password in
+/// db.conn, or as the machine's identity when the cell's role belongs to one (D-24).
+async fn connect_database(
+    tls: bool,
+) -> Result<
+    (
+        tokio_postgres::Client,
+        Option<Arc<ledger_api::dbconn::Identity>>,
+    ),
+    String,
+> {
+    // How the service signs in. Password is the default. For a managed cell the role belongs to an
+    // identity, and db.conn holds no password (D-24).
+    let sign_in = match std::env::var("LEDGER_DB_SIGN_IN") {
+        Ok(text) => ledger_api::dbauth::SignIn::parse(&text)?,
+        Err(_) => ledger_api::dbauth::SignIn::Password,
+    };
+    Ok(if sign_in.by_identity() {
+        let settings = ledger_api::dbauth::Settings {
+            region: std::env::var("LEDGER_DB_REGION").ok(),
+            identity_client_id: std::env::var("LEDGER_DB_IDENTITY_CLIENT_ID").ok(),
+            oauth_file: std::env::var_os("LEDGER_DB_OAUTH_FILE").map(std::path::PathBuf::from),
+        };
+        let identity = Arc::new(ledger_api::dbconn::Identity::new(
+            sign_in,
+            &file("LEDGER_DB_FILE")?,
+            tls,
+            db_ca()?.as_deref(),
+            &settings,
+        )?);
+        (identity.connect().await?, Some(identity))
+    } else {
+        (
+            ledger_api::dbconn::connect(&file("LEDGER_DB_FILE")?, tls, db_ca()?.as_deref()).await?,
+            None,
+        )
+    })
+}
+
 async fn run() -> Result<(), String> {
     let node: NodeId = var("LEDGER_NODE")?
         .parse()
@@ -237,32 +279,7 @@ async fn run() -> Result<(), String> {
     } else {
         None
     };
-    // How the service signs in. Password is the default. For a managed cell the role belongs to an
-    // identity, and db.conn holds no password (D-24).
-    let sign_in = match std::env::var("LEDGER_DB_SIGN_IN") {
-        Ok(text) => ledger_api::dbauth::SignIn::parse(&text)?,
-        Err(_) => ledger_api::dbauth::SignIn::Password,
-    };
-    let (db, identity) = if sign_in.by_identity() {
-        let settings = ledger_api::dbauth::Settings {
-            region: std::env::var("LEDGER_DB_REGION").ok(),
-            identity_client_id: std::env::var("LEDGER_DB_IDENTITY_CLIENT_ID").ok(),
-            oauth_file: std::env::var_os("LEDGER_DB_OAUTH_FILE").map(std::path::PathBuf::from),
-        };
-        let identity = Arc::new(ledger_api::dbconn::Identity::new(
-            sign_in,
-            &file("LEDGER_DB_FILE")?,
-            tls,
-            db_ca()?.as_deref(),
-            &settings,
-        )?);
-        (identity.connect().await?, Some(identity))
-    } else {
-        (
-            ledger_api::dbconn::connect(&file("LEDGER_DB_FILE")?, tls, db_ca()?.as_deref()).await?,
-            None,
-        )
-    };
+    let (db, identity) = connect_database(tls).await?;
     // Fail at start, not at the first request, if the schema this needs is not there.
     ledger_store::validate_schema_name(&schema).map_err(|e| e.to_string())?;
     db.query_opt(&format!("select 1 from {schema}.api_request limit 1"), &[])
@@ -495,9 +512,44 @@ async fn run() -> Result<(), String> {
     Ok(())
 }
 
+/// `ledger-api migrate`: brings this cell's ledger schema to the latest version, then exits.
+///
+/// It uses the connection in db.conn and nothing else, and prints the version and counts, never a
+/// host, a role or a password. It can be run again and changes nothing the second time. A failed
+/// migration leaves the schema at the last version that worked. The normal start never does this.
+async fn migrate_command() -> Result<(), String> {
+    let schema = std::env::var("LEDGER_SCHEMA").unwrap_or_else(|_| "ledger".to_owned());
+    ledger_store::validate_schema_name(&schema).map_err(|e| e.to_string())?;
+    let tls = std::env::var("LEDGER_DB_TLS")
+        .map(|v| v != "off")
+        .unwrap_or(true);
+    let (mut db, _) = connect_database(tls).await?;
+    let report = ledger_store::migrate(&mut db, &schema).await.map_err(|e| {
+        format!("the migration failed, and the schema stays at its last good version: {e}")
+    })?;
+    let latest = report
+        .applied
+        .iter()
+        .chain(report.already_applied.iter())
+        .max()
+        .copied()
+        .unwrap_or(0);
+    println!(
+        "ledger-api: schema {schema} is at version {latest} ({} applied, {} already there)",
+        report.applied.len(),
+        report.already_applied.len()
+    );
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
-    match run().await {
+    let result = match std::env::args().nth(1).as_deref() {
+        None => run().await,
+        Some("migrate") => migrate_command().await,
+        Some(_) => Err("the only command is `migrate`; with none, it serves".to_owned()),
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("ledger-api: {e}");

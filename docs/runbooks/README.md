@@ -9,6 +9,7 @@ Step-by-step guides for running the infrastructure from this repository. They co
 | [First entry](first-entry.md) | The cells are applied and you want to make the first entry through the API |
 | [Rolling a new node image](rolling-the-node-image.md) | `infra/images.json` has a new digest and the running machines still use the old one |
 | [Rolling a new API image](rolling-the-api-image.md) | You have built a new API image, or changed an API machine's boot configuration, and the running machines still use the old one |
+| [Applying the ledger schema](applying-the-ledger-schema.md) | An API machine stops with "migrate it first" because the cell's database was built empty |
 | [Putting the AWS API and page on the internet](exposing-the-api-in-aws.md) | You want to reach the page and the API of the AWS cell from a browser without a VPN, or you want to take that away again |
 | [Pausing for cost](pausing-for-cost.md) | You want the proving environment to stop costing money for a while |
 | [Rotating certificates and credentials](rotating-credentials.md) | You are issuing the API machines' certificates and cell credentials, or renewing them (every 7 days), or removing a cell |

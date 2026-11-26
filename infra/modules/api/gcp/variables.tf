@@ -59,3 +59,9 @@ variable "labels" {
   type        = map(string)
   default     = {}
 }
+
+variable "migrate_database" {
+  description = "Run `ledger-api migrate` once before the API starts (K-25). Off by default."
+  type        = bool
+  default     = false
+}

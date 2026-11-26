@@ -4,13 +4,14 @@
 module "boot" {
   source = "../../api-boot"
 
-  name            = var.name
-  cell            = var.cell
-  cloud           = "azure"
-  image           = var.image
-  secret          = azurerm_key_vault_secret.api.versionless_id
-  etcd_endpoints  = var.etcd_endpoints
-  azure_tenant_id = var.tenant_id
+  name             = var.name
+  cell             = var.cell
+  cloud            = "azure"
+  image            = var.image
+  secret           = azurerm_key_vault_secret.api.versionless_id
+  etcd_endpoints   = var.etcd_endpoints
+  azure_tenant_id  = var.tenant_id
+  migrate_database = var.migrate_database
 }
 
 # The secret is made with an empty placeholder and OpenTofu never sets its contents: whoever
