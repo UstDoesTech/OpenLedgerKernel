@@ -14,6 +14,7 @@ module "boot" {
   aws_region     = var.region
 
   trusted_proxy_cidrs = var.trusted_proxy_cidrs
+  migrate_database    = var.migrate_database
 }
 
 # The secret is made empty. Whoever issues the certificates and tokens puts the values in, so

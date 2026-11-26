@@ -156,6 +156,16 @@ fn it_refuses_to_start_without_its_configuration() {
 /// Runs the binary with a complete, valid configuration plus the given extras, and returns what it
 /// said. None of these reach the database: the checks come first.
 fn refused(extra: &[(&str, &str)]) -> (Option<i32>, String) {
+    ran(&[], extra)
+}
+
+/// The same, with command-line words (`migrate`) and what the run said on its standard output.
+fn ran(args: &[&str], extra: &[(&str, &str)]) -> (Option<i32>, String) {
+    let (code, said, _) = ran_both(args, extra);
+    (code, said)
+}
+
+fn ran_both(args: &[&str], extra: &[(&str, &str)]) -> (Option<i32>, String, String) {
     static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
         "ledger-api-refuse-{}-{}",
@@ -172,7 +182,8 @@ fn refused(extra: &[(&str, &str)]) -> (Option<i32>, String) {
     let db = dir.join("db");
     std::fs::write(&db, "host=127.0.0.1 port=1 user=x dbname=x").unwrap();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_ledger-api"));
-    cmd.env_clear()
+    cmd.args(args)
+        .env_clear()
         .env("LEDGER_NODE", "cell-a")
         .env("LEDGER_DB_FILE", &db)
         .env("LEDGER_DB_TLS", "off")
@@ -186,6 +197,7 @@ fn refused(extra: &[(&str, &str)]) -> (Option<i32>, String) {
     (
         out.status.code(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
     )
 }
 
@@ -608,4 +620,184 @@ async fn two_cells_move_value_through_the_real_binaries_over_mutual_tls() {
             .unwrap();
     }
     let _ = std::fs::remove_dir_all(dir);
+}
+
+// K-25: `ledger-api migrate` puts the ledger schema on a cell that was built empty.
+
+#[test]
+fn migrate_that_cannot_reach_the_database_says_so_in_one_line_and_prints_no_connection_detail() {
+    let (code, said, printed) = ran_both(&["migrate"], &[("LEDGER_DB_TLS", "on")]);
+    assert_eq!(code, Some(2));
+    assert_eq!(
+        said.trim_end(),
+        "ledger-api: cannot connect to the cell's database: nothing answered at the address in db.conn"
+    );
+    assert!(printed.is_empty(), "{printed}");
+    for leaked in ["127.0.0.1", "user", "port=1"] {
+        assert!(!said.contains(leaked), "{said}");
+    }
+}
+
+#[test]
+fn migrate_refuses_a_schema_name_that_is_not_plain_before_it_connects() {
+    let (code, said) = ran(&["migrate"], &[("LEDGER_SCHEMA", "bad name; drop")]);
+    assert_eq!(code, Some(2));
+    assert!(said.starts_with("ledger-api: "), "{said}");
+    assert!(!said.contains("cannot connect"), "{said}");
+}
+
+#[test]
+fn a_word_other_than_migrate_is_refused() {
+    let (code, said) = ran(&["serve"], &[]);
+    assert_eq!(code, Some(2));
+    assert_eq!(
+        said.trim_end(),
+        "ledger-api: the only command is `migrate`; with none, it serves"
+    );
+}
+
+async fn lab(schema: &str) -> (tokio_postgres::Client, std::path::PathBuf) {
+    let (db, conn) = tokio_postgres::Config::new()
+        .host("127.0.0.1")
+        .port(5431)
+        .user("ledger")
+        .dbname("postgres")
+        .connect(NoTls)
+        .await
+        .expect("Postgres is on port 5431");
+    tokio::spawn(conn);
+    db.batch_execute(&format!("drop schema if exists {schema} cascade"))
+        .await
+        .unwrap();
+    let dir = std::env::temp_dir().join(format!(
+        "ledger-api-migrate-{schema}-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("db");
+    std::fs::write(
+        &file,
+        "host=127.0.0.1 port=5431 user=ledger dbname=postgres",
+    )
+    .unwrap();
+    (db, file)
+}
+
+fn versions_in(rows: Vec<tokio_postgres::Row>) -> Vec<i32> {
+    rows.iter().map(|r| r.get::<_, i32>(0)).collect()
+}
+
+#[tokio::test]
+#[ignore = "needs Postgres on port 5431"]
+async fn migrate_builds_the_schema_on_an_empty_cell_then_changes_nothing_and_prints_no_connection_detail()
+ {
+    let schema = "api_migrate_cmd";
+    let (db, file) = lab(schema).await;
+    let latest = ledger_store::MIGRATIONS.last().unwrap().version;
+    let count = ledger_store::MIGRATIONS.len();
+    let extra = [
+        ("LEDGER_DB_FILE", file.to_str().unwrap()),
+        ("LEDGER_SCHEMA", schema),
+    ];
+
+    let (code, said, printed) = ran_both(&["migrate"], &extra);
+    assert_eq!(code, Some(0), "{said}");
+    assert_eq!(
+        printed.trim_end(),
+        format!(
+            "ledger-api: schema {schema} is at version {latest} ({count} applied, 0 already there)"
+        )
+    );
+    // What the schema needs, which the service checks at its own start.
+    db.query_opt(&format!("select 1 from {schema}.api_request limit 1"), &[])
+        .await
+        .unwrap();
+
+    let (code, said, printed) = ran_both(&["migrate"], &extra);
+    assert_eq!(code, Some(0), "{said}");
+    assert_eq!(
+        printed.trim_end(),
+        format!(
+            "ledger-api: schema {schema} is at version {latest} (0 applied, {count} already there)"
+        )
+    );
+    let rows = db
+        .query(
+            &format!("select version from {schema}.schema_migrations order by 1"),
+            &[],
+        )
+        .await
+        .unwrap();
+    assert_eq!(versions_in(rows).len(), count);
+    for leaked in ["127.0.0.1", "port=5431", "user=ledger"] {
+        assert!(!printed.contains(leaked) && !said.contains(leaked));
+    }
+    db.batch_execute(&format!("drop schema {schema} cascade"))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs Postgres on port 5431"]
+async fn a_migration_that_fails_stops_the_command_and_leaves_the_last_good_version() {
+    let schema = "api_migrate_fail";
+    let (db, file) = lab(schema).await;
+    // Migration 5 makes `repl_buffer`. Something else already holds the name, so migrations 1 to 4
+    // apply and 5 fails.
+    db.batch_execute(&format!(
+        "create schema {schema}; create table {schema}.repl_buffer (x int)"
+    ))
+    .await
+    .unwrap();
+    let (code, said, printed) = ran_both(
+        &["migrate"],
+        &[
+            ("LEDGER_DB_FILE", file.to_str().unwrap()),
+            ("LEDGER_SCHEMA", schema),
+        ],
+    );
+    assert_eq!(code, Some(2));
+    assert!(
+        said.starts_with(
+            "ledger-api: the migration failed, and the schema stays at its last good version: "
+        ),
+        "{said}"
+    );
+    assert!(printed.is_empty(), "{printed}");
+    let rows = db
+        .query(
+            &format!("select version from {schema}.schema_migrations order by 1"),
+            &[],
+        )
+        .await
+        .unwrap();
+    assert_eq!(versions_in(rows), vec![1, 2, 3, 4]);
+    db.batch_execute(&format!("drop schema {schema} cascade"))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs Postgres on port 5431"]
+async fn the_normal_start_never_changes_the_schema_and_still_says_to_migrate_first() {
+    let schema = "api_migrate_never";
+    let (db, file) = lab(schema).await;
+    let (code, said) = refused(&[
+        ("LEDGER_DB_FILE", file.to_str().unwrap()),
+        ("LEDGER_SCHEMA", schema),
+    ]);
+    assert_eq!(code, Some(2));
+    assert_eq!(
+        said.trim_end(),
+        "ledger-api: the cell's database has no ledger schema at this version: migrate it first"
+    );
+    let made: bool = db
+        .query_one(
+            "select exists (select 1 from pg_namespace where nspname = $1)",
+            &[&schema],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert!(!made, "the start must not make the schema");
 }

@@ -64,3 +64,9 @@ variable "open_to_internet" {
   type        = bool
   default     = false
 }
+
+variable "migrate_database" {
+  description = "Runs `ledger-api migrate` once before each API machine's service starts, so a cell built empty gets its ledger schema (K-25). Off by default. Switch it on only for the time it takes: it uses the role in db.conn, and a machine takes it only when it is replaced. See docs/runbooks/applying-the-ledger-schema.md. Not a secret."
+  type        = bool
+  default     = false
+}

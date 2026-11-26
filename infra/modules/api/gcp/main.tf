@@ -13,12 +13,13 @@ locals {
 module "boot" {
   source = "../../api-boot"
 
-  name           = var.name
-  cell           = var.cell
-  cloud          = "gcp"
-  image          = var.image
-  secret         = google_secret_manager_secret.api.id
-  etcd_endpoints = var.etcd_endpoints
+  name             = var.name
+  cell             = var.cell
+  cloud            = "gcp"
+  image            = var.image
+  secret           = google_secret_manager_secret.api.id
+  etcd_endpoints   = var.etcd_endpoints
+  migrate_database = var.migrate_database
 }
 
 resource "google_service_account" "api" {

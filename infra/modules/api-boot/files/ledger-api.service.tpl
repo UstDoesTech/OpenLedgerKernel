@@ -3,7 +3,7 @@ Description=Ledger API
 Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service
-
+${migration_lines}
 [Service]
 Restart=always
 RestartSec=10

@@ -199,6 +199,7 @@ module "api_aws" {
   etcd_endpoints            = local.etcd_endpoints
   trusted_proxy_cidrs       = local.plan.aws.subnets["edge"]
   tags                      = { managed_by = "opentofu", component = "api", tenant = local.tenant }
+  migrate_database          = var.migrate_database
 }
 
 module "api_azure" {
@@ -218,6 +219,7 @@ module "api_azure" {
   administrator_ssh_public_key = var.administrator_ssh_public_key
   etcd_endpoints               = local.etcd_endpoints
   tags                         = { managed_by = "opentofu", component = "api", tenant = local.tenant }
+  migrate_database             = var.migrate_database
 }
 
 module "api_gcp" {
@@ -233,4 +235,5 @@ module "api_gcp" {
   registry_repository_id = local.cell_first.api.gcp.registry_repository_id
   etcd_endpoints         = local.etcd_endpoints
   labels                 = { managed_by = "opentofu", component = "api", tenant = replace(local.tenant, "_", "-") }
+  migrate_database       = var.migrate_database
 }
