@@ -26,6 +26,7 @@ def value(outputs: dict, name: str):
 
 
 KINDS = {"self_hosted", "managed"}
+SIGN_IN = {"aws": "aws_iam", "azure": "azure_entra", "gcp": "gcp_iam"}
 PLAIN = re.compile(r"[A-Za-z0-9._:-]+")
 
 
@@ -51,6 +52,9 @@ def databases(cells_outputs: dict) -> dict:
             "credential_secret": c["secret_ref"],
             "nodes": nodes(c),
         }
+        if c["kind"] == "managed":
+            # How the service signs in to a managed database (D-24), by the cloud it is in.
+            out[cloud]["sign_in"] = SIGN_IN[cloud]
     return out
 
 
@@ -94,7 +98,7 @@ def etcd_members(control_plane: dict) -> list:
 
 
 def build(api: dict, authority: dict, cells_outputs: dict | None = None, proving: bool = False,
-          control_plane: dict | None = None) -> dict:
+          control_plane: dict | None = None, db_ca: dict | None = None) -> dict:
     apis = value(api, "apis")
     tenant = value(api, "tenant")
     if not isinstance(tenant, str) or not re.fullmatch(r"ten_[a-z0-9]+", tenant):
@@ -119,6 +123,9 @@ def build(api: dict, authority: dict, cells_outputs: dict | None = None, proving
             if cloud not in dbs:
                 raise SystemExit("the cells layer has no database for a cell the api layer lists")
             entry["database"] = dbs[cloud]
+            # The cloud's public CA bundle for a managed database. Public, so it goes in the manifest.
+            if dbs[cloud]["kind"] == "managed" and db_ca and cloud in db_ca:
+                entry["db_ca"] = db_ca[cloud]
         cells.append(entry)
     manifest = {
         "authority": {
@@ -137,7 +144,30 @@ def build(api: dict, authority: dict, cells_outputs: dict | None = None, proving
     return manifest
 
 
+def take_db_ca(argv: list[str]) -> tuple[list[str], dict]:
+    """Removes each `--db-ca <cloud>=<file>` and reads the file, which holds a public CA bundle."""
+    out, found, i = [], {}, 0
+    while i < len(argv):
+        if argv[i] == "--db-ca":
+            if i + 1 >= len(argv) or "=" not in argv[i + 1]:
+                raise SystemExit("--db-ca takes <cloud>=<file>")
+            cloud, path = argv[i + 1].split("=", 1)
+            if cloud not in CLOUDS:
+                raise SystemExit("--db-ca names a cloud that is not aws, azure or gcp")
+            with open(path) as f:
+                pem = f.read()
+            if "-----BEGIN CERTIFICATE-----" not in pem:
+                raise SystemExit("a --db-ca file holds no certificate")
+            found[cloud] = pem
+            i += 2
+        else:
+            out.append(argv[i])
+            i += 1
+    return out, found
+
+
 def main(argv: list[str]) -> int:
+    argv, db_ca = take_db_ca(argv)
     control_plane = None
     if "--etcd" in argv:
         i = argv.index("--etcd")
@@ -159,7 +189,8 @@ def main(argv: list[str]) -> int:
     if len(argv) >= 5:
         with open(argv[4]) as f:
             cells_outputs = json.load(f)
-    manifest = build(api_outputs, authority_outputs, cells_outputs, proving=len(argv) == 6, control_plane=control_plane)
+    manifest = build(api_outputs, authority_outputs, cells_outputs, proving=len(argv) == 6, control_plane=control_plane,
+                     db_ca=db_ca)
     fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(manifest, f)

@@ -118,6 +118,9 @@ fn run(args: &[String]) -> Result<String, PkiError> {
                         kind: DatabaseKind::SelfHosted,
                         credential_secret: format!("credential-{n}"),
                         nodes: vec![],
+                        sign_in: None,
+                        role: None,
+                        name: None,
                     }),
                 })
                 .collect(),

@@ -69,6 +69,22 @@ impl DatabaseSource for AdministratorCopy<'_> {
     }
 }
 
+/// The role the service signs in as on a managed cell, unless the manifest says another (K-24ca).
+pub const APPLICATION_ROLE: &str = "ledger_app";
+
+/// A managed cell's `db.conn`: the host, port, role and database, and no password. The service asks
+/// its token source for a short-lived token each time it connects (K-24a), so nothing here is a
+/// secret, and nothing is read from the managed service's administrator secret.
+pub fn identity_connection(db: &crate::manifest::Database) -> String {
+    format!(
+        "host={} port={} user={} dbname={} sslmode=require",
+        db.host,
+        db.port,
+        db.role.as_deref().unwrap_or(APPLICATION_ROLE),
+        db.name.as_deref().unwrap_or("postgres"),
+    )
+}
+
 /// The value OpenTofu gives the Azure administrator secret until the primary writes the real one.
 const AZURE_PLACEHOLDER: &str = "set-by-the-primary-on-first-start";
 
