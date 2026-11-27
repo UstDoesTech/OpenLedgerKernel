@@ -12,6 +12,8 @@ output "cells" {
       port       = module.cell_aws.port
       secret_ref = module.cell_aws.secret_ref
       nodes      = module.cell_aws.nodes
+      # Only a managed cell has one. The API layer names it in the machine's sign-in grant.
+      database_resource_id = module.cell_aws.database_resource_id
     }
     "azure" = {
       kind       = module.cell_azure.kind
