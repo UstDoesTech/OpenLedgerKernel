@@ -110,7 +110,7 @@ pub const SECRET_FILES: [&str; 10] = [
 
 /// Entries the service reads when they are there and does without when they are not. A rotation
 /// writes one only when the manifest gives it, and never removes one.
-pub const OPTIONAL_FILES: [&str; 2] = ["db-ca.crt", "users.json"];
+pub const OPTIONAL_FILES: [&str; 3] = ["db-ca.crt", "users.json", "db-sign-in"];
 
 pub struct Rotation<'a> {
     pub manifest: &'a Manifest,
@@ -426,6 +426,21 @@ impl<'a> Rotation<'a> {
             .iter()
             .map(|c| self.current(c))
             .collect::<Result<_, _>>()?;
+
+        // A managed cell's connection. It holds no password and no secret, so it is written whenever
+        // credentials are, and always as the manifest says, so a stale one cannot stop the service.
+        // The managed service's administrator secret is not read: nothing here has a source for it.
+        if kind.credentials() {
+            for (cell, entries) in cells.iter().zip(now.iter_mut()) {
+                let Some(db) = cell.database.as_ref().filter(|d| d.is_managed()) else {
+                    continue;
+                };
+                let Some(sign_in) = db.sign_in else { continue };
+                entries.insert("db.conn".into(), crate::database::identity_connection(db));
+                entries.insert("db-sign-in".into(), sign_in.word().into());
+                report.databases += 1;
+            }
+        }
 
         // A proving environment's missing entries. An entry that is there is a person's, or an
         // earlier run's, and is left as it is. Everything is made before anything is written, so

@@ -37,6 +37,43 @@ pub struct Database {
     /// cell someone else runs, and then no certificate is issued for it.
     #[serde(default)]
     pub nodes: Vec<Node>,
+    /// A managed cell's sign-in: how the service proves who it is to the database (D-24). Needed for
+    /// a managed cell and refused for any other.
+    #[serde(default)]
+    pub sign_in: Option<SignIn>,
+    /// The database role the service signs in as, for a managed cell. Default `ledger_app`.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// The database's name, for a managed cell. Default `postgres`.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// How the service signs in to a managed database, as `LEDGER_DB_SIGN_IN` spells it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignIn {
+    AwsIam,
+    AzureEntra,
+    GcpIam,
+    LakebaseOauth,
+}
+
+impl SignIn {
+    pub fn word(self) -> &'static str {
+        match self {
+            SignIn::AwsIam => "aws_iam",
+            SignIn::AzureEntra => "azure_entra",
+            SignIn::GcpIam => "gcp_iam",
+            SignIn::LakebaseOauth => "lakebase_oauth",
+        }
+    }
+}
+
+impl Database {
+    pub fn is_managed(&self) -> bool {
+        self.kind == DatabaseKind::Managed
+    }
 }
 
 /// One machine of a self-hosted cell's database.
@@ -209,6 +246,36 @@ impl Manifest {
                     if n.address.parse::<std::net::IpAddr>().is_err() {
                         return bad("a node's address is an IP address");
                     }
+                }
+            }
+            if let Some(d) = &c.database {
+                let plain = |s: &str| {
+                    !s.is_empty()
+                        && s.len() <= 63
+                        && s.chars()
+                            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
+                };
+                if d.is_managed() {
+                    if d.sign_in.is_none() {
+                        return Err(PkiError::Manifest(
+                            "a managed cell's database says how the service signs in",
+                        ));
+                    }
+                    if c.db_ca.is_none() {
+                        return Err(PkiError::Manifest(
+                            "a managed cell's database gives its db_ca, the cloud's public CA bundle",
+                        ));
+                    }
+                    if !d.role.as_deref().is_none_or(plain) || !d.name.as_deref().is_none_or(plain)
+                    {
+                        return Err(PkiError::Manifest(
+                            "a managed cell's role and database are lower case letters, digits and underscores",
+                        ));
+                    }
+                } else if d.sign_in.is_some() || d.role.is_some() || d.name.is_some() {
+                    return Err(PkiError::Manifest(
+                        "only a managed cell has a sign-in, a role or a database name",
+                    ));
                 }
             }
             if let Some(ca) = &c.db_ca

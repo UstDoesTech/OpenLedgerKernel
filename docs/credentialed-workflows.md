@@ -166,6 +166,14 @@ A run with `proving` on (decision D-19) may also read each cell's administrator 
 
 Leave these off an environment that holds real money or customer data. K-19d replaces the copy: the node agent writes a dedicated role's connection string itself, so no run reads the administrator credential, and these rights go.
 
+#### Managed cells (K-24d)
+
+For a cell whose database a cloud runs, the run writes the API secret's `db.conn` with a host, port, role (`ledger_app`) and database (`postgres`) and no password, and `db-sign-in` with the word the service signs in by (`aws_iam`, `azure_entra` or `gcp_iam`). It writes both whenever it writes credentials, and always as the manifest says, so an old `db.conn` that holds a password cannot stop the service. It never reads the managed service's administrator secret: the code that writes `db.conn` has no way to.
+
+- **The manifest.** The builder marks a managed cell from the cells layer's `kind`. It refuses to run a managed cell that has no `db_ca`: the cloud's public CA bundle for its database service. Give each one with `--db-ca <cloud>=<file>` (the file holds a public bundle). A self-hosted cell is unchanged and gets none of these.
+- **What reads the word.** `db-sign-in` is written now, and nothing on the machine reads it yet (see K-24e). Until then the service takes its sign-in from `LEDGER_DB_SIGN_IN`.
+- **Not yet.** The workflow does not pass `--db-ca`, and Lakebase is not listed (K-24cb and I-01vc).
+
 #### How the identities are made (K-19c, decision D-18)
 
 You do not make these identities by hand. The `identities` layer (`infra/envs/europe/identities`) makes them, and you apply it with `infra-apply` like any other layer. The one list of what they may do is [`infra/rotation-identity.json`](../infra/rotation-identity.json). The modules read it, and a test holds this page to it. The identities are:

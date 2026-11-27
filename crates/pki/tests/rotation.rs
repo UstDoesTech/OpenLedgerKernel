@@ -814,6 +814,9 @@ mod proving {
                 kind: DatabaseKind::SelfHosted,
                 credential_secret: format!("administrator-of-{}", names[i]),
                 nodes: vec![],
+                sign_in: None,
+                role: None,
+                name: None,
             });
         }
         m

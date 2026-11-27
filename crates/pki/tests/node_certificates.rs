@@ -50,6 +50,9 @@ fn cell(name: &str, cloud: Cloud, with_nodes: bool) -> CellEntry {
             } else {
                 vec![]
             },
+            sign_in: None,
+            role: None,
+            name: None,
         }),
     }
 }
