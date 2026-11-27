@@ -87,6 +87,19 @@ pub struct CellEntry {
     pub database: Option<Database>,
 }
 
+/// One member of the control plane's etcd cluster, and the secret its certificates go in.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EtcdMember {
+    pub name: String,
+    /// The cloud whose secret store holds `secret`.
+    pub cloud: Cloud,
+    /// The member's private IP address, which its server and peer certificates name.
+    pub address: String,
+    /// The reference to the secret that holds this member's certificates. Never a certificate.
+    pub secret: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -94,6 +107,10 @@ pub struct Manifest {
     /// The tenants a cell credential covers.
     pub tenants: Vec<String>,
     pub cells: Vec<CellEntry>,
+    /// The etcd members, when the manifest has them (K-18). A run that makes certificates issues each
+    /// one its files. Left out, no member gets any.
+    #[serde(default)]
+    pub etcd_members: Vec<EtcdMember>,
     /// A proving environment holds no real money or customer data (D-19). Only then may a run fill a
     /// missing `db.conn` from the administrator's credential and make tokens for the tenants. Left
     /// out, a run fills neither, and a person does.
@@ -116,6 +133,21 @@ impl Manifest {
         if self.tenants.is_empty() || self.tenants.iter().any(|t| !t.starts_with("ten_")) {
             return Err(PkiError::Manifest(
                 "tenants are ten_ identifiers, and at least one",
+            ));
+        }
+        let mut members: Vec<&str> = self.etcd_members.iter().map(|m| m.name.as_str()).collect();
+        members.sort_unstable();
+        members.dedup();
+        if members.len() != self.etcd_members.len() {
+            return Err(PkiError::Manifest("two etcd members share a name"));
+        }
+        if self
+            .etcd_members
+            .iter()
+            .any(|m| m.secret.is_empty() || m.address.parse::<std::net::IpAddr>().is_err())
+        {
+            return Err(PkiError::Manifest(
+                "an etcd member has no secret or no IP address",
             ));
         }
         let mut names: Vec<&str> = self.cells.iter().map(|c| c.name.as_str()).collect();

@@ -62,6 +62,7 @@ fn manifest(cells: Vec<CellEntry>) -> Manifest {
         },
         tenants: vec!["ten_acme".into()],
         cells,
+        etcd_members: vec![],
         proving: false,
     }
 }

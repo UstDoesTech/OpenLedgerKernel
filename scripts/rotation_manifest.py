@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds the manifest the rotation reads, from the outputs of the api and authority layers.
 
-Usage: rotation_manifest.py <api outputs.json> <authority outputs.json> <manifest.json> [<cells outputs.json> [proving]]
+Usage: rotation_manifest.py <api outputs.json> <authority outputs.json> <manifest.json> [<cells outputs.json> [proving]] [--etcd <control-plane outputs.json>]
 
 The inputs are `tofu output -json` files. Giving the cells layer's outputs adds each cell's own
 database: where it is, where its administrator's credential is held and, for a self-hosted cell, its
@@ -73,7 +73,28 @@ def nodes(cell: dict) -> list:
     return out
 
 
-def build(api: dict, authority: dict, cells_outputs: dict | None = None, proving: bool = False) -> dict:
+def etcd_members(control_plane: dict) -> list:
+    """The etcd members from the control-plane layer's outputs, each with the secret its certificates
+    go in (K-18). Never a certificate."""
+    members = value(control_plane, "members")
+    secrets = value(control_plane, "certificate_secrets")
+    if not isinstance(members, list) or not isinstance(secrets, dict):
+        raise SystemExit("the control plane's members or secrets are not the expected shape")
+    out = []
+    for m in members:
+        name, cloud, address = (m.get(k) for k in ("name", "cloud", "address"))
+        if not (isinstance(name, str) and PLAIN.fullmatch(name)) or cloud not in CLOUDS:
+            raise SystemExit("an etcd member has no plain name or no known cloud")
+        if not (isinstance(address, str) and PLAIN.fullmatch(address)):
+            raise SystemExit("an etcd member has no plain address")
+        if not secrets.get(name):
+            raise SystemExit("an etcd member has no certificate secret")
+        out.append({"name": name, "cloud": cloud, "address": address, "secret": secrets[name]})
+    return out
+
+
+def build(api: dict, authority: dict, cells_outputs: dict | None = None, proving: bool = False,
+          control_plane: dict | None = None) -> dict:
     apis = value(api, "apis")
     tenant = value(api, "tenant")
     if not isinstance(tenant, str) or not re.fullmatch(r"ten_[a-z0-9]+", tenant):
@@ -107,6 +128,8 @@ def build(api: dict, authority: dict, cells_outputs: dict | None = None, proving
         "tenants": [tenant],
         "cells": cells,
     }
+    if control_plane is not None:
+        manifest["etcd_members"] = etcd_members(control_plane)
     if proving:
         if cells_outputs is None:
             raise SystemExit("a proving environment needs the cells layer's outputs")
@@ -115,6 +138,15 @@ def build(api: dict, authority: dict, cells_outputs: dict | None = None, proving
 
 
 def main(argv: list[str]) -> int:
+    control_plane = None
+    if "--etcd" in argv:
+        i = argv.index("--etcd")
+        if i != len(argv) - 2:
+            print(__doc__.strip().splitlines()[2], file=sys.stderr)
+            return 2
+        with open(argv[i + 1]) as f:
+            control_plane = json.load(f)
+        argv = argv[:i]
     if len(argv) not in (4, 5, 6) or (len(argv) == 6 and argv[5] != "proving"):
         print(__doc__.strip().splitlines()[2], file=sys.stderr)
         return 2
@@ -127,7 +159,7 @@ def main(argv: list[str]) -> int:
     if len(argv) >= 5:
         with open(argv[4]) as f:
             cells_outputs = json.load(f)
-    manifest = build(api_outputs, authority_outputs, cells_outputs, proving=len(argv) == 6)
+    manifest = build(api_outputs, authority_outputs, cells_outputs, proving=len(argv) == 6, control_plane=control_plane)
     fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(manifest, f)

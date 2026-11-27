@@ -24,7 +24,7 @@ use time::OffsetDateTime;
 
 use crate::database::DatabaseSource;
 use crate::error::PkiError;
-use crate::manifest::{CellEntry, Cloud, Database, Manifest, Node, NodeRole};
+use crate::manifest::{CellEntry, Cloud, Database, EtcdMember, Manifest, Node, NodeRole};
 use crate::signer::{Signer, key_pair};
 use crate::store::SecretStore;
 
@@ -58,6 +58,9 @@ pub struct Report {
     /// Certificates made for the machines of self-hosted databases: a server certificate for each,
     /// and a replication certificate for each standby.
     pub node_certificates: usize,
+    /// Certificates made for the control plane's etcd members: a server certificate and a peer
+    /// certificate for each.
+    pub etcd_certificates: usize,
     pub credentials: usize,
     pub versions: usize,
     /// Database connections and token files this run made, because a proving environment's secret
@@ -74,10 +77,11 @@ impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "cells: {}, certificates issued: {}, database node certificates issued: {}, credentials issued: {}, secret versions written: {}, database connections made: {}, login files made: {}, test users made: {}, cells still missing a file: {}",
+            "cells: {}, certificates issued: {}, database node certificates issued: {}, etcd member certificates issued: {}, credentials issued: {}, secret versions written: {}, database connections made: {}, login files made: {}, test users made: {}, cells still missing a file: {}",
             self.cells,
             self.certificates,
             self.node_certificates,
+            self.etcd_certificates,
             self.credentials,
             self.versions,
             self.databases,
@@ -287,6 +291,51 @@ impl<'a> Rotation<'a> {
         Ok((files, made))
     }
 
+    /// The five files of one etcd member, as the etcd module lists them: a server certificate for
+    /// its client port, a peer certificate that serves and calls (members call each other), a key for
+    /// each, and the authority's certificate. Each names the member's address.
+    fn issue_member(
+        &self,
+        member: &EtcdMember,
+        ca_pem: &str,
+        issuer: &rcgen::Certificate,
+        issuer_key: &KeyPair,
+    ) -> Result<Entries, PkiError> {
+        let ip: std::net::IpAddr = member
+            .address
+            .parse()
+            .map_err(|_| PkiError::Issuing("an etcd member's address is not an IP address"))?;
+        let make = |usages: Vec<ExtendedKeyUsagePurpose>| {
+            let key =
+                KeyPair::generate().map_err(|_| PkiError::Issuing("a key could not be made"))?;
+            let mut p = CertificateParams::default();
+            let mut dn = DistinguishedName::new();
+            dn.push(DnType::CommonName, member.name.clone());
+            p.distinguished_name = dn;
+            p.subject_alt_names = vec![SanType::IpAddress(ip)];
+            p.extended_key_usages = usages;
+            p.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+            p.not_before = self.now - time::Duration::minutes(10);
+            p.not_after = self.now + time::Duration::days(CERTIFICATE_DAYS);
+            let cert = p
+                .signed_by(&key, issuer, issuer_key)
+                .map_err(|_| PkiError::Issuing("the authority could not sign it"))?;
+            Ok::<_, PkiError>((cert.pem(), key.serialize_pem()))
+        };
+        let (server_crt, server_key) = make(vec![ExtendedKeyUsagePurpose::ServerAuth])?;
+        let (peer_crt, peer_key) = make(vec![
+            ExtendedKeyUsagePurpose::ServerAuth,
+            ExtendedKeyUsagePurpose::ClientAuth,
+        ])?;
+        let mut files = Entries::new();
+        files.insert("ca.crt".into(), ca_pem.to_owned());
+        files.insert("server.crt".into(), server_crt);
+        files.insert("server.key".into(), server_key);
+        files.insert("peer.crt".into(), peer_crt);
+        files.insert("peer.key".into(), peer_key);
+        Ok(files)
+    }
+
     fn issue(
         &self,
         cell: &CellEntry,
@@ -428,7 +477,7 @@ impl<'a> Rotation<'a> {
         // else, and written first in step 1, so a machine that has been waiting for its files can start. The service
         // trusts the same authority for the database, so its secret gets that certificate as the
         // database's, unless the manifest gives another.
-        let mut node_secrets: Vec<(Cloud, &str, String)> = Vec::new();
+        let mut node_secrets: Vec<(Cloud, &str, String, &'static str)> = Vec::new();
         if kind.certificates() {
             for (cell, entries) in cells.iter().zip(now.iter_mut()) {
                 let Some(db) = &cell.database else { continue };
@@ -441,10 +490,32 @@ impl<'a> Rotation<'a> {
                         step: 1,
                         why: "a secret could not be encoded",
                     })?;
-                    node_secrets.push((cell.cloud, node.secret.as_str(), text));
+                    node_secrets.push((
+                        cell.cloud,
+                        node.secret.as_str(),
+                        text,
+                        "a database node's certificates could not be written",
+                    ));
                     report.node_certificates += made;
                 }
                 entries.insert("db-ca.crt".into(), ca_pem.clone());
+            }
+        }
+        // The etcd members' files, made with everything else and written with the database machines'.
+        if kind.certificates() {
+            for member in &self.manifest.etcd_members {
+                let files = self.issue_member(member, &ca_pem, &issuer, &issuer_key)?;
+                let text = serde_json::to_string(&files).map_err(|_| PkiError::Stopped {
+                    step: 1,
+                    why: "a secret could not be encoded",
+                })?;
+                node_secrets.push((
+                    member.cloud,
+                    member.secret.as_str(),
+                    text,
+                    "an etcd member's certificates could not be written",
+                ));
+                report.etcd_certificates += 2;
             }
         }
         // The authority of each cell's database, when the manifest has it. Public, and not tied to
@@ -515,13 +586,10 @@ impl<'a> Rotation<'a> {
 
         // Step 1: the database machines' certificates first, so a machine that has been waiting for
         // its files can start, and then the cells' own.
-        for (cloud, secret, text) in &node_secrets {
+        for (cloud, secret, text, why) in &node_secrets {
             self.store
                 .write(*cloud, secret, text)
-                .map_err(|_| PkiError::Stopped {
-                    step: 1,
-                    why: "a database node's certificates could not be written",
-                })?;
+                .map_err(|_| PkiError::Stopped { step: 1, why })?;
             report.versions += 1;
         }
         // Every cell gets new certificates and lists the new credentials as well as the old.
