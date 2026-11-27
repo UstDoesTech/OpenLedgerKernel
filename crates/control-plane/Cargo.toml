@@ -28,7 +28,7 @@ etcd = ["dep:etcd-client"]
 [dev-dependencies]
 ledger-store = { path = "../ledger-store", version = "0.0.0" }
 proptest = "1"
-rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 tokio = { version = "1", features = ["rt", "macros", "time", "net", "io-util"] }
 
 [lints]

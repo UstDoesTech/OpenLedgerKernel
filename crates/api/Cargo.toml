@@ -40,7 +40,7 @@ argon2 = { version = "0.6", default-features = false, features = ["alloc", "pass
 
 [dev-dependencies]
 ledger-check = { path = "../ledger-check", version = "0.0.0" }
-rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 tower = { version = "0.5", features = ["util"] }
 
 [lints]
