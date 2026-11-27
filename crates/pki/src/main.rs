@@ -44,6 +44,7 @@ fn run(args: &[String]) -> Result<String, PkiError> {
             let proving = args.iter().any(|a| a == "--proving");
             let manifest = Manifest {
                 proving,
+                etcd_members: vec![],
                 authority: Authority {
                     key_id: "rehearsal".into(),
                     certificate_secret: "rehearsal".into(),

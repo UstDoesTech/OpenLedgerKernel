@@ -45,6 +45,7 @@ fn manifest(names: &[&str]) -> Manifest {
             .enumerate()
             .map(|(i, n)| cell(n, clouds[i % 3], &format!("10.1.0.{}", i + 1)))
             .collect(),
+        etcd_members: vec![],
         proving: false,
     }
 }
@@ -713,7 +714,7 @@ fn a_run_prints_one_line_of_counts() {
 /// `cells: N, certificates issued: N, ...` and nothing else.
 fn regex_free_counts(line: &str) -> bool {
     let parts: Vec<&str> = line.split(", ").collect();
-    parts.len() == 9
+    parts.len() == 10
         && parts.iter().all(|p| {
             p.rsplit_once(": ").is_some_and(|(label, n)| {
                 label.chars().all(|c| c.is_ascii_lowercase() || c == ' ')

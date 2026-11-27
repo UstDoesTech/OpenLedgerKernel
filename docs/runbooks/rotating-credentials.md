@@ -48,7 +48,7 @@ The run works without step 4, and says so: it prints how many cells still lack a
 A run takes about 15 minutes with three cells, almost all of it the two waits. The job prints one line:
 
 ```
-cells: 3, certificates issued: 6, database node certificates issued: 15, credentials issued: 6, secret versions written: 19, database connections made: 0, login files made: 0, test users made: 0, cells still missing a file: 0
+cells: 3, certificates issued: 6, database node certificates issued: 15, etcd member certificates issued: 0, credentials issued: 6, secret versions written: 19, database connections made: 0, login files made: 0, test users made: 0, cells still missing a file: 0
 ```
 
 | Count | What it is |
@@ -56,6 +56,7 @@ cells: 3, certificates issued: 6, database node certificates issued: 15, credent
 | `cells` | Cells in the `api` layer's outputs. |
 | `certificates issued` | Two for each cell, when `kind` is `all` or `certificates`. |
 | `database node certificates issued` | For each self-hosted cell, one server certificate for each of its three machines and one replication certificate for each of the two standbys: 5 for a cell, 15 for three. None for a cell someone else runs. Written into each machine's own secret, which the machine reads when it starts, so a machine that was waiting for its files starts by itself within a minute. |
+| `etcd member certificates issued` | Two for each etcd member the manifest lists, a server certificate and a peer certificate: 6 for three members. 0 until the workflow gives the manifest the control plane (K-18b). Written into each member's own secret, which the member reads when it starts. |
 | `credentials issued` | One for each ordered pair of cells, when `kind` is `all` or `credentials`: 6 for three cells. |
 | `secret versions written` | Three for each cell when credentials are made, one when only certificates are, one more for each database machine, and one for the authority's certificate on the first run. |
 | `database connections made` | Cells whose `db.conn` was missing and was filled this run. Only a `proving` run makes any. |

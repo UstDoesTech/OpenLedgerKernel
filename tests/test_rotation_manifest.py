@@ -175,3 +175,55 @@ def test_a_machine_that_is_not_plain_or_a_cell_someone_else_runs_with_machines_i
         done, _ = run_proving(tmp_path, bad, proving=False)
         assert done.returncode != 0
         assert "tls-ref" not in done.stderr + done.stdout and "10.0." not in done.stderr + done.stdout
+
+
+def control_plane():
+    members = [{"name": f"eu-{c}-etcd-{i}", "cloud": c, "zone": 1, "address": f"10.1{i}.64.10"}
+               for i, c in enumerate(["aws", "aws", "azure", "gcp"], 1)]
+    return {"members": {"value": members},
+            "certificate_secrets": {"value": {m["name"]: f"tls-ref-{m['name']}" for m in members}}}
+
+
+def run_etcd(tmp_path, outputs):
+    (tmp_path / "api.json").write_text(json.dumps(api()))
+    (tmp_path / "authority.json").write_text(json.dumps(AUTHORITY))
+    (tmp_path / "cp.json").write_text(json.dumps(outputs))
+    out = tmp_path / "manifest.json"
+    done = subprocess.run(
+        [sys.executable, str(SCRIPT), str(tmp_path / "api.json"), str(tmp_path / "authority.json"), str(out),
+         "--etcd", str(tmp_path / "cp.json")],
+        capture_output=True, text=True,
+    )
+    return done, out
+
+
+def test_the_control_planes_outputs_give_each_etcd_member_its_address_and_secret_and_nothing_else(tmp_path):
+    done, out = run_etcd(tmp_path, control_plane())
+    assert done.returncode == 0, done.stderr
+    members = json.loads(out.read_text())["etcd_members"]
+    assert members[0] == {"name": "eu-aws-etcd-1", "cloud": "aws", "address": "10.11.64.10",
+                          "secret": "tls-ref-eu-aws-etcd-1"}
+    assert len(members) == 4 and all(set(m) == {"name", "cloud", "address", "secret"} for m in members)
+    assert "tls-ref" not in done.stdout + done.stderr and done.stdout.strip() == "cells: 3"
+
+
+def test_without_the_control_plane_the_manifest_lists_no_members(tmp_path):
+    done, out = run(tmp_path, api())
+    assert done.returncode == 0 and "etcd_members" not in json.loads(out.read_text())
+
+
+def test_a_member_without_a_secret_or_with_a_name_that_is_not_plain_is_refused_without_its_value(tmp_path):
+    for change in (lambda c: c["certificate_secrets"]["value"].pop("eu-aws-etcd-1"),
+                   lambda c: c["members"]["value"][0].update(name="bad name; x"),
+                   lambda c: c["members"]["value"][0].update(cloud="mars"),
+                   lambda c: c["members"]["value"][0].update(address="10.0.0.1 bad")):
+        outputs = control_plane()
+        change(outputs)
+        done, _ = run_etcd(tmp_path, outputs)
+        assert done.returncode != 0
+        assert "bad name" not in done.stderr and "mars" not in done.stderr and "tls-ref" not in done.stderr
+
+
+def test_the_etcd_option_must_come_last_with_its_file(tmp_path):
+    done = subprocess.run([sys.executable, str(SCRIPT), "--etcd", "a", "b", "c", "d"], capture_output=True, text=True)
+    assert done.returncode == 2
