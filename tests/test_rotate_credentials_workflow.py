@@ -247,3 +247,22 @@ def test_the_bundle_is_not_a_secret_but_is_still_never_printed_or_uploaded():
     text = (Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rotate-credentials.yml").read_text()
     assert "upload-artifact" not in text
     assert "cat " not in step("Read where the cells")["run"]
+
+
+def test_the_protobuf_compiler_is_installed_before_the_tool_is_built_and_before_any_sign_in():
+    """The tool links etcd-client, whose build script needs protoc. The runner has none."""
+    names = [s.get("name", "") + s.get("uses", "") for s in steps()]
+    install = next(i for i, n in enumerate(names) if "Install the protobuf compiler" in n)
+    build = next(i for i, n in enumerate(names) if "Build the rotation tool" in n)
+    first_login = min(i for i, n in enumerate(names) if re.search(r"configure-aws-credentials|azure/login|google-github-actions/auth", n))
+    assert install < build < first_login
+    assert step("Install the protobuf compiler")["run"] == "sudo apt-get update && sudo apt-get install -y protobuf-compiler"
+    # The same line the Rust workflow uses, so the two cannot drift apart.
+    assert step("Install the protobuf compiler")["run"] in (ROOT / ".github" / "workflows" / "rust.yml").read_text()
+    # The tool really does need it: pki depends on api (K-24ca), api on control-plane, whose default
+    # feature builds etcd-client, and that crate's build script needs protoc.
+    crates = ROOT / "crates"
+    assert 'api = { path = "../api"' in (crates / "pki" / "Cargo.toml").read_text()
+    assert 'control-plane = { path = "../control-plane"' in (crates / "api" / "Cargo.toml").read_text()
+    control = (crates / "control-plane" / "Cargo.toml").read_text()
+    assert 'default = ["etcd"]' in control and 'etcd-client = { version' in control
