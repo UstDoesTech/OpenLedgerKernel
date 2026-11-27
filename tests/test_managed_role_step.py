@@ -52,7 +52,7 @@ def test_the_machines_role_may_read_the_administrators_secret_only_while_the_ste
     assert "count = var.create_database_role ? 1 : 0" in res and "aws_iam_role.api.id" in res
     # No other policy of the machine names the administrator's secret.
     others = text.replace(doc, "").replace(res, "")
-    assert "administrator_secret_arn" not in others.replace("coalesce(var.administrator_secret_arn", "")
+    assert "administrator_secret_arn" not in others.replace("var.administrator_secret_arn == null ? \"\" : var.administrator_secret_arn", "")
 
 
 def test_the_secret_reference_is_never_an_output_and_the_credential_never_a_value():

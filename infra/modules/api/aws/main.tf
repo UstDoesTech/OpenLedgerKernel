@@ -18,7 +18,7 @@ module "boot" {
   migrate_database    = var.migrate_database
 
   create_database_role = var.create_database_role
-  administrator_secret = coalesce(var.administrator_secret_arn, "")
+  administrator_secret = var.administrator_secret_arn == null ? "" : var.administrator_secret_arn
 }
 
 # The secret is made empty. Whoever issues the certificates and tokens puts the values in, so
