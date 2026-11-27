@@ -113,3 +113,27 @@ resource "aws_instance" "api" {
     ignore_changes = [ami, user_data]
   }
 }
+
+# A managed cell's database: the machine's own role may sign in with a short-lived token (the
+# service asks for one each time it connects, K-24a) as one database role on one cluster. The
+# grant is made only when the cell is managed, so a self-hosted cell's machine is unchanged.
+data "aws_caller_identity" "this" {
+  count = var.database_resource_id == null ? 0 : 1
+}
+
+data "aws_iam_policy_document" "database" {
+  count = var.database_resource_id == null ? 0 : 1
+
+  statement {
+    actions   = ["rds-db:connect"]
+    resources = ["arn:aws:rds-db:${var.region}:${data.aws_caller_identity.this[0].account_id}:dbuser:${var.database_resource_id}/${var.database_role}"]
+  }
+}
+
+resource "aws_iam_role_policy" "database" {
+  count = var.database_resource_id == null ? 0 : 1
+
+  name   = "api-database"
+  role   = aws_iam_role.api.id
+  policy = data.aws_iam_policy_document.database[0].json
+}

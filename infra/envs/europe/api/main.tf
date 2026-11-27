@@ -73,6 +73,17 @@ data "terraform_remote_state" "cell_first" {
   }
 }
 
+# The cells layer says whether each cell is managed and, if so, names its cluster, so that the
+# AWS machine may sign in to that one cluster (K-24ba). Apply cells before this layer.
+data "terraform_remote_state" "cells" {
+  backend = "s3"
+  config = {
+    bucket = var.state_bucket
+    key    = "${local.geo}/cells"
+    region = module.regions.aws[0]
+  }
+}
+
 data "azurerm_client_config" "current" {}
 
 locals {
@@ -86,6 +97,7 @@ locals {
   private_access = data.terraform_remote_state.private_access.outputs
   control_plane  = data.terraform_remote_state.control_plane.outputs
   cell_first     = data.terraform_remote_state.cell_first.outputs
+  cells          = data.terraform_remote_state.cells.outputs.cells
   plan           = module.address_plan
 
   # The tenant comes from the cell-first layer, so that these machines and the cells they sit
@@ -198,6 +210,7 @@ module "api_aws" {
   kms_key_arn               = local.cell_first.aws.kms_key_arn
   etcd_endpoints            = local.etcd_endpoints
   trusted_proxy_cidrs       = local.plan.aws.subnets["edge"]
+  database_resource_id      = try(local.cells["aws"].kind == "managed" ? local.cells["aws"].database_resource_id : null, null)
   tags                      = { managed_by = "opentofu", component = "api", tenant = local.tenant }
   migrate_database          = var.migrate_database
 }

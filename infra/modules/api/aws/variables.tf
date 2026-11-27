@@ -76,3 +76,15 @@ variable "migrate_database" {
   type        = bool
   default     = false
 }
+
+variable "database_resource_id" {
+  description = "The resource id of the cell's managed database cluster, when the cell is managed. The machine's role may then sign in to that one cluster as the one database role below, and as no other. Null for a self-hosted cell, which gets no such grant."
+  type        = string
+  default     = null
+}
+
+variable "database_role" {
+  description = "The one database role the machine may sign in as. K-24ca makes it."
+  type        = string
+  default     = "ledger_app"
+}

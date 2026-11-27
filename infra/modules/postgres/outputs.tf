@@ -50,3 +50,8 @@ output "nodes" {
     module.gcp_self_hosted[*].nodes,
   ])
 }
+
+output "database_resource_id" {
+  description = "On AWS, a managed cell's cluster resource id, which an IAM policy names to let one machine sign in as one database role. Null for every other cell."
+  value       = one(module.aws_managed[*].resource_id)
+}

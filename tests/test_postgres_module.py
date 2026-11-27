@@ -36,13 +36,14 @@ def test_module_structure(form):
 def test_outputs_are_host_port_and_secret_reference_only(form):
     text = code(MODULE / form / "outputs.tf")
     # Only a form the platform runs has nodes whose certificates someone must issue (K-20a).
-    expected = {"host", "port", "secret_ref"} | ({"nodes"} if form.endswith("-self-hosted") else set())
+    # The AWS managed form also names its cluster, as an identifier an IAM policy needs (K-24ba).
+    expected = {"host", "port", "secret_ref"} | ({"nodes"} if form.endswith("-self-hosted") else set()) | ({"resource_id"} if form == "aws-managed" else set())
     assert set(re.findall(r'^output "(\w+)"', text, re.M)) == expected
 
 
 def test_facade_outputs_are_host_port_secret_ref_and_kind():
     text = code(MODULE / "outputs.tf")
-    assert set(re.findall(r'^output "(\w+)"', text, re.M)) == {"kind", "host", "port", "secret_ref", "nodes"}
+    assert set(re.findall(r'^output "(\w+)"', text, re.M)) == {"kind", "host", "port", "secret_ref", "nodes", "database_resource_id"}
 
 
 def test_no_password_or_connection_string_anywhere():
