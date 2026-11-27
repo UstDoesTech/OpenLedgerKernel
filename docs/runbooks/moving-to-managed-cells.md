@@ -52,7 +52,7 @@ Add the repository secret `TF_VAR_cell_kinds` = `{"aws":"managed"}` (see [How th
 
 Dispatch **`infra-apply`** with `env` = `europe`, `layer` = `cells` and `action` = `plan`. Read it. You should see:
 
-- The AWS cell's three database machines and their data disks **destroyed**, and its managed database made. The Azure and Google Cloud cells do not appear.
+- The AWS cell's three database machines and their data disks **destroyed**, and its managed database made. No Azure or Google Cloud machine, disk or database appears. The Azure cell's certificate secrets may show an in-place change to their tags (tags added, `file-encoding` removed). That is drift from earlier applies, it touches no value, and it is safe to apply.
 - Nothing else. The `network`, `interconnect`, `private-access` and `api` layers are not in this plan, and an API machine and the load balancer are in the `api` layer. If the plan names anything outside the cells, stop.
 
 The counts change as the modules do, so do not hold to a number. Hold to the shape: machines and disks destroyed, databases made, nothing outside the `cells` layer.
