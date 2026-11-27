@@ -14,6 +14,6 @@
   },
   "api": {
     "source": "ghcr.io/ustdoestech/openledgerkernel/api",
-    "digest": "sha256:8bbd401d44789afa6a0d443c4d7a1c6367ffc6cb05a65cadd1ab0916e139c115"
+    "digest": "sha256:f3d9ce28fd81de0463e3ef123e1716c0bd3dbf81703c3d3906dc3853f089c663"
   }
 }
