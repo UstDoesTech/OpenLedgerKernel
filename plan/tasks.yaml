@@ -1521,11 +1521,11 @@ tasks:
   refs:
   - docs/api-design.md
 - id: K-24f
-  title: Give rotate-credentials each managed cloud's public database CA bundle
+  title: Give rotate-credentials the public database CA bundle of a managed AWS cell
   phase: P1
   workstream: K
   size: S
-  status: todo
+  status: done
   depends_on:
   - K-24d
   decisions: []
@@ -1534,9 +1534,29 @@ tasks:
   - tests/test_rotate_credentials_workflow.py
   - docs/runbooks/rotating-credentials.md
   acceptance:
-  - When a cell's kind is managed, the workflow fetches that cloud's public CA bundle for its database service from the cloud's own published address, checks it holds certificates only, and passes it with `--db-ca`, shown by a test of the workflow. For a self-hosted cell it does nothing new.
+  - When an AWS cell's kind is managed, the workflow fetches Amazon's public CA bundle for RDS from Amazon's own published address, checks it holds certificates only, and passes it with `--db-ca`, shown by a test of the workflow. For a self-hosted cell it does nothing new.
   - The bundle is not a secret and is never printed, shown by a test.
-  notes: Found in K-24d. The manifest refuses a managed cell with no db_ca, so a managed run stops until this is in. It edits a workflow that holds credentials, so it needs a person's review.
+  notes: Narrowed to AWS, with the rest in K-24g, because Azure's roots and intermediates are rotated on Microsoft's schedule and Cloud SQL signs with a certificate authority of each instance, so neither has one fixed address. Found in K-24d. The manifest refuses a managed cell with no db_ca, so a managed run stops until this is in. It edits a workflow that holds credentials, so it needs a person's review.
+  refs:
+  - docs/credentialed-workflows.md
+- id: K-24g
+  title: Give rotate-credentials the public database CA bundle of a managed Azure or Google Cloud cell
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-24f
+  decisions: []
+  deliverables:
+  - scripts/fetch_database_ca.py
+  - tests/test_fetch_database_ca.py
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - For a managed Azure cell the bundle holds the roots Microsoft publishes for Azure Database for PostgreSQL flexible server, taken from Microsoft's own published address and checked as K-24f checks AWS's.
+  - For a managed Google Cloud cell the bundle is the instance's own server certificate authority, read through the cloud's API by the run's identity, with the identity's right to do so added to the list in `infra/rotation-identity.json` and its test.
+  - A self-hosted cell's run is unchanged, and no bundle is a secret or is printed, shown by tests.
+  notes: Split off from K-24f. Reading an instance's certificate authority widens an identity, so it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
 - id: I-01vd
@@ -1551,6 +1571,7 @@ tasks:
   - K-24d
   - K-24e
   - K-24f
+  - K-24g
   decisions: []
   deliverables:
   - docs/runbooks/moving-to-managed-cells.md

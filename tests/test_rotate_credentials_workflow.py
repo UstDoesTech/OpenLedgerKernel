@@ -222,3 +222,28 @@ def test_the_control_plane_is_always_read_and_its_outputs_stay_on_the_runner_and
     assert 'infra/envs/$INPUT_ENV/control-plane' in check
     # The outputs are removed with the others, and nothing prints them.
     assert "-outputs.json" in step("Remove what the run kept")["run"]
+
+
+# ---- K-24f: a managed database's public CA bundle --------------------------------------------------
+
+def test_the_ca_bundles_are_fetched_through_quiet_before_the_manifest_and_passed_with_db_ca():
+    read = step("Read where the cells")["run"]
+    fetch = next(l for l in read.splitlines() if "fetch_database_ca.py" in l)
+    assert fetch.strip().startswith("scripts/quiet.sh db-ca python3 scripts/fetch_database_ca.py")
+    assert read.index("fetch_database_ca.py") < read.index("rotation_manifest.py")
+    assert '--db-ca "$(basename "$bundle" .pem)=$bundle"' in read
+    # No bundle means nothing is added, so a self-hosted cell's run is as it was.
+    assert '[ -e "$bundle" ] || continue' in read
+    # --etcd still goes last.
+    assert read.index("--db-ca") < read.index("--etcd")
+
+
+def test_the_bundles_are_removed_with_the_rest_even_after_a_failure():
+    s = step("Remove what the run kept")
+    assert s["if"] == "always()" and '"$RUNNER_TEMP/db-ca"' in s["run"]
+
+
+def test_the_bundle_is_not_a_secret_but_is_still_never_printed_or_uploaded():
+    text = (Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rotate-credentials.yml").read_text()
+    assert "upload-artifact" not in text
+    assert "cat " not in step("Read where the cells")["run"]

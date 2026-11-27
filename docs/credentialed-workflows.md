@@ -172,7 +172,8 @@ For a cell whose database a cloud runs, the run writes the API secret's `db.conn
 
 - **The manifest.** The builder marks a managed cell from the cells layer's `kind`. It refuses to run a managed cell that has no `db_ca`: the cloud's public CA bundle for its database service. Give each one with `--db-ca <cloud>=<file>` (the file holds a public bundle). A self-hosted cell is unchanged and gets none of these.
 - **What reads the word.** The service reads `db-sign-in` through `LEDGER_DB_SIGN_IN_FILE`, which the API boot module sets (K-24e). Boot files reach a machine only when it is replaced, so replace each API machine once, after this is applied.
-- **Not yet.** The workflow does not pass `--db-ca`, and Lakebase is not listed (K-24cb and I-01vc).
+- **The CA bundle.** The workflow runs `scripts/fetch_database_ca.py` for each managed cell and passes the result with `--db-ca` (K-24f). It downloads the cloud's published bundle over https, checks it holds certificates and nothing else, and removes it at the end of the run. The bundle is public. Only AWS is supported (RDS's global bundle). A managed Azure or Google Cloud cell stops the run with a message that says which cloud, until K-24g.
+- **Not yet.** Lakebase is not listed (K-24cb and I-01vc).
 
 #### How the identities are made (K-19c, decision D-18)
 
