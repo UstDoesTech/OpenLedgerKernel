@@ -50,7 +50,9 @@ def test_the_unit_runs_the_same_image_with_migrate_and_only_the_database_setting
     assert "--publish" not in run and "--cap-drop ALL" in run and "--read-only" in run
     assert "--volume /etc/ledger-api/secrets:/run/secrets/api:ro" in run
     env = re.search(r"migrate_environment = \{(.*?)\n  \}", MAIN, re.S).group(1)
-    assert set(re.findall(r"(LEDGER_\w+)\s*=", env)) == {"LEDGER_DB_FILE", "LEDGER_DB_CA_FILE"}
+    assert set(re.findall(r"(LEDGER_\w+)\s*=", env)) == {
+        "LEDGER_DB_FILE", "LEDGER_DB_CA_FILE", "LEDGER_DB_SIGN_IN_FILE",  # how to sign in is a database setting (K-24e)
+    }
 
 
 def test_a_failed_migration_is_retried_and_the_api_does_not_start_meanwhile():

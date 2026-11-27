@@ -171,7 +171,7 @@ Leave these off an environment that holds real money or customer data. K-19d rep
 For a cell whose database a cloud runs, the run writes the API secret's `db.conn` with a host, port, role (`ledger_app`) and database (`postgres`) and no password, and `db-sign-in` with the word the service signs in by (`aws_iam`, `azure_entra` or `gcp_iam`). It writes both whenever it writes credentials, and always as the manifest says, so an old `db.conn` that holds a password cannot stop the service. It never reads the managed service's administrator secret: the code that writes `db.conn` has no way to.
 
 - **The manifest.** The builder marks a managed cell from the cells layer's `kind`. It refuses to run a managed cell that has no `db_ca`: the cloud's public CA bundle for its database service. Give each one with `--db-ca <cloud>=<file>` (the file holds a public bundle). A self-hosted cell is unchanged and gets none of these.
-- **What reads the word.** `db-sign-in` is written now, and nothing on the machine reads it yet (see K-24e). Until then the service takes its sign-in from `LEDGER_DB_SIGN_IN`.
+- **What reads the word.** The service reads `db-sign-in` through `LEDGER_DB_SIGN_IN_FILE`, which the API boot module sets (K-24e). Boot files reach a machine only when it is replaced, so replace each API machine once, after this is applied.
 - **Not yet.** The workflow does not pass `--db-ca`, and Lakebase is not listed (K-24cb and I-01vc).
 
 #### How the identities are made (K-19c, decision D-18)

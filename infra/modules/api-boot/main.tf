@@ -32,6 +32,7 @@ locals {
   optional_secret_files = [
     "db-ca.crt",
     "users.json",
+    "db-sign-in",
   ]
 
   secret_arguments = "${var.secret} ${join(" ", concat(local.secret_files, [for f in local.optional_secret_files : "optional:${f}"]))}"
@@ -52,6 +53,7 @@ locals {
     LEDGER_NODE               = var.cell
     LEDGER_DB_FILE            = "${local.secrets_dir}/db.conn"
     LEDGER_DB_CA_FILE         = "${local.secrets_dir}/db-ca.crt"
+    LEDGER_DB_SIGN_IN_FILE    = "${local.secrets_dir}/db-sign-in"
     LEDGER_TOKENS_FILE        = "${local.secrets_dir}/tokens.json"
     LEDGER_USERS_FILE         = "${local.secrets_dir}/users.json"
     LEDGER_LISTEN             = "0.0.0.0:${var.public_port}"
@@ -78,6 +80,9 @@ locals {
   migrate_environment = {
     LEDGER_DB_FILE    = local.environment.LEDGER_DB_FILE
     LEDGER_DB_CA_FILE = local.environment.LEDGER_DB_CA_FILE
+
+    # The migration signs in to the database the same way the service does.
+    LEDGER_DB_SIGN_IN_FILE = local.environment.LEDGER_DB_SIGN_IN_FILE
   }
 
   # With the step on, the API waits for it and does not start if it fails. With it off the unit
