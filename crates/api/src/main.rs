@@ -9,6 +9,8 @@
 //!   LEDGER_DB_SIGN_IN      password (the default), aws_iam, azure_entra, gcp_iam or lakebase_oauth: with
 //!                          any but password, the file holds no password and the service signs in
 //!                          as its machine's identity, with a new token for each connection
+//!   LEDGER_DB_SIGN_IN_FILE the same word, in a file, when LEDGER_DB_SIGN_IN is not set: the secret's
+//!                          `db-sign-in` entry. Missing or empty means password
 //!   LEDGER_DB_REGION       aws_iam only: the region, when the host does not carry it
 //!   LEDGER_DB_IDENTITY_CLIENT_ID  azure_entra only: picks a user-assigned managed identity
 //!   LEDGER_DB_OAUTH_FILE   lakebase_oauth only: a file with the service principal and endpoint
@@ -69,6 +71,25 @@ fn file(name: &str) -> Result<String, String> {
     std::fs::read_to_string(&path)
         .map(|s| s.trim().to_owned())
         .map_err(|e| format!("{name}: cannot read {path}: {e}"))
+}
+
+/// How the service signs in, as a word: `LEDGER_DB_SIGN_IN` when it is set, and otherwise the file
+/// `LEDGER_DB_SIGN_IN_FILE` names, which rotate-credentials writes into the secret (K-24e). No
+/// variable, or a file that is missing or empty, means the password, so a cell that is applied does
+/// not change. A word the service does not know is refused by the caller, never read as a password.
+fn sign_in_word() -> Result<Option<String>, String> {
+    if let Ok(text) = std::env::var("LEDGER_DB_SIGN_IN") {
+        return Ok(Some(text));
+    }
+    let Ok(path) = std::env::var("LEDGER_DB_SIGN_IN_FILE") else {
+        return Ok(None);
+    };
+    match std::fs::read_to_string(&path) {
+        Ok(text) if !text.trim().is_empty() => Ok(Some(text.trim().to_owned())),
+        Ok(_) => Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err("LEDGER_DB_SIGN_IN_FILE: cannot read it".to_owned()),
+    }
 }
 
 /// The authority that signed the database's certificate, when the secret holds one. A missing or
@@ -162,9 +183,9 @@ async fn connect_database(
 > {
     // How the service signs in. Password is the default. For a managed cell the role belongs to an
     // identity, and db.conn holds no password (D-24).
-    let sign_in = match std::env::var("LEDGER_DB_SIGN_IN") {
-        Ok(text) => ledger_api::dbauth::SignIn::parse(&text)?,
-        Err(_) => ledger_api::dbauth::SignIn::Password,
+    let sign_in = match sign_in_word()? {
+        Some(text) => ledger_api::dbauth::SignIn::parse(&text)?,
+        None => ledger_api::dbauth::SignIn::Password,
     };
     Ok(if sign_in.by_identity() {
         let settings = ledger_api::dbauth::Settings {

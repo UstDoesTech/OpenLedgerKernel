@@ -292,6 +292,68 @@ fn it_refuses_an_identity_sign_in_that_lacks_what_its_source_needs() {
     );
 }
 
+/// K-24e: the word can come from the secret's `db-sign-in` file, which rotate-credentials writes.
+#[test]
+fn it_reads_how_to_sign_in_from_the_file_when_the_variable_is_not_set() {
+    let dir = std::env::temp_dir().join(format!("ledger-api-signin-file-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let word = dir.join("db-sign-in");
+    let conn = dir.join("db");
+    std::fs::write(
+        &conn,
+        format!("host=h user=x dbname=x {}=not-echoed", "password"),
+    )
+    .unwrap();
+
+    // A known word in the file is used: with an identity word, a password in db.conn is refused.
+    std::fs::write(&word, "aws_iam\n").unwrap();
+    let (code, said) = refused(&[
+        ("LEDGER_DB_SIGN_IN_FILE", word.to_str().unwrap()),
+        ("LEDGER_DB_FILE", conn.to_str().unwrap()),
+    ]);
+    assert_eq!(code, Some(2));
+    assert!(
+        said.contains("holds a password, but LEDGER_DB_SIGN_IN says"),
+        "{said}"
+    );
+    assert!(!said.contains("not-echoed"));
+
+    // A word the service does not know is refused, never read as a password, and not quoted.
+    std::fs::write(&word, "maybe-a-password").unwrap();
+    let (code, said) = refused(&[("LEDGER_DB_SIGN_IN_FILE", word.to_str().unwrap())]);
+    assert_eq!(code, Some(2));
+    assert_eq!(
+        said.trim_end(),
+        "ledger-api: LEDGER_DB_SIGN_IN: must be password, aws_iam, azure_entra, gcp_iam or lakebase_oauth"
+    );
+    assert!(!said.contains("maybe-a-password"));
+
+    // The variable wins over the file.
+    std::fs::write(&word, "maybe-a-password").unwrap();
+    let (_, said) = refused(&[
+        ("LEDGER_DB_SIGN_IN", "password"),
+        ("LEDGER_DB_SIGN_IN_FILE", word.to_str().unwrap()),
+    ]);
+    assert!(!said.contains("must be password"), "{said}");
+
+    // A file that is missing or empty means the password, as with neither setting: the start gets
+    // as far as the database, which is not there.
+    let missing = dir.join("nothing-here");
+    std::fs::write(&word, " \n").unwrap();
+    for file in [&missing, &word] {
+        let (code, said) = refused(&[
+            ("LEDGER_DB_SIGN_IN_FILE", file.to_str().unwrap()),
+            ("LEDGER_DB_TLS", "on"),
+        ]);
+        assert_eq!(code, Some(2));
+        assert!(
+            said.contains("cannot connect to the cell's database"),
+            "{said}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn it_refuses_a_public_listener_off_loopback_without_tls() {
     let (code, said) = refused(&[("LEDGER_LISTEN", "0.0.0.0:8080")]);

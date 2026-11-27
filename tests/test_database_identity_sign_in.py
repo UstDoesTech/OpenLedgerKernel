@@ -132,7 +132,8 @@ def test_the_documents_say_what_the_code_does():
 
 def test_the_default_is_the_password_so_a_cell_that_is_applied_does_not_change():
     main = (API / "main.rs").read_text()
-    assert "Err(_) => ledger_api::dbauth::SignIn::Password" in main
-    # The infrastructure does not set the new variable yet. That is K-24b's work.
+    assert "None => ledger_api::dbauth::SignIn::Password" in main
+    # The boot module never sets the variable itself. It names a file, which is empty or missing for a
+    # cell that is applied, and which rotate-credentials fills only for a managed cell (K-24e).
     boot = (ROOT / "infra" / "modules" / "api-boot" / "main.tf").read_text()
-    assert "LEDGER_DB_SIGN_IN" not in boot
+    assert not re.search(r"\bLEDGER_DB_SIGN_IN\s*=", boot)
