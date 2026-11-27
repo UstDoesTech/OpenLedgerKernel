@@ -1611,7 +1611,8 @@ tasks:
   - Its test holds each added step to a setting, file or count that exists.
   notes: Split off from I-01vd.
   refs:
-  - docs/runbooks/moving-to-managed-cells.md
+  - docs/runbooks/rotating-credentials.md
+  - docs/runbooks/applying-the-ledger-schema.md
 - id: K-25
   title: Apply the ledger schema to a deployed cell from its API machine
   phase: P1
