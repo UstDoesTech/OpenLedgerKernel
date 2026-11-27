@@ -42,6 +42,21 @@ Delete `TF_VAR_migrate_database`. Plan the `api` layer, and read it. It shows no
 
 Do not leave the setting on. A machine that has it holds a role that can change the schema.
 
+## Making a managed cell's application role
+
+A managed database (RDS) has a private address only, so a hosted runner cannot reach it. A one-off unit on the API machine makes the role the API signs in as, from inside the network, before the schema step (K-24cc). AWS only so far.
+
+What it does: it reads the database's administrator secret with the machine's own role, into a file in memory that only the unit's container sees. It runs `ledger-api managed-role` (ten statements: a role with no password and no powers, tied to `rds_iam`, owning only the `ledger` schema). It removes the file whether it worked or not. It is safe to run again. It prints one line of counts, never a host, a role or a password.
+
+What it costs: while the setting is on, the machine's role can read the administrator's secret. That is the only time it can. Turn it on for one apply and off again.
+
+1. Before: `rotate-credentials` has run for this cell, so its `db.conn` has no password and its `db-sign-in` entry says `aws_iam` (K-24d, K-24e, K-24f). Switch the schema step on too ([above](#1-switch-the-setting-on)), so the order is role, then schema, then the API.
+2. Add the repository secret `TF_VAR_create_database_role` = `true`. Plan the `api` layer with `replace` set to the AWS API machine, and read it. It shows the new policy `api-administrator-once` and the machine replaced, and nothing else.
+3. Apply and approve. Open "Get system log" and look for `ledger-api: managed role: statements run: 10, failed: 0`.
+4. Delete `TF_VAR_create_database_role`. Plan and apply the `api` layer again. The policy is removed at once, and the machine can no longer read the administrator's secret. The unit stays on the machine but is skipped on every later start, because it leaves a marker. It does no harm, and a replacement drops it.
+
+If it fails, the log names the step (for example `the database refused a statement while limiting the role`), and the API does not start. Nothing is half made: each statement can be run again.
+
 ## If something goes wrong
 
 | What you see | What it means |

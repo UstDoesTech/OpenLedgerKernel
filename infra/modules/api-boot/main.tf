@@ -89,6 +89,17 @@ locals {
   # does not exist and the API's own unit is exactly what it was.
   migration_lines = var.migrate_database ? "Requires=ledger-api-migrate.service\nAfter=ledger-api-migrate.service\n" : ""
 
+  # The one-off role step, AWS only. Its environment is the database's settings and where the
+  # administrator's connection is, and no more.
+  role_environment = {
+    LEDGER_DB_CA_FILE      = local.environment.LEDGER_DB_CA_FILE
+    LEDGER_DB_SIGN_IN_FILE = local.environment.LEDGER_DB_SIGN_IN_FILE
+    LEDGER_ADMIN_DB_FILE   = "/run/administrator/admin.conn"
+  }
+
+  # With the step on, the schema step and the API wait for it and do not start if it fails.
+  role_lines = var.create_database_role ? "Requires=ledger-api-managed-role.service\nAfter=ledger-api-managed-role.service\n" : ""
+
   file_mode = {
     executable = 493
   }
@@ -97,6 +108,8 @@ locals {
     login         = file("${path.module}/../node-boot/files/registry-login-${var.cloud}.sh")
     fetch_secrets = file("${path.module}/files/fetch-secrets-${var.cloud}.sh")
     write_secrets = file("${path.module}/files/write-secrets.sh")
+    # Not read at all unless the step is on, so a machine without it has no such file.
+    fetch_administrator = var.create_database_role ? file("${path.module}/files/fetch-administrator-${var.cloud}.sh") : ""
   } : k => "data:;base64,${base64encode(v)}" }
 
   ignition = {
@@ -109,15 +122,30 @@ locals {
         { path = "/opt/ledger-api", mode = 493 },
       ]
 
-      files = [
+      files = concat([
         { path = "/opt/ledger-api/registry-login.sh", mode = local.file_mode.executable, contents = { source = local.data_url.login } },
         { path = "/opt/ledger-api/fetch-secrets.sh", mode = local.file_mode.executable, contents = { source = local.data_url.fetch_secrets } },
         { path = "/opt/ledger-api/write-secrets.sh", mode = local.file_mode.executable, contents = { source = local.data_url.write_secrets } },
-      ]
+        ], var.create_database_role ? [
+        { path = "/opt/ledger-api/fetch-administrator.sh", mode = local.file_mode.executable, contents = { source = local.data_url.fetch_administrator } },
+      ] : [])
     }
 
     systemd = {
-      units = concat(var.migrate_database ? [
+      units = concat(var.create_database_role ? [
+        {
+          name    = "ledger-api-managed-role.service"
+          enabled = true
+          contents = templatefile("${path.module}/files/ledger-api-managed-role.service.tpl", {
+            name                  = var.name
+            image                 = var.image
+            login_arguments       = local.login_arguments
+            secret_arguments      = local.secret_arguments
+            administrator_secret  = var.administrator_secret
+            environment_arguments = join(" ", [for k, v in local.role_environment : "--env ${k}=${v}"])
+          })
+        },
+        ] : [], var.migrate_database ? [
         {
           name    = "ledger-api-migrate.service"
           enabled = true
@@ -127,6 +155,7 @@ locals {
             login_arguments       = local.login_arguments
             secret_arguments      = local.secret_arguments
             environment_arguments = join(" ", [for k, v in local.migrate_environment : "--env ${k}=${v}"])
+            role_lines            = local.role_lines
           })
         },
         ] : [], [
@@ -141,7 +170,7 @@ locals {
             public_port           = var.public_port
             internal_port         = var.internal_port
             environment_arguments = join(" ", [for k, v in merge(local.environment, local.proxy_environment) : "--env ${k}=${v}"])
-            migration_lines       = local.migration_lines
+            migration_lines       = "${local.migration_lines}${local.role_lines}"
           })
         },
         {

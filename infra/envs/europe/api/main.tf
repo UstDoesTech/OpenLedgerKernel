@@ -210,6 +210,8 @@ module "api_aws" {
   kms_key_arn               = local.cell_first.aws.kms_key_arn
   etcd_endpoints            = local.etcd_endpoints
   trusted_proxy_cidrs       = local.plan.aws.subnets["edge"]
+  create_database_role      = var.create_database_role
+  administrator_secret_arn  = try(local.cells["aws"].kind == "managed" ? local.cells["aws"].secret_ref : null, null)
   database_resource_id      = try(local.cells["aws"].kind == "managed" ? local.cells["aws"].database_resource_id : null, null)
   tags                      = { managed_by = "opentofu", component = "api", tenant = local.tenant }
   migrate_database          = var.migrate_database

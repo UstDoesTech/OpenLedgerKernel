@@ -88,3 +88,20 @@ variable "database_role" {
   type        = string
   default     = "ledger_app"
 }
+
+variable "create_database_role" {
+  description = "Runs the one-off step that makes a managed cell's application role from this machine (K-24cc). Off by default. While it is on, the machine's role may read the managed database's administrator secret, and that is the only time it may. Needs administrator_secret_arn. Switch it on for one apply and off again."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.create_database_role || (var.administrator_secret_arn != null && var.database_resource_id != null)
+    error_message = "create_database_role needs the managed cell's administrator_secret_arn and database_resource_id."
+  }
+}
+
+variable "administrator_secret_arn" {
+  description = "The managed database's administrator secret, as RDS holds it. A reference, never the credential. Read only while create_database_role is on."
+  type        = string
+  default     = null
+}

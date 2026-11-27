@@ -70,3 +70,9 @@ variable "migrate_database" {
   type        = bool
   default     = false
 }
+
+variable "create_database_role" {
+  description = "Makes each managed AWS cell's application role from its API machine, once, before the schema step (K-24cc). Off by default. Switch it on for one apply: while it is on the machine's role can read the database's administrator secret, and a machine takes it only when it is replaced. Switch it off and apply again afterwards. See docs/runbooks/applying-the-ledger-schema.md. Not a secret."
+  type        = bool
+  default     = false
+}

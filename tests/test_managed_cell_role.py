@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = (ROOT / "crates" / "pki" / "src" / "application_role.rs").read_text()
+SRC = (ROOT / "crates" / "api" / "src" / "application_role.rs").read_text()
 DOC = (ROOT / "docs" / "credentialed-workflows.md").read_text()
 MAIN = (ROOT / "crates" / "pki" / "src" / "main.rs").read_text()
 
@@ -37,6 +37,6 @@ def test_the_step_is_a_command_a_person_runs_and_no_workflow_calls_it_yet():
 def test_the_doc_describes_it_in_the_files_that_exist():
     section = DOC.split("### 7. The application role of a managed cell", 1)[1].split("\n## ", 1)[0]
     assert "ledger-pki managed-role" in section
-    assert "managed role: statements run: 8, failed: 0" in section
+    assert "managed role: statements run: 10, failed: 0" in section
     for secret in ("db.conn", "tokens.json"):
         assert secret not in section

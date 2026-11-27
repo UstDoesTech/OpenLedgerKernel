@@ -94,3 +94,25 @@ variable "migrate_database" {
   type        = bool
   default     = false
 }
+
+variable "create_database_role" {
+  description = "Makes a one-off unit run `ledger-api managed-role` before the schema step and the API start, so a managed cell's application role is made from inside the network (K-24cc). Off by default: with it off there is no such unit, no fetch of the administrator's secret and no change to the other units. AWS only. Switch it on for one apply and off again: a machine takes it only when it is replaced, and while it is on the machine's role can read the administrator's secret. See docs/runbooks/applying-the-ledger-schema.md."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.create_database_role || var.cloud == "aws"
+    error_message = "Only an AWS cell can have its application role made this way so far."
+  }
+}
+
+variable "administrator_secret" {
+  description = "The reference to the managed database's administrator secret, which the one-off unit reads with the machine's role. Needed when create_database_role is on, and never given otherwise. It is a reference, not the credential."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.create_database_role || var.administrator_secret != ""
+    error_message = "create_database_role needs administrator_secret."
+  }
+}
