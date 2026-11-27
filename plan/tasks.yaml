@@ -1436,25 +1436,32 @@ tasks:
   refs:
   - docs/credentialed-workflows.md
 - id: K-24cc
-  title: A workflow a person approves that makes a managed cell's application role
+  title: Let an API machine make its managed cell's application role, once
   phase: P1
   workstream: K
-  size: S
+  size: M
   status: todo
   depends_on:
   - K-24ca
+  - K-24d
+  - K-24e
   decisions: []
   deliverables:
-  - .github/workflows/managed-role.yml
-  - docs/credentialed-workflows.md
-  - tests/test_managed_role_workflow.py
+  - crates/api
+  - infra/modules/api-boot
+  - infra/modules/api/aws
+  - infra/envs/europe/api
+  - tests/test_managed_role_step.py
+  - docs/runbooks/applying-the-ledger-schema.md
   acceptance:
-  - The workflow runs only by dispatch, from main, by the owner, in an environment that needs approval, and takes the cell and the cloud as inputs. It reads the managed service's administrator secret into a file on the runner, runs `ledger-pki managed-role`, and deletes the file, shown by a test of the workflow.
-  - The administrator's secret is read by this workflow alone, and never by rotate-credentials or the API's identity, shown by tests of the identity list.
-  - It prints only the counts the command prints, and no host, role or secret name.
-  notes: Split off from K-24c. It edits a workflow that holds credentials and widens an identity, so it needs a person's review and a person sets up the environment.
+  - A managed database has a private address only, so a hosted runner cannot reach it. A one-off unit on the API machine, switched on by a setting that is off by default, runs `ledger-api managed-role` before the schema step, as `migrate_database` does, and with the setting off there is no such unit and no grant, shown by tests of the modules.
+  - The administrator's secret is read by that unit alone, with the machine's role and only while the setting is on, into a file on memory-backed storage that the API container never mounts and that is removed when the unit ends, even after a failure, shown by tests. It is never written to the API's secret, an output or a value.
+  - The command is the one K-24ca made, moved into the API crate and still run as `ledger-pki managed-role`, so the same tests prove it. A test uses an administrator that is not a superuser, as RDS's is, and checks the role is made and the second run changes nothing.
+  - It prints counts and the name of a step that failed, never a host, role or token.
+  notes: Replaces the workflow planned here first, because a workflow runs on a hosted runner that cannot reach a private database. The API machine already reaches it, as K-25 uses. The cost is that, while the setting is on, the machine's role can read the administrator's secret. A person turns the setting on for one apply and off again, and the runbook says so. It widens an identity, so it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
+  - docs/runbooks/applying-the-ledger-schema.md
 - id: K-24cb
   title: Make the other managed cells' application roles and give them only the ledger's schema
   phase: P1
@@ -1572,6 +1579,7 @@ tasks:
   - K-24e
   - K-24f
   - K-24g
+  - K-24cc
   decisions: []
   deliverables:
   - docs/runbooks/moving-to-managed-cells.md

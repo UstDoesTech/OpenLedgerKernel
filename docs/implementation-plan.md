@@ -128,7 +128,7 @@ flowchart LR
   K_24bc["K-24bc<br/>Let the Google Cloud managed cell's API machine sign in to its database by identity"]
   K_24bd["K-24bd<br/>Let the Lakebase cell's API sign in to its database with a service principal"]
   K_24ca["K-24ca<br/>Make the AWS managed cell's application role and give it only the ledger's schema"]
-  K_24cc["K-24cc<br/>A workflow a person approves that makes a managed cell's application role"]
+  K_24cc["K-24cc<br/>Let an API machine make its managed cell's application role, once"]
   K_24cb["K-24cb<br/>Make the other managed cells' application roles and give them only the ledger's schema"]
   K_24d["K-24d<br/>Write a managed cell's connection and database authority in rotate-credentials"]
   K_24e["K-24e<br/>Let the service read how it signs in to its database from its secret"]
@@ -264,6 +264,8 @@ flowchart LR
   K_24a --> K_24bd
   K_24ba --> K_24ca
   K_24ca --> K_24cc
+  K_24d --> K_24cc
+  K_24e --> K_24cc
   K_24ca --> K_24cb
   K_24bb --> K_24cb
   K_24bc --> K_24cb
@@ -279,6 +281,7 @@ flowchart LR
   K_24e --> I_01vd
   K_24f --> I_01vd
   K_24g --> I_01vd
+  K_24cc --> I_01vd
   K_13 --> K_25
   K_20h --> K_23a
   K_23a --> K_23b
@@ -417,13 +420,13 @@ flowchart LR
 | **K-24bc** Let the Google Cloud managed cell's API machine sign in to its database by identity | Infrastructure | I-01vb, K-24a | None | S | Agent | To do |
 | **K-24bd** Let the Lakebase cell's API sign in to its database with a service principal | Infrastructure | I-01vb, K-24a | None | S | Agent | To do |
 | **K-24ca** Make the AWS managed cell's application role and give it only the ledger's schema | Ledger kernel | K-24ba | None | M | Agent | Done |
-| **K-24cc** A workflow a person approves that makes a managed cell's application role | Ledger kernel | K-24ca | None | S | Agent | To do |
+| **K-24cc** Let an API machine make its managed cell's application role, once | Ledger kernel | K-24ca, K-24d, K-24e | None | M | Agent | To do |
 | **K-24cb** Make the other managed cells' application roles and give them only the ledger's schema | Ledger kernel | K-24ca, K-24bb, K-24bc, K-24bd | None | S | Agent | To do |
 | **K-24d** Write a managed cell's connection and database authority in rotate-credentials | Ledger kernel | K-24a, K-22 | None | S | Agent | Done |
 | **K-24e** Let the service read how it signs in to its database from its secret | Ledger kernel | K-24d | None | S | Agent | Done |
 | **K-24f** Give rotate-credentials the public database CA bundle of a managed AWS cell | Ledger kernel | K-24d | None | S | Agent | Done |
 | **K-24g** Give rotate-credentials the public database CA bundle of a managed Azure or Google Cloud cell | Ledger kernel | K-24f | None | S | Agent | To do |
-| **I-01vd** Runbook for moving the proving environment to managed cells, and back | Infrastructure | K-24bd, K-24cb, K-24d, K-24e, K-24f, K-24g | None | S | Agent | To do |
+| **I-01vd** Runbook for moving the proving environment to managed cells, and back | Infrastructure | K-24bd, K-24cb, K-24d, K-24e, K-24f, K-24g, K-24cc | None | S | Agent | To do |
 | **K-25** Apply the ledger schema to a deployed cell from its API machine | Ledger kernel | K-13 | None | M | Agent | Done |
 | **K-23a** Edge subnets and a route to the internet on AWS, for the load balancer only | Infrastructure | K-20h | D-22 | S | Agent | Done |
 | **K-23b** A load balancer in front of the AWS API, from named ranges only | Infrastructure | K-23a | D-22 | M | Agent | Done |
