@@ -1326,11 +1326,11 @@ tasks:
   refs:
   - docs/api-design.md
   - docs/credentialed-workflows.md
-- id: K-24b
-  title: Let each managed cell's API machine sign in to its database by identity
+- id: K-24ba
+  title: Let the AWS managed cell's API machine sign in to its database by identity
   phase: P1
   workstream: I
-  size: M
+  size: S
   status: todo
   depends_on:
   - I-01vb
@@ -1342,35 +1342,118 @@ tasks:
   - infra/envs/europe/cells
   - tests/test_managed_cell_identity.py
   acceptance:
-  - For each cloud, a managed cell turns on identity sign-in and lets the API machine's own identity connect as one database role, and no other identity, shown by tests of the modules (an IAM role and a database
-    connect grant on AWS, an Entra administrator and the machine's managed identity on Azure, an IAM database user for the service account on Google Cloud).
-  - Lakebase takes a service principal for the API, and a test checks that it gets no long-lived secret on the machine when the workspace allows federation of the machine's own identity. If it does not, the secret
-    is held in the cell's API secret and a test checks that it is never an output or a value.
-  - A cell that is self-hosted is unchanged, and the identity grants are made only when the cell is managed, shown by tests.
+  - A managed AWS cell turns on IAM database authentication and lets the API machine's own role connect as one database role, and no other identity, shown by tests of the modules (an IAM policy with `rds-db:connect` on that one role, and the setting on the cluster).
+  - A cell that is self-hosted is unchanged, and the identity grant is made only when the AWS cell is managed, shown by tests.
   - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is applied.
-  notes: Edits identities and grants, so it needs a person's review.
+  notes: Split from K-24b, AWS first. Edits identities and grants, so it needs a person's review.
   refs:
   - docs/infrastructure.md
-- id: K-24c
-  title: Make each managed cell's application role and give it only the ledger's schema
+- id: K-24bb
+  title: Let the Azure managed cell's API machine sign in to its database by identity
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - I-01vb
+  - K-24a
+  decisions: []
+  deliverables:
+  - infra/modules/postgres
+  - infra/modules/api
+  - infra/envs/europe/cells
+  - tests/test_managed_cell_identity.py
+  acceptance:
+  - A managed Azure cell has an Entra administrator and lets the API machine's managed identity connect as one database role, and no other identity, shown by tests of the modules.
+  - A cell that is self-hosted is unchanged, and the identity grants are made only when the Azure cell is managed, shown by tests.
+  - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is applied.
+  notes: Split from K-24b. Edits identities and grants, so it needs a person's review.
+  refs:
+  - docs/infrastructure.md
+- id: K-24bc
+  title: Let the Google Cloud managed cell's API machine sign in to its database by identity
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - I-01vb
+  - K-24a
+  decisions: []
+  deliverables:
+  - infra/modules/postgres
+  - infra/modules/api
+  - infra/envs/europe/cells
+  - tests/test_managed_cell_identity.py
+  acceptance:
+  - A managed Google Cloud cell has an IAM database user for the API machine's service account, and no other identity can connect as the role, shown by tests of the modules.
+  - A cell that is self-hosted is unchanged, and the identity grants are made only when the Google Cloud cell is managed, shown by tests.
+  - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is applied.
+  notes: Split from K-24b. Edits identities and grants, so it needs a person's review.
+  refs:
+  - docs/infrastructure.md
+- id: K-24bd
+  title: Let the Lakebase cell's API sign in to its database with a service principal
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - I-01vb
+  - K-24a
+  decisions: []
+  deliverables:
+  - infra/modules/postgres
+  - infra/modules/api
+  - infra/envs/europe/cells
+  - tests/test_managed_cell_identity.py
+  acceptance:
+  - Lakebase takes a service principal for the API, and a test checks that it gets no long-lived secret on the machine when the workspace allows federation of the machine's own identity. If it does not, the secret is held in the cell's API secret and a test checks that it is never an output or a value.
+  - A cell that is self-hosted is unchanged, and the grants are made only when the cell is Lakebase, shown by tests.
+  - tofu validate, tflint, the region guard and a test that every module input is set pass. Nothing is applied.
+  notes: Split from K-24b, the last part of it. Edits identities and grants, so it needs a person's review.
+  refs:
+  - docs/infrastructure.md
+- id: K-24ca
+  title: Make the AWS managed cell's application role and give it only the ledger's schema
   phase: P1
   workstream: K
   size: M
   status: todo
   depends_on:
-  - K-24b
+  - K-24ba
   decisions: []
   deliverables:
   - crates/pki
   - tests/test_managed_cell_role.py
   - docs/credentialed-workflows.md
   acceptance:
-  - A one-off step that a person runs and approves makes the database role for each managed cell and ties it to the identity (rds_iam on AWS, the Entra principal on Azure, the IAM user on Google Cloud,
-    the Databricks role on Lakebase). It can be run again and changes nothing the second time, shown by a test against a real Postgres node for the statements that are the same everywhere.
+  - A one-off step that a person runs and approves makes the database role for the AWS managed cell and ties it to the identity (`rds_iam`). It can be run again and changes nothing the second time, shown by a test against a real Postgres node for the statements that are the same everywhere.
   - The role can use only the ledger's own schema, has no password, and cannot make roles or change other schemas, shown by a test against a real node.
   - The administrator's credential or identity is used by this step alone, and is never written to any secret the API reads, shown by a test that fails if it is.
   - It prints counts and the names of what failed, and never a host, role or token.
-  notes: Edits a role and uses a credential, so it needs a person's review and a person runs it.
+  notes: Split from K-24c, AWS first, with the statements that are the same on every cloud. Edits a role and uses a credential, so it needs a person's review and a person runs it.
+  refs:
+  - docs/credentialed-workflows.md
+- id: K-24cb
+  title: Make the other managed cells' application roles and give them only the ledger's schema
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-24ca
+  - K-24bb
+  - K-24bc
+  - K-24bd
+  decisions: []
+  deliverables:
+  - crates/pki
+  - tests/test_managed_cell_role.py
+  - docs/credentialed-workflows.md
+  acceptance:
+  - The same step ties the role to the Entra principal on Azure, the IAM user on Google Cloud and the Databricks role on Lakebase, with the same limits and tests as K-24ca for each.
+  notes: Split from K-24c, the last part of it. Edits a role and uses a credential, so it needs a person's review and a person runs it.
   refs:
   - docs/credentialed-workflows.md
 - id: K-24d
@@ -1404,8 +1487,8 @@ tasks:
   size: S
   status: todo
   depends_on:
-  - K-24b
-  - K-24c
+  - K-24bd
+  - K-24cb
   - K-24d
   decisions: []
   deliverables:
