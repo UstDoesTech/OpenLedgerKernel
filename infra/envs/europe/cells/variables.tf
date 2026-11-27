@@ -30,6 +30,22 @@ variable "cell_kind" {
   }
 }
 
+variable "cell_kinds" {
+  description = "The kind of each cloud's cell on its own, as a map from \"aws\", \"azure\" or \"gcp\" to \"self_hosted\" or \"managed\". A cloud it does not name takes cell_kind, so leaving it empty changes nothing. Use it to move one cloud at a time, such as {\"aws\":\"managed\"}. Changing a cloud's kind replaces that cell only. Supply it as the TF_VAR_cell_kinds secret, a JSON object. Not a secret."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for cloud in keys(var.cell_kinds) : contains(["aws", "azure", "gcp"], cloud)])
+    error_message = "cell_kinds may name aws, azure and gcp only."
+  }
+
+  validation {
+    condition     = alltrue([for kind in values(var.cell_kinds) : contains(["self_hosted", "managed"], kind)])
+    error_message = "Each kind in cell_kinds must be self_hosted or managed."
+  }
+}
+
 variable "deletion_protection" {
   description = "Refuse to delete a managed cell's database. Leave true for any cell that holds data. Set to false, and apply, before destroying a proving environment. Not used by self-hosted cells."
   type        = bool

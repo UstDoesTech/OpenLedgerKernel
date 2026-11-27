@@ -8,7 +8,7 @@ Every step below changes a real cloud account, so a person runs it, through its 
 
 ## What is ready, and what is not
 
-The setting that chooses the kind is `cell_kind`, and it is **one setting for all three cells**. `managed` makes all three managed. Today a managed cell can be made in every cloud, but only AWS can sign its API in and be given its role:
+Two settings choose the kind. `cell_kind` sets it for all three cells. `cell_kinds` sets it for one cloud on its own, and wins over `cell_kind` for the cloud it names (K-24i). Today a managed cell can be made in every cloud, but only AWS can sign its API in and be given its role:
 
 | Piece | AWS | Azure | Google Cloud |
 | --- | --- | --- | --- |
@@ -18,9 +18,7 @@ The setting that chooses the kind is `cell_kind`, and it is **one setting for al
 | `rotate-credentials` fetches the database's public CA bundle (K-24f, K-24g) | Yes | Not yet | Not yet |
 | The one-off unit that makes the application role (K-24cc) | Yes | Not yet | Not yet |
 
-Because of the CA row, `rotate-credentials` stops, before it writes anything, with `a managed database in azure has no public CA bundle this run can fetch yet` (or `gcp`) while any Azure or Google Cloud cell is managed. So **with `cell_kind` set to `managed` no run can finish today**, for any cloud. K-24i adds a way to set the kind for each cloud, so that AWS alone can move. K-24g, K-24bb and K-24bc bring in the other two, and I-01ve then brings this page up to date for them.
-
-Until K-24i is done, read this page, and do not switch. Switching makes three managed databases that cost money and cannot be used.
+Because of the CA row, `rotate-credentials` stops, before it writes anything, with `a managed database in azure has no public CA bundle this run can fetch yet` (or `gcp`) while any Azure or Google Cloud cell is managed. So **move AWS alone**: set `cell_kinds` to `{"aws":"managed"}` and leave `cell_kind` at its default. **Do not set `cell_kind` to `managed` yet.** It makes three managed databases that cost money, two of which cannot be used, and it stops every credentials run. K-24g, K-24bb and K-24bc bring in the other two clouds, and I-01ve then brings this page up to date for them.
 
 ## What you give up
 
@@ -48,14 +46,13 @@ A self-hosted cell is three machines, so a paused one costs its disks only. Movi
 
 ## 1. Set the kind
 
-Add the repository secret `TF_VAR_cell_kind` = `managed` (see [How the inputs are given](exposing-the-api-in-aws.md#how-the-inputs-are-given)). It is not a secret, but the secrets are how `infra-apply` is given a setting. Leave `TF_VAR_deletion_protection` out. It defaults to `true`, which is right while a managed cell holds data.
+Add the repository secret `TF_VAR_cell_kinds` = `{"aws":"managed"}` (see [How the inputs are given](exposing-the-api-in-aws.md#how-the-inputs-are-given)). It is not a secret, but the secrets are how `infra-apply` is given a setting. Leave `TF_VAR_cell_kind` out. A cloud that `cell_kinds` does not name stays as it is. Leave `TF_VAR_deletion_protection` out. It defaults to `true`, which is right while a managed cell holds data.
 
 ## 2. Plan the `cells` layer, and read it
 
 Dispatch **`infra-apply`** with `env` = `europe`, `layer` = `cells` and `action` = `plan`. Read it. You should see:
 
-- Each cell's three database machines and their data disks **destroyed**.
-- Each cell's managed database made.
+- The AWS cell's three database machines and their data disks **destroyed**, and its managed database made. The Azure and Google Cloud cells do not appear.
 - Nothing else. The `network`, `interconnect`, `private-access` and `api` layers are not in this plan, and an API machine and the load balancer are in the `api` layer. If the plan names anything outside the cells, stop.
 
 The counts change as the modules do, so do not hold to a number. Hold to the shape: machines and disks destroyed, databases made, nothing outside the `cells` layer.
@@ -93,14 +90,14 @@ A machine reads its boot configuration once, so the new setting and the sign-in 
 
 ## Going back to self-hosted
 
-This also destroys the managed databases, with no data carried across.
+This also destroys the managed database, with no data carried across.
 
 1. Add `TF_VAR_deletion_protection` = `false`. Plan the `cells` layer and apply it. It changes the managed databases in place and destroys nothing. Without this the apply is refused, on purpose: an AWS cluster and a Cloud SQL instance refuse to be deleted while protection is on. Azure's server has no such setting, so it is destroyed without being asked.
-2. Delete `TF_VAR_cell_kind` (it goes back to `self_hosted`), and delete `TF_VAR_deletion_protection` once the cells have changed. Plan the `cells` layer and read it: the managed databases **destroyed**, and each cell's three machines and data disks made. Apply it.
+2. Delete `TF_VAR_cell_kinds` (it goes back to `self_hosted`), and delete `TF_VAR_deletion_protection` once the cells have changed. Plan the `cells` layer and read it: the managed database **destroyed**, and the cell's three machines and data disks made. Apply it.
 3. Plan and apply the `api` layer. Expect no machine replaced and the policy for signing in removed.
 4. **Delete the old connection by hand.** A credentials run writes the managed cell's `db-sign-in` and a passwordless `db.conn` and never removes them (K-24h will). Left there, the service tries to sign in by token to a database that wants a password, and cannot. Remove the entries `db.conn` and `db-sign-in` from each cell's API secret, with your own cloud sign-in. Do not print them. Leave `db-ca.crt`: the next step replaces it with the cell's own authority.
 5. Run **`rotate-credentials`** with `kind` = `all` and `proving` off. Wait about five minutes for each database machine to start and write its administrator credential. Run it again with `proving` on, which fills the `db.conn` you removed. This is the order in [Rotating certificates and credentials](rotating-credentials.md), "The first run, in order".
-6. Replace each API machine, one at a time, as in step 6, so that it stops reading the sign-in setting. Check as in step 7, and make the first entry again.
+6. Replace the AWS API machine as in step 6, so that it stops reading the sign-in setting. Check as in step 7, and make the first entry again.
 
 ## If something goes wrong
 
@@ -108,7 +105,7 @@ Stop. A failed plan changes nothing, and so does a failed credentials run. Do no
 
 | What you see | What it means |
 | --- | --- |
-| `a managed database in azure has no public CA bundle this run can fetch yet` (or `gcp`) | A managed Azure or Google Cloud cell is in the environment. See [What is ready](#what-is-ready-and-what-is-not). Nothing was written. |
+| `a managed database in azure has no public CA bundle this run can fetch yet` (or `gcp`) | A managed Azure or Google Cloud cell is in the environment (`cell_kind` set to `managed` does that). See [What is ready](#what-is-ready-and-what-is-not). Nothing was written. |
 | The `cells` plan wants to replace or destroy something in the `network` or `api` layers | It is not this layer's plan. Stop and read [Troubleshooting](troubleshooting.md). |
 | The apply says the database cannot be deleted | Deletion protection is on, for AWS or Google Cloud. Do step 1 of "Going back". |
 | The API does not start and the console says the schema is missing | Step 6 did not finish. The API checks the schema and never changes it. |

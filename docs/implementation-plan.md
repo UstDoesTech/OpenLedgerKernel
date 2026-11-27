@@ -66,7 +66,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-98 of 116 tasks done.
+99 of 116 tasks done.
 
 ```mermaid
 flowchart LR
@@ -364,7 +364,7 @@ flowchart LR
   S_04 --> S_05
   S_05 --> S_07
   classDef done fill:#E8F5EC,stroke:#166534,color:#14171C
-  class F_01,F_02,F_03,K_01,K_02,K_03,K_04,K_05,K_06,K_07,C_01,C_02,R_01,R_02,R_03,C_03,T_01,T_02,K_08,K_11,K_12,K_14,K_15,K_13,K_16,K_17,K_18a,K_18c,K_18b,K_19a,K_19b,K_19c,K_19e,K_19f,K_19g,K_19h,K_19i,K_19j,K_19k,K_20a,K_20b,K_20c,K_20d,K_20e,K_20f,K_20g,K_21,K_20h,K_20i,K_20j,K_24a,K_24ba,K_24ca,K_24cc,K_24d,K_24e,K_24f,I_01vd,K_25,K_23a,K_23b,K_23c,K_23e,K_23d,K_22,UI_01,UI_02,UI_03,T_03,I_01a,I_01g,I_01h,I_01b,I_01c,I_01d,I_01e,I_01i,I_01j,I_01ka,I_01kb,I_01kc,I_01m,I_01n,I_01oa,I_01ob,I_01oca,I_01ocb,I_01occ,I_01p,I_01q,I_01r,I_01t,I_01u,I_01va,I_01vb,S_04,S_05,S_07 done
+  class F_01,F_02,F_03,K_01,K_02,K_03,K_04,K_05,K_06,K_07,C_01,C_02,R_01,R_02,R_03,C_03,T_01,T_02,K_08,K_11,K_12,K_14,K_15,K_13,K_16,K_17,K_18a,K_18c,K_18b,K_19a,K_19b,K_19c,K_19e,K_19f,K_19g,K_19h,K_19i,K_19j,K_19k,K_20a,K_20b,K_20c,K_20d,K_20e,K_20f,K_20g,K_21,K_20h,K_20i,K_20j,K_24a,K_24ba,K_24ca,K_24cc,K_24d,K_24e,K_24f,K_24i,I_01vd,K_25,K_23a,K_23b,K_23c,K_23e,K_23d,K_22,UI_01,UI_02,UI_03,T_03,I_01a,I_01g,I_01h,I_01b,I_01c,I_01d,I_01e,I_01i,I_01j,I_01ka,I_01kb,I_01kc,I_01m,I_01n,I_01oa,I_01ob,I_01oca,I_01ocb,I_01occ,I_01p,I_01q,I_01r,I_01t,I_01u,I_01va,I_01vb,S_04,S_05,S_07 done
 ```
 
 | Task | Workstream | Depends on | Decisions | Size | Owner | Status |
@@ -434,7 +434,7 @@ flowchart LR
 | **K-24f** Give rotate-credentials the public database CA bundle of a managed AWS cell | Ledger kernel | K-24d | None | S | Agent | Done |
 | **K-24g** Give rotate-credentials the public database CA bundle of a managed Azure or Google Cloud cell | Ledger kernel | K-24f | None | S | Agent | To do |
 | **K-24h** Clear a managed cell's sign-in leftovers when rotate-credentials runs for a self-hosted cell | Ledger kernel | K-24d | None | S | Agent | To do |
-| **K-24i** Let the cells layer set the kind of each cloud's cell on its own | Infrastructure | K-24cc | None | S | Agent | To do |
+| **K-24i** Let the cells layer set the kind of each cloud's cell on its own | Infrastructure | K-24cc | None | S | Agent | Done |
 | **I-01vd** Runbook for moving the proving environment to managed cells, and back | Infrastructure | K-24d, K-24e, K-24f, K-24cc | None | S | Agent | Done |
 | **I-01ve** Bring the managed cells runbook up to date for Azure and Google Cloud | Infrastructure | I-01vd, K-24bd, K-24cb, K-24g, K-24i | None | S | Agent | To do |
 | **K-25** Apply the ledger schema to a deployed cell from its API machine | Ledger kernel | K-13 | None | M | Agent | Done |

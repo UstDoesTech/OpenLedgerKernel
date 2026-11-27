@@ -58,7 +58,7 @@ def test_the_settings_it_names_exist_with_the_defaults_it_relies_on():
     assert 'default     = "self_hosted"' in kind and "managed" in kind
     protection = re.search(r'variable "deletion_protection" \{(.*?)\n\}', variables, re.S).group(1)
     assert "default     = true" in protection
-    for secret in ["TF_VAR_cell_kind", "TF_VAR_deletion_protection", "TF_VAR_create_database_role", "TF_VAR_migrate_database"]:
+    for secret in ["TF_VAR_cell_kinds", "TF_VAR_deletion_protection", "TF_VAR_create_database_role", "TF_VAR_migrate_database"]:
         assert f"`{secret}`" in TEXT, secret
     api = (ROOT / "infra" / "envs" / "europe" / "api" / "variables.tf").read_text()
     for name in ["create_database_role", "migrate_database"]:
@@ -87,8 +87,8 @@ def test_the_status_table_matches_what_the_code_does():
         assert "database_resource_id" not in (ROOT / "infra" / "modules" / "api" / cloud / "variables.tf").read_text()
     # The cell kind is one setting: each cell module reads it.
     cells = (ROOT / "infra" / "envs" / "europe" / "cells" / "cells.tf").read_text()
-    assert cells.count("provider_kind        = var.cell_kind") == 3
-    assert "one setting for all three cells" in TEXT
+    assert cells.count("provider_kind        = local.kinds[") == 3
+    assert "cell_kinds" in TEXT and '`{"aws":"managed"}`' in TEXT and "Do not set `cell_kind` to `managed` yet" in TEXT
 
 
 def test_it_names_the_plan_tasks_that_will_change_it_and_they_exist():

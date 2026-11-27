@@ -20,7 +20,7 @@ def test_one_cell_in_each_cloud_reusing_the_environments_private_access():
         body = mods[f"cell_{cloud}"]
         assert 'source = "../../../modules/postgres"' in body
         assert f'cloud                = "{cloud}"' in body
-        assert "provider_kind        = var.cell_kind" in body
+        assert f'provider_kind        = local.kinds["{cloud}"]' in body
         assert "deletion_protection  = var.deletion_protection" in body
         assert "reuse_private_access = true" in body
         assert "tenant               = local.tenant" in body
@@ -56,7 +56,7 @@ def test_the_machine_images_come_from_the_manifest_and_the_ssh_key_is_a_sensitiv
     # Only the kind and its protection have defaults, so that an applied layer is unchanged.
     for name, body in v.items():
         has_default = bool(re.search(r"^\s*default\s*=", body, re.M))
-        assert has_default == (name in {"cell_kind", "deletion_protection"}), name
+        assert has_default == (name in {"cell_kind", "cell_kinds", "deletion_protection"}), name
 
 
 def test_the_proving_sizes_are_marked_and_override_the_size_table_only_here():
@@ -105,10 +105,10 @@ def test_the_managed_form_takes_the_tenants_own_key_and_the_azure_zone_only_when
         assert f"var.{cloud}.{key}" in body
     mods = dict(blocks(s, "module"))
     assert 'source = "../../../modules/postgres/azure-dns"' in mods["azure_dns"]
-    assert 'count  = var.cell_kind == "managed" ? 1 : 0' in mods["azure_dns"]
+    assert 'count  = local.kinds["azure"] == "managed" ? 1 : 0' in mods["azure_dns"]
     assert "try(module.azure_dns[0].private_dns_zone_id, null)" in s
     grant = re.search(r'resource "google_kms_crypto_key_iam_member" "cloud_sql" \{(.*?)\n\}', s, re.S).group(1)
-    assert 'count = var.cell_kind == "managed" ? 1 : 0' in grant
+    assert 'count = local.kinds["gcp"] == "managed" ? 1 : 0' in grant
     assert "local.cell_first.gcp.kms_key_id" in grant and "gcp-sa-cloud-sql" in grant
     assert "cryptoKeyEncrypterDecrypter" in grant
 
@@ -121,3 +121,35 @@ def test_switching_kind_replaces_the_cell_because_each_form_exists_only_for_its_
         assert f'local.kind == "{kind}" ? 1 : 0' in body, name
     # The cell's address and name stay the same, so a plan shows the old form destroyed and the new one made.
     assert 'name                 = "${local.slug}-aws-001"' in src()
+
+
+def test_each_clouds_kind_can_be_set_on_its_own_and_defaults_to_the_one_setting():
+    s = src()
+    v = dict(blocks(s, "variable"))
+    kinds = v["cell_kinds"]
+    assert "type        = map(string)" in kinds and "default     = {}" in kinds
+    assert 'contains(["aws", "azure", "gcp"], cloud)' in kinds
+    assert 'contains(["self_hosted", "managed"], kind)' in kinds
+    # A cloud that is not named takes cell_kind, so an environment that sets nothing new is planned as before.
+    assert 'for cloud in ["aws", "azure", "gcp"] : cloud => lookup(var.cell_kinds, cloud, var.cell_kind)' in s
+    # Nothing reads cell_kind except that one line and the variable's own check, so no cloud ignores cell_kinds.
+    assert len(re.findall(r"var\.cell_kind\b", s)) == 2 and len(re.findall(r"var\.cell_kinds\b", s)) == 3
+    # Each cell module and each managed-only helper reads its own cloud's entry and no other.
+    mods = dict(blocks(s, "module"))
+    for cloud in ("aws", "azure", "gcp"):
+        assert f'provider_kind        = local.kinds["{cloud}"]' in mods[f"cell_{cloud}"]
+    assert 'local.kinds["azure"]' in mods["azure_dns"] and 'local.kinds["gcp"]' in s
+
+
+def test_with_only_aws_managed_the_other_cells_keep_the_self_hosted_form():
+    """The same lookup, run in Python, over the layer's three clouds."""
+    def kinds(cell_kind, cell_kinds):
+        return {c: cell_kinds.get(c, cell_kind) for c in ("aws", "azure", "gcp")}
+
+    assert kinds("self_hosted", {}) == {"aws": "self_hosted", "azure": "self_hosted", "gcp": "self_hosted"}
+    assert kinds("managed", {}) == {"aws": "managed", "azure": "managed", "gcp": "managed"}
+    assert kinds("self_hosted", {"aws": "managed"}) == {"aws": "managed", "azure": "self_hosted", "gcp": "self_hosted"}
+    assert kinds("managed", {"gcp": "self_hosted"})["gcp"] == "self_hosted"
+    # The wrapper turns each kind into exactly one form, so only the AWS cell changes.
+    wrapper = (PG / "main.tf").read_text()
+    assert 'local.kind == "managed" ? 1 : 0' in wrapper and 'local.kind == "self_hosted" ? 1 : 0' in wrapper

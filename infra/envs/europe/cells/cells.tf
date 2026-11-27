@@ -1,9 +1,12 @@
 # One cell in each cloud, self-hosted by default or the cloud's own managed PostgreSQL when
-# var.cell_kind says so. The sizes are proving sizes, chosen to keep the bill low
+# var.cell_kind says so, or var.cell_kinds for one cloud on its own. The sizes are proving sizes, chosen to keep the bill low
 # while the architecture is tested: shared-CPU machines. They run on CPU credits. Do not copy
 # them into a production environment, where the module's size table applies (delete the
 # machine_sizes lines).
 locals {
+  # Each cloud's kind: its own entry in cell_kinds, else cell_kind. Every use below reads this.
+  kinds = { for cloud in ["aws", "azure", "gcp"] : cloud => lookup(var.cell_kinds, cloud, var.cell_kind) }
+
   aws_input = {
     subnet_ids                = local.network.aws.subnet_ids["cell"]
     subnet_cidrs              = local.plan.aws.subnets["cell"]
@@ -55,7 +58,7 @@ module "cell_aws" {
   name                 = "${local.slug}-aws-001"
   tenant               = local.tenant
   cloud                = "aws"
-  provider_kind        = var.cell_kind
+  provider_kind        = local.kinds["aws"]
   deletion_protection  = var.deletion_protection
   aws                  = local.aws_input
   reuse_private_access = true
@@ -68,7 +71,7 @@ module "cell_azure" {
   name                 = "${local.slug}-azure-001"
   tenant               = local.tenant
   cloud                = "azure"
-  provider_kind        = var.cell_kind
+  provider_kind        = local.kinds["azure"]
   deletion_protection  = var.deletion_protection
   azure                = local.azure_input
   reuse_private_access = true
@@ -81,7 +84,7 @@ module "cell_gcp" {
   name                 = "${local.slug}-gcp-001"
   tenant               = local.tenant
   cloud                = "gcp"
-  provider_kind        = var.cell_kind
+  provider_kind        = local.kinds["gcp"]
   deletion_protection  = var.deletion_protection
   gcp                  = local.gcp_input
   reuse_private_access = true
@@ -94,7 +97,7 @@ module "cell_gcp" {
 # cell-first layer. Neither is made for self-hosted cells.
 module "azure_dns" {
   source = "../../../modules/postgres/azure-dns"
-  count  = var.cell_kind == "managed" ? 1 : 0
+  count  = local.kinds["azure"] == "managed" ? 1 : 0
 
   resource_group_name = local.network.azure.resource_group_name
   virtual_network_id  = local.network.azure.network_id
@@ -105,7 +108,7 @@ module "azure_dns" {
 data "google_project" "current" {}
 
 resource "google_kms_crypto_key_iam_member" "cloud_sql" {
-  count = var.cell_kind == "managed" ? 1 : 0
+  count = local.kinds["gcp"] == "managed" ? 1 : 0
 
   crypto_key_id = local.cell_first.gcp.kms_key_id
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
