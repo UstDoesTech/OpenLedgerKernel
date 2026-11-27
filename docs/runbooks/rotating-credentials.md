@@ -48,7 +48,7 @@ The run works without step 4, and says so: it prints how many cells still lack a
 A run takes about 15 minutes with three cells, almost all of it the two waits. The job prints one line:
 
 ```
-cells: 3, certificates issued: 6, database node certificates issued: 15, etcd member certificates issued: 0, credentials issued: 6, secret versions written: 19, database connections made: 0, login files made: 0, test users made: 0, cells still missing a file: 0
+cells: 3, certificates issued: 6, database node certificates issued: 15, etcd member certificates issued: 10, credentials issued: 6, secret versions written: 19, database connections made: 0, login files made: 0, test users made: 0, cells still missing a file: 0
 ```
 
 | Count | What it is |
@@ -56,7 +56,7 @@ cells: 3, certificates issued: 6, database node certificates issued: 15, etcd me
 | `cells` | Cells in the `api` layer's outputs. |
 | `certificates issued` | Two for each cell, when `kind` is `all` or `certificates`. |
 | `database node certificates issued` | For each self-hosted cell, one server certificate for each of its three machines and one replication certificate for each of the two standbys: 5 for a cell, 15 for three. None for a cell someone else runs. Written into each machine's own secret, which the machine reads when it starts, so a machine that was waiting for its files starts by itself within a minute. |
-| `etcd member certificates issued` | Two for each etcd member the manifest lists, a server certificate and a peer certificate: 6 for three members. 0 until the workflow gives the manifest the control plane (K-18b). Written into each member's own secret, which the member reads when it starts. |
+| `etcd member certificates issued` | Two for each etcd member the manifest lists, a server certificate and a peer certificate: 10 for five members. Written into each member's own secret, which the member reads when it starts, so a member that has been waiting for its files starts etcd within about 5 minutes (its unit retries every 10 seconds, and the machine reads its secret every 5 minutes). |
 | `credentials issued` | One for each ordered pair of cells, when `kind` is `all` or `credentials`: 6 for three cells. |
 | `secret versions written` | Three for each cell when credentials are made, one when only certificates are, one more for each database machine, and one for the authority's certificate on the first run. |
 | `database connections made` | Cells whose `db.conn` was missing and was filled this run. Only a `proving` run makes any. |
@@ -128,7 +128,7 @@ A cell's private key, if it was seen, can be used until its certificate runs out
 ## What this does not do yet
 
 - **Refreshing the machines' certificates.** A database machine reads its certificates when it starts, and they last 30 days. A run writes new ones into the secrets, but a machine that is already running keeps the old ones until it restarts. Until a task reloads them, restart one machine at a time (standbys first, then the primary) within 30 days of a run, or the machine's certificate runs out.
-- **etcd's own members.** The cells' `etcd-ca.crt` is this authority's certificate, so etcd must trust it and show a certificate it signed. The members' certificates are not issued by this run. Until a task makes them, make them from this authority and keep them in each member's secret.
+- **Refreshing the members' certificates.** An etcd member reads its certificates when it starts, and they last 30 days, like the database machines'. A run writes new ones into the secrets, but a running member keeps the old ones until it restarts. Until a task reloads them, restart one member at a time within 30 days of a run, and keep a majority up.
 - **`db.conn` and `tokens.json`.** A person fills these, unless the environment is a proving one and the run was given `proving` (D-19). Then the run copies the cell's administrator credential into `db.conn` and makes a fresh token for the tenant. K-19d replaces the copy with a role the node agent makes. Real sign-in replaces the tokens in A-06.
 - **Reading the proving token.** Use your own sign-in and keep it out of the log: for AWS, `aws secretsmanager get-secret-value --secret-id <the cell's API secret> --query SecretString --output text | jq -r '."tokens.json" | fromjson | .[0].token' > ~/smoke-token-aws`. Each cell's token is its own.
 - **Reading the test user's password.** A `proving` run makes one user for the basic UI, `user@bankofmumanddad.test` (a fake domain), in each cell. Its password is made fresh for each cell and kept in the cell's API secret as `ui-test-password`. The service never reads that entry, only its hash in `users.json`. Read it with your own sign-in and keep it out of the log: for AWS, `aws secretsmanager get-secret-value --secret-id <the cell's API secret> --query SecretString --output text | jq -r '."ui-test-password"'`. Never put it in the repository, an issue or a pull request. Real sign-in replaces this in A-06.
