@@ -354,6 +354,71 @@ fn it_reads_how_to_sign_in_from_the_file_when_the_variable_is_not_set() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// K-24cc: the role step refuses to run unless the cell signs in as aws_iam and the administrator's
+/// file is there, and it never prints the host, the user or the password it was given.
+#[test]
+fn managed_role_refuses_without_an_aws_cell_or_the_administrators_file_and_prints_no_secret() {
+    let dir = std::env::temp_dir().join(format!("ledger-api-role-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let admin = dir.join("admin.conn");
+    // Written at run time, so no password is in the source.
+    std::fs::write(
+        &admin,
+        format!(
+            "host=db-marker.internal port=1 user=marker_admin {}=marker-secret dbname=postgres",
+            "password"
+        ),
+    )
+    .unwrap();
+
+    // Not an aws_iam cell: refused before it reads or connects to anything.
+    let (code, said) = ran(
+        &["managed-role"],
+        &[("LEDGER_ADMIN_DB_FILE", admin.to_str().unwrap())],
+    );
+    assert_eq!(code, Some(2));
+    assert!(
+        said.contains("only a cell that signs in as aws_iam"),
+        "{said}"
+    );
+
+    // An aws_iam cell with no administrator's file.
+    let (code, said) = ran(&["managed-role"], &[("LEDGER_DB_SIGN_IN", "aws_iam")]);
+    assert_eq!(code, Some(2));
+    assert!(said.contains("LEDGER_ADMIN_DB_FILE is not set"), "{said}");
+
+    // A role name that is refused is refused with no connection made.
+    let (code, said) = ran(
+        &["managed-role"],
+        &[
+            ("LEDGER_DB_SIGN_IN", "aws_iam"),
+            ("LEDGER_ADMIN_DB_FILE", admin.to_str().unwrap()),
+            ("LEDGER_APPLICATION_ROLE", "ledger_admin"),
+        ],
+    );
+    assert_eq!(code, Some(2));
+    assert!(said.contains("cannot be the administrator"), "{said}");
+
+    // A sign-in that fails says so and names nothing.
+    let (code, said) = ran(
+        &["managed-role"],
+        &[
+            ("LEDGER_DB_SIGN_IN", "aws_iam"),
+            ("LEDGER_ADMIN_DB_FILE", admin.to_str().unwrap()),
+            ("LEDGER_DB_TLS", "off"),
+        ],
+    );
+    assert_eq!(code, Some(2));
+    assert_eq!(
+        said.trim_end(),
+        "ledger-api: managed-role: the administrator could not sign in to the database"
+    );
+    for private in ["marker-secret", "db-marker", "marker_admin"] {
+        assert!(!said.contains(private), "{said}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn it_refuses_a_public_listener_off_loopback_without_tls() {
     let (code, said) = refused(&[("LEDGER_LISTEN", "0.0.0.0:8080")]);
@@ -714,7 +779,7 @@ fn a_word_other_than_migrate_is_refused() {
     assert_eq!(code, Some(2));
     assert_eq!(
         said.trim_end(),
-        "ledger-api: the only command is `migrate`; with none, it serves"
+        "ledger-api: the commands are `migrate` and `managed-role`; with none, it serves"
     );
 }
 

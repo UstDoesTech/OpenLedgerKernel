@@ -110,8 +110,8 @@ impl Lab {
 #[ignore = "needs Postgres on port 5431"]
 async fn the_role_has_no_password_no_powers_and_owns_only_the_ledger_schema() {
     let lab = lab().await;
-    // The doc and the printed line say eight; this holds them to it.
-    assert_eq!(lab.plan().statements().len(), 8);
+    // The doc and the printed line say ten; this holds them to it.
+    assert_eq!(lab.plan().statements().len(), 10);
     let report = apply(&lab.admin, &lab.plan()).await.unwrap();
     assert_eq!(
         report.to_string(),
@@ -131,6 +131,63 @@ async fn the_role_has_no_password_no_powers_and_owns_only_the_ledger_schema() {
     assert!(parts.contains(&"rds_iam"), "tied to the identity: {s}");
     assert!(parts.contains(&lab.role.as_str()), "owns the ledger schema");
     lab.finish().await;
+}
+
+/// RDS's administrator is not a superuser: it can make roles and databases and owns the database,
+/// and it can grant `rds_iam`. PostgreSQL 16 does not let a role act as one it made unless it is
+/// given that, so a run as a superuser proves too little (K-24cc).
+#[tokio::test]
+#[ignore = "needs Postgres on port 5431"]
+async fn it_works_for_an_administrator_that_is_not_a_superuser_and_again_changes_nothing() {
+    let lab = lab().await;
+    let admin_name = format!("adm_{}", lab.role);
+    lab.root
+        .batch_execute(&format!(
+            "create role {admin_name} login createrole createdb; \
+             grant rds_iam to {admin_name} with admin option; \
+             alter database {} owner to {admin_name}",
+            lab.database
+        ))
+        .await
+        .unwrap();
+    let admin = open(&format!(
+        "host=127.0.0.1 port=5431 user={admin_name} dbname={}",
+        lab.database
+    ))
+    .await;
+    // Not a superuser, so the test is the point.
+    let sup: bool = admin
+        .query_one(
+            "select rolsuper from pg_roles where rolname = current_user",
+            &[],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert!(!sup);
+
+    apply(&admin, &lab.plan()).await.unwrap();
+    let first = lab.snapshot().await;
+    assert!(
+        first.contains(&lab.role),
+        "the role owns the schema: {first}"
+    );
+    apply(&admin, &lab.plan()).await.unwrap();
+    assert_eq!(lab.snapshot().await, first);
+
+    drop(admin);
+    lab.root
+        .batch_execute(&format!("alter database {} owner to ledger", lab.database))
+        .await
+        .unwrap();
+    // The administrator still holds the role's membership until the role is dropped with it.
+    let role = lab.role.clone();
+    lab.finish().await;
+    let root = open(ADMIN).await;
+    root.batch_execute(&format!("drop role {admin_name}"))
+        .await
+        .unwrap();
+    let _ = role;
 }
 
 #[tokio::test]

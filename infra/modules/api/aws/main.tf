@@ -1,7 +1,8 @@
 # One small machine, on Flatcar Container Linux, that runs the API image next to a cell. It has a
 # private address and no public one, and a volume encrypted with the tenant's key. Its role may
 # read the cell's one API secret, decrypt with the tenant's key and pull the API image, and
-# nothing else: not the database's administrator secret, not another cell's secrets.
+# nothing else: not another cell's secrets, and not the database's administrator secret, except for
+# the one apply in which a person turns on create_database_role (K-24cc).
 module "boot" {
   source = "../../api-boot"
 
@@ -15,6 +16,9 @@ module "boot" {
 
   trusted_proxy_cidrs = var.trusted_proxy_cidrs
   migrate_database    = var.migrate_database
+
+  create_database_role = var.create_database_role
+  administrator_secret = coalesce(var.administrator_secret_arn, "")
 }
 
 # The secret is made empty. Whoever issues the certificates and tokens puts the values in, so
@@ -136,4 +140,24 @@ resource "aws_iam_role_policy" "database" {
   name   = "api-database"
   role   = aws_iam_role.api.id
   policy = data.aws_iam_policy_document.database[0].json
+}
+
+# The managed database's administrator secret, readable only while the one-off role step is on. It
+# is the one secret named, and the key to decrypt it is the one the role already holds. With the
+# step off there is no such policy.
+data "aws_iam_policy_document" "administrator" {
+  count = var.create_database_role ? 1 : 0
+
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.administrator_secret_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "administrator" {
+  count = var.create_database_role ? 1 : 0
+
+  name   = "api-administrator-once"
+  role   = aws_iam_role.api.id
+  policy = data.aws_iam_policy_document.administrator[0].json
 }

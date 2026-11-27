@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 
 mod app;
+pub mod application_role;
 pub mod auth;
 pub mod client_addr;
 pub mod dbauth;

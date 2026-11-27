@@ -221,12 +221,12 @@ Then apply the `authority` layer, the `api` layer and the `identities` layer wit
 
 ### 7. The application role of a managed cell (`ledger-pki managed-role`, K-24ca)
 
-A managed cell's API signs in as its machine's identity, so its database needs one role that belongs to that identity and holds only the ledger's schema. `ledger-pki managed-role` makes it. A person runs it once for each managed cell and approves it. It is not part of `rotate-credentials`, and `rotate-credentials` never reads the managed service's administrator secret.
+A managed cell's API signs in as its machine's identity, so its database needs one role that belongs to that identity and holds only the ledger's schema. `ledger-pki managed-role` makes it. A person runs it once for each managed cell and approves it. It is not part of `rotate-credentials`, and `rotate-credentials` never reads the managed service's administrator secret. Because a managed database has a private address, a hosted runner cannot run it. It runs from the cell's API machine, as a one-off unit that a person switches on for one apply (K-24cc, `docs/runbooks/applying-the-ledger-schema.md`), or by hand from any host that can reach the database.
 
-- **What it needs.** A file holding the administrator's connection string for that one cell, and the cloud (`--cloud aws` so far). It signs in as the administrator, runs eight statements and stops. Nothing in the command writes a secret, so the administrator's credential cannot reach anything the API reads. The file is the person's to make and delete.
+- **What it needs.** A file holding the administrator's connection string for that one cell, and the cloud (`--cloud aws` so far). It signs in as the administrator, runs ten statements and stops. Nothing in the command writes a secret, so the administrator's credential cannot reach anything the API reads. The file is the person's to make and delete.
 - **What it makes.** The role `ledger_app` with no password, no superuser, no right to make roles or databases, tied to the cloud's identity (on AWS, membership of `rds_iam`). It owns the `ledger` schema and nothing else, and its search path is that schema. `ledger-api migrate` then runs as this role.
 - **Running it again** changes nothing, and puts right a password or a power that has crept in. PostgreSQL lets a role change its own password, so the database cannot forbid that. On RDS, `rds_iam` membership makes the service refuse password sign-in for the role.
-- **What it prints.** One line of counts, `managed role: statements run: 8, failed: 0`. A failure names the step, never the database's own words, a host, a role or a token.
+- **What it prints.** One line of counts, `managed role: statements run: 10, failed: 0`. A failure names the step, never the database's own words, a host, a role or a token.
 - **What is not built yet.** The workflow that runs it with the administrator's secret and an approval, Azure, Google Cloud and Lakebase (K-24cb).
 
 ## Running it

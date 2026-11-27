@@ -4,7 +4,7 @@ Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service
 Before=ledger-api.service
-
+${role_lines}
 [Service]
 Type=oneshot
 RemainAfterExit=yes

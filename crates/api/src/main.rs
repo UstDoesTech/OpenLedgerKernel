@@ -47,6 +47,10 @@
 //! `ledger-api migrate` brings the cell's ledger schema to the latest version and exits (K-25). It
 //! reads the same LEDGER_DB_* settings and LEDGER_SCHEMA, and the normal start never does it.
 //!
+//! `ledger-api managed-role` makes a managed cell's application role and exits (K-24cc). It reads the
+//! administrator's connection string from the file `LEDGER_ADMIN_DB_FILE`, which only its boot unit
+//! makes, and it is off unless a person switches that unit on.
+//!
 //! Exit codes: 2 for a configuration or connection problem at start, 1 for a failure after.
 
 use std::process::ExitCode;
@@ -563,12 +567,58 @@ async fn migrate_command() -> Result<(), String> {
     Ok(())
 }
 
+/// `ledger-api managed-role`: makes this managed cell's application role, once (K-24cc).
+///
+/// It signs in as the administrator, with the connection string in the file `LEDGER_ADMIN_DB_FILE`
+/// names, runs the statements of `application_role` and exits. That file is made by the boot unit
+/// that runs this, lives only for the unit, and is never in the API's secret. The cell's `db.conn`
+/// is not read. It prints counts, never a host, a role or a password.
+async fn managed_role_command() -> Result<(), String> {
+    let tie = match sign_in_word()?.as_deref() {
+        Some("aws_iam") => ledger_api::application_role::Tie::AwsIam,
+        _ => {
+            return Err(
+                "managed-role: only a cell that signs in as aws_iam is supported".to_owned(),
+            );
+        }
+    };
+    let conn = file("LEDGER_ADMIN_DB_FILE")?;
+    let config: tokio_postgres::Config = conn
+        .parse()
+        .map_err(|_| "LEDGER_ADMIN_DB_FILE: not a connection string".to_owned())?;
+    let database = config
+        .get_dbname()
+        .ok_or_else(|| "LEDGER_ADMIN_DB_FILE: names no database".to_owned())?
+        .to_owned();
+    let role = std::env::var("LEDGER_APPLICATION_ROLE").unwrap_or_else(|_| "ledger_app".to_owned());
+    let schema = std::env::var("LEDGER_SCHEMA").unwrap_or_else(|_| "ledger".to_owned());
+    let plan = ledger_api::application_role::Plan::new(tie, &role, &database, &schema)
+        .map_err(|e| e.to_string())?;
+    let tls = std::env::var("LEDGER_DB_TLS")
+        .map(|v| v != "off")
+        .unwrap_or(true);
+    // The sign-in error is dropped: its words can name the host.
+    let admin = ledger_api::dbconn::connect(&conn, tls, db_ca()?.as_deref())
+        .await
+        .map_err(|_| {
+            "managed-role: the administrator could not sign in to the database".to_owned()
+        })?;
+    let report = ledger_api::application_role::apply(&admin, &plan)
+        .await
+        .map_err(|e| e.to_string())?;
+    println!("ledger-api: {report}");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let result = match std::env::args().nth(1).as_deref() {
         None => run().await,
         Some("migrate") => migrate_command().await,
-        Some(_) => Err("the only command is `migrate`; with none, it serves".to_owned()),
+        Some("managed-role") => managed_role_command().await,
+        Some(_) => {
+            Err("the commands are `migrate` and `managed-role`; with none, it serves".to_owned())
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
