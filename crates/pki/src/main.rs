@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ledger_pki::AdministratorCopy;
+use ledger_pki::application_role::{Plan, Tie, apply};
 use ledger_pki::manifest::{Authority, CellEntry};
 use ledger_pki::manifest::{Database, DatabaseKind};
 use ledger_pki::runner::ProcessRunner;
@@ -22,7 +23,55 @@ fn usage() -> ExitCode {
         "usage: ledger-pki rotate --manifest <file> --kind all|certificates|credentials [--settle-secs N] [--work <dir>]"
     );
     eprintln!("       ledger-pki rehearse");
+    eprintln!(
+        "       ledger-pki managed-role --cloud aws --admin-file <file> [--database postgres] [--role ledger_app] [--schema ledger] [--ca-file <file>]"
+    );
     ExitCode::from(2)
+}
+
+/// `ledger-pki managed-role --cloud aws --admin-file <file> [--database postgres] [--role ledger_app]
+/// [--schema ledger] [--ca-file <file>]`: makes a managed cell's application role (K-24ca). A person
+/// runs it, once for each cell. The file holds the administrator's connection string, and this
+/// command reads it, uses it for these statements and writes it nowhere.
+fn managed_role(flag: &dyn Fn(&str) -> Option<String>) -> Result<String, PkiError> {
+    let tie = match flag("--cloud").as_deref() {
+        Some("aws") => Tie::AwsIam,
+        Some(_) => return Err(PkiError::Manifest("only --cloud aws is supported so far")),
+        None => return Err(PkiError::Manifest("--cloud is needed")),
+    };
+    let plan = Plan::new(
+        tie,
+        &flag("--role").unwrap_or_else(|| "ledger_app".into()),
+        &flag("--database").unwrap_or_else(|| "postgres".into()),
+        &flag("--schema").unwrap_or_else(|| "ledger".into()),
+    )?;
+    let conn = std::fs::read_to_string(
+        flag("--admin-file").ok_or(PkiError::Manifest("--admin-file is needed"))?,
+    )
+    .map_err(|_| PkiError::Manifest("the administrator's file could not be read"))?;
+    let ca = match flag("--ca-file") {
+        Some(path) => Some(
+            std::fs::read_to_string(path)
+                .map_err(|_| PkiError::Manifest("the CA file could not be read"))?,
+        ),
+        None => None,
+    };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|_| PkiError::CannotRun("starting the step"))?;
+    runtime.block_on(async {
+        // The sign-in error is dropped: its words can name the host.
+        let admin = ledger_api::dbconn::connect(conn.trim(), true, ca.as_deref())
+            .await
+            .map_err(|_| PkiError::Command {
+                code: 1,
+                doing: "signing in as the administrator",
+                tool: "the database",
+                cause: "the sign-in was refused or the database could not be reached",
+            })?;
+        Ok(apply(&admin, &plan).await?.to_string())
+    })
 }
 
 fn run(args: &[String]) -> Result<String, PkiError> {
@@ -129,7 +178,10 @@ fn run(args: &[String]) -> Result<String, PkiError> {
             .run(kind)?;
             Ok(report.to_string())
         }
-        _ => Err(PkiError::Manifest("the first word is rotate or rehearse")),
+        Some("managed-role") => managed_role(&flag),
+        _ => Err(PkiError::Manifest(
+            "the first word is rotate, rehearse or managed-role",
+        )),
     }
 }
 
