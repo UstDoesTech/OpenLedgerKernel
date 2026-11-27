@@ -2,6 +2,10 @@
 
 Use this to issue the API machines' certificates and cell credentials for the first time, and to renew them. One workflow does it, `rotate-credentials`, and nobody types a certificate, a key or a token. It is the same run for the first issue and for every renewal.
 
+## A managed database's CA bundle
+
+A run fetches each managed cell's public CA bundle from its cloud (`scripts/fetch_database_ca.py`) and writes it as the cell's `db-ca.crt`. Nothing is needed from you. If the run stops with "no public CA bundle this run can fetch yet", the cell is a managed Azure or Google Cloud one, which is not supported yet. A self-hosted cell's run is unchanged.
+
 ## What it does
 
 One central authority signs every cell's certificates (decision D-17). Its key is a signing key in AWS KMS. KMS signs on request and cannot give the key to anyone. For each cell the run makes:

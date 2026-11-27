@@ -15,4 +15,5 @@
 /TRADEMARK.md                     @UstDoesTech
 /scripts/proving_power.sh         @UstDoesTech
 /scripts/rotation_manifest.py        @UstDoesTech
+/scripts/fetch_database_ca.py        @UstDoesTech
 /crates/pki/                      @UstDoesTech
