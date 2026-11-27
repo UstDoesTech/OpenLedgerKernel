@@ -29,3 +29,9 @@ variable "node_secret_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "member_secret_ids" {
+  description = "The secrets that hold the certificates of the control plane's etcd members in Google Cloud. The service account may add a version to each, and no more."
+  type        = list(string)
+  default     = []
+}

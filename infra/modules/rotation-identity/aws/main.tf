@@ -54,6 +54,18 @@ locals {
       Action   = local.aws.node_secrets
       Resource = var.node_secret_arns
     }],
+    [for _ in(length(var.member_secret_arns) == 0 ? [] : [1]) : {
+      Sid      = "WriteTheEtcdMemberCertificates"
+      Effect   = "Allow"
+      Action   = local.aws.member_secrets
+      Resource = var.member_secret_arns
+    }],
+    [for _ in(var.member_encryption_arn == "" ? [] : [1]) : {
+      Sid      = "UseTheEtcdMembersKey"
+      Effect   = "Allow"
+      Action   = local.aws.member_encryption
+      Resource = [var.member_encryption_arn]
+    }],
     [for _ in(var.state_encryption_arn == "" ? [] : [1]) : {
       Sid      = "DecryptTheState"
       Effect   = "Allow"
