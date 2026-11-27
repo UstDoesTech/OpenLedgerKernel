@@ -188,7 +188,7 @@ def test_the_cells_layer_is_always_read_and_only_a_proving_run_says_proving():
     # K-20b: every run needs each self-hosted cell's machines, to issue their certificates. A run
     # that is not a proving one still never fills a credential, because the word is not given.
     read = step("Read where the cells")["run"]
-    assert 'layers="api authority cells"' in read
+    assert 'layers="api authority cells control-plane"' in read
     assert 'extra=("$RUNNER_TEMP/cells-outputs.json")' in read
     assert re.search(r'\[ "\$INPUT_PROVING" = true \] && extra\+=\(proving\)', read)
     manifest = next(l for l in read.splitlines() if "rotation_manifest.py" in l)
@@ -208,3 +208,17 @@ def test_the_run_warns_when_azure_is_set_and_the_vault_name_is_not():
     src = WORKFLOW.read_text() if "WORKFLOW" in globals() else (Path(__file__).resolve().parent.parent / ".github/workflows/rotate-credentials.yml").read_text()
     assert '[ "$HAS_AZURE" = true ] && [ "$HAS_VAULT" != true ]' in src
     assert "::warning::Azure is set but AZURE_KEY_VAULT_NAME is not" in src
+
+
+def test_the_control_plane_is_always_read_and_its_outputs_stay_on_the_runner_and_go_last():
+    # K-18b: every run that makes certificates issues each etcd member its files, so the control
+    # plane's outputs go to the manifest script, after every positional word.
+    read = step("Read where the cells")["run"]
+    assert 'extra+=(--etcd "$RUNNER_TEMP/control-plane-outputs.json")' in read
+    assert read.index("extra+=(proving)") < read.index("--etcd")
+    manifest = next(l for l in read.splitlines() if "rotation_manifest.py" in l)
+    assert manifest.rstrip().endswith('"${extra[@]}"')
+    check = step("Check the inputs")["run"]
+    assert 'infra/envs/$INPUT_ENV/control-plane' in check
+    # The outputs are removed with the others, and nothing prints them.
+    assert "-outputs.json" in step("Remove what the run kept")["run"]
