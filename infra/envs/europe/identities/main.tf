@@ -72,9 +72,25 @@ data "terraform_remote_state" "authority" {
   }
 }
 
+# The etcd members, when the environment has them (K-18c). The rotation writes each member's
+# certificates, so it is given a write on those secrets and the use of their key, and read of the
+# layer's state to learn them.
+data "terraform_remote_state" "control_plane" {
+  count   = var.control_plane ? 1 : 0
+  backend = "s3"
+  config = {
+    bucket = var.state_bucket
+    key    = "${local.geo}/control-plane"
+    region = module.regions.aws[0]
+  }
+}
+
 locals {
   apis  = data.terraform_remote_state.api.outputs.apis
   cells = data.terraform_remote_state.cells.outputs.cells
+
+  members        = try(data.terraform_remote_state.control_plane[0].outputs.members, [])
+  member_secrets = try(data.terraform_remote_state.control_plane[0].outputs.certificate_secrets, {})
 }
 
 module "aws" {
@@ -91,8 +107,10 @@ module "aws" {
   state_encryption_arn      = var.state_encryption_arn
   plan_store_encryption_arn = var.plan_store_encryption_arn
   state_bucket              = var.state_bucket
-  state_keys                = ["${local.geo}/api", "${local.geo}/authority", "${local.geo}/cells"]
+  state_keys                = concat(["${local.geo}/api", "${local.geo}/authority", "${local.geo}/cells"], var.control_plane ? ["${local.geo}/control-plane"] : [])
   node_secret_arns          = [for n in try(local.cells["aws"].nodes, []) : n.secret_ref]
+  member_secret_arns        = [for m in local.members : local.member_secrets[m.name] if m.cloud == "aws"]
+  member_encryption_arn     = try(data.terraform_remote_state.control_plane[0].outputs.aws_kms_key_arn, "")
   plan_store_bucket         = local.plan_store.bucket
   plan_store_prefix         = local.plan_store_prefix
 }
@@ -116,4 +134,5 @@ module "gcp" {
   api_secret_id           = local.apis["gcp"].secret_ref
   administrator_secret_id = var.proving ? local.cells["gcp"].secret_ref : ""
   node_secret_ids         = [for n in try(local.cells["gcp"].nodes, []) : n.secret_ref]
+  member_secret_ids       = [for m in local.members : local.member_secrets[m.name] if m.cloud == "gcp"]
 }

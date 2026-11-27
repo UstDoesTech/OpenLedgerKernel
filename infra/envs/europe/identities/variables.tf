@@ -52,3 +52,9 @@ variable "plan_store_encryption_arn" {
   type        = string
   default     = ""
 }
+
+variable "control_plane" {
+  description = "Whether this environment has a control plane (etcd members) whose certificates the rotation writes. Read from the control-plane layer's state when true. Not a secret."
+  type        = bool
+  default     = true
+}

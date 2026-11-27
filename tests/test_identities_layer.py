@@ -115,7 +115,7 @@ def test_every_aws_statement_names_its_resources_and_none_is_every_resource():
     assert not re.search(r'Resource\s*=\s*\[\s*"\*"', src)
     assert '"arn:aws:s3:::${var.plan_store_bucket}/*"' in src  # a whole-bucket plan store, only when no prefix is given
     statements = re.findall(r"Resource\s*=\s*(.+)", src)
-    assert len(statements) == 10  # sign, secrets, state, list state, logs, administrator, node certificates, state key, logs key, secrets key
+    assert len(statements) == 12  # sign, secrets, state, list state, logs, administrator, node certificates, etcd member certificates, etcd members' key, state key, logs key, secrets key
     for s in statements:
         assert "var." in s or "local." in s, s
 
@@ -149,7 +149,7 @@ def test_the_administrator_credential_is_read_only_when_proving():
     src = hcl(LAYER)
     assert 'administrator_secret_arn  = var.proving ?' in src
     # The cells layer is read on every run (K-20b), whether or not it is a proving one.
-    assert 'state_keys                = ["${local.geo}/api", "${local.geo}/authority", "${local.geo}/cells"]' in src
+    assert 'state_keys                = concat(["${local.geo}/api", "${local.geo}/authority", "${local.geo}/cells"], var.control_plane ? ["${local.geo}/control-plane"] : [])' in src
     assert 'administrator_secret_id = var.proving ?' in src
     # The tool asks whether the secret has a version before it reads it, so both are needed.
     assert set(PERMISSIONS["aws"]["administrator_secret"]) == {"secretsmanager:GetSecretValue", "secretsmanager:ListSecretVersionIds"}
@@ -184,7 +184,7 @@ def test_gcp_roles_are_the_listed_ones_and_only_on_secrets():
     src = hcl(MODULES / "gcp")
     assert "google_project_iam" not in src and "google_organization_iam" not in src and "google_folder_iam" not in src
     assert not re.search(r'resource "google_service_account_iam_(binding|policy)"', src)
-    assert src.count('resource "google_secret_manager_secret_iam_member"') == 3  # the API secret, the administrator secret, the machines' secrets
+    assert src.count('resource "google_secret_manager_secret_iam_member"') == 4  # the API secret, the administrator secret, the database machines' secrets, the etcd members' secrets
     roles = set(PERMISSIONS["gcp"]["secret_roles"]) | set(PERMISSIONS["gcp"]["administrator_secret_roles"])
     for r in roles:
         assert r.startswith("roles/secretmanager."), r
@@ -308,3 +308,36 @@ def test_the_node_certificate_secrets_get_a_write_and_nothing_else_on_exactly_th
 def test_the_document_lists_the_node_certificate_rights_and_where_the_key_for_them_comes_from():
     assert "`secretsmanager:PutSecretValue`" in DOC and "`roles/secretmanager.secretVersionAdder`" in DOC
     assert "database machines" in DOC and "`TF_VAR_encryption_arn`" in DOC
+
+
+# ---- K-18c: writing the etcd members' certificates -----------------------------------------------
+
+def test_the_etcd_member_secrets_get_a_write_and_the_members_key_and_nothing_else():
+    aws = PERMISSIONS["aws"]
+    assert aws["member_secrets"] == ["secretsmanager:PutSecretValue"]
+    assert aws["member_encryption"] == ["kms:Decrypt", "kms:GenerateDataKey"]
+    assert PERMISSIONS["gcp"]["member_secret_roles"] == ["roles/secretmanager.secretVersionAdder"]
+    src = hcl(MODULES / "aws")
+    assert "Action   = local.aws.member_secrets" in src and "Resource = var.member_secret_arns" in src
+    assert "Action   = local.aws.member_encryption" in src and "Resource = [var.member_encryption_arn]" in src
+    gcp = hcl(MODULES / "gcp")
+    assert "local.gcp.member_secret_roles" in gcp and "var.member_secret_ids" in gcp
+    # Azure's roles on the vault already cover the members' secrets, which are in the same vault.
+    assert "member" not in hcl(MODULES / "azure")
+
+
+def test_the_layer_takes_the_members_secrets_and_key_from_the_control_plane_and_only_when_there_is_one():
+    layer = hcl(LAYER)
+    assert 'count   = var.control_plane ? 1 : 0' in layer
+    assert 'member_secret_arns        = [for m in local.members : local.member_secrets[m.name] if m.cloud == "aws"]' in layer
+    assert 'member_secret_ids       = [for m in local.members : local.member_secrets[m.name] if m.cloud == "gcp"]' in layer
+    assert 'try(data.terraform_remote_state.control_plane[0].outputs.aws_kms_key_arn, "")' in layer
+    variable = re.search(r'variable "control_plane" \{(.*?)\n\}', layer, re.S).group(1)
+    assert "type        = bool" in variable and "default     = true" in variable
+    outputs = hcl(INFRA / "envs" / "europe" / "control-plane")
+    assert 'output "aws_kms_key_arn"' in outputs and "aws_kms_key.control_plane.arn" in outputs
+
+
+def test_the_document_lists_the_etcd_member_rights():
+    assert "etcd members' certificates" in DOC
+    assert "`TF_VAR_control_plane`" in DOC or "control-plane layer" in DOC

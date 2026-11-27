@@ -41,3 +41,11 @@ resource "google_secret_manager_secret_iam_member" "nodes" {
   role      = each.value[1]
   member    = "serviceAccount:${google_service_account.this.email}"
 }
+
+resource "google_secret_manager_secret_iam_member" "etcd_members" {
+  for_each = { for pair in setproduct(var.member_secret_ids, local.gcp.member_secret_roles) : "${pair[0]}|${pair[1]}" => pair }
+
+  secret_id = each.value[0]
+  role      = each.value[1]
+  member    = "serviceAccount:${google_service_account.this.email}"
+}

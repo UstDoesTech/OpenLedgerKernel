@@ -19,7 +19,14 @@
     "node_secrets": [
       "secretsmanager:PutSecretValue"
     ],
+    "member_secrets": [
+      "secretsmanager:PutSecretValue"
+    ],
     "encryption": [
+      "kms:Decrypt",
+      "kms:GenerateDataKey"
+    ],
+    "member_encryption": [
       "kms:Decrypt",
       "kms:GenerateDataKey"
     ],
@@ -61,6 +68,9 @@
       "roles/secretmanager.viewer"
     ],
     "node_secret_roles": [
+      "roles/secretmanager.secretVersionAdder"
+    ],
+    "member_secret_roles": [
       "roles/secretmanager.secretVersionAdder"
     ]
   }

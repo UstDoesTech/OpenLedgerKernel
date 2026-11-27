@@ -22,3 +22,8 @@ output "certificate_secrets" {
   description = "Where each member's certificates go, for whoever runs the certificate authority."
   value       = module.control_plane.certificate_secrets
 }
+
+output "aws_kms_key_arn" {
+  description = "The AWS key that encrypts the members' disks and certificate secrets. An identifier, not a secret: the rotation identity is given use of it to write the members' certificates."
+  value       = aws_kms_key.control_plane.arn
+}

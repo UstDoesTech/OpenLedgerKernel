@@ -77,3 +77,15 @@ variable "node_secret_arns" {
   type        = list(string)
   default     = []
 }
+
+variable "member_secret_arns" {
+  description = "The secrets that hold the certificates of the control plane's etcd members in AWS. The role may write a new version of each, and no more."
+  type        = list(string)
+  default     = []
+}
+
+variable "member_encryption_arn" {
+  description = "The key that encrypts the etcd members' secrets, which the control plane makes. Empty when there are no members' secrets."
+  type        = string
+  default     = ""
+}
