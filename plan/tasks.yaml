@@ -1573,12 +1573,9 @@ tasks:
   size: S
   status: todo
   depends_on:
-  - K-24bd
-  - K-24cb
   - K-24d
   - K-24e
   - K-24f
-  - K-24g
   - K-24cc
   decisions: []
   deliverables:
@@ -1586,12 +1583,35 @@ tasks:
   - docs/runbooks/README.md
   - tests/test_moving_to_managed_cells_runbook.py
   acceptance:
-  - It gives the order: set cell_kind, plan and read that each cell is replaced and nothing else (not the network, the API machines or the load balancer), apply, run rotate-credentials for db.conn, replace or restart the API machines, check, and how to go back.
+  - It gives the order, the same for every cloud: set cell_kind, plan and read that each cell is replaced and nothing else (not the network, the API machines or the load balancer), apply, run rotate-credentials for db.conn, replace or restart the API machines, check, and how to go back.
   - It says plainly that switching kind destroys the old cells with no data carried across, what that means for the control plane's record of each cell, what a managed cell costs while it exists, and that pausing for cost cannot stop an Azure high-availability server.
+  - It says which clouds a managed run can finish for today, and that cell_kind is one setting for all three cells.
   - A test holds its workflow names, inputs, variables, files and counts to the ones that exist, and that no secret or name is written in it.
+  notes: Split in two because the first part does not need the Azure and Google Cloud work. This part gives the steps that do not change from cloud to cloud, and says what is ready now. I-01ve brings in the rest once K-24bd, K-24cb and K-24g are done.
   refs:
   - docs/runbooks/pausing-for-cost.md
   - docs/runbooks/rolling-the-api-image.md
+- id: I-01ve
+  title: Bring the managed cells runbook up to date for Azure and Google Cloud
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - I-01vd
+  - K-24bd
+  - K-24cb
+  - K-24g
+  decisions: []
+  deliverables:
+  - docs/runbooks/moving-to-managed-cells.md
+  - tests/test_moving_to_managed_cells_runbook.py
+  acceptance:
+  - The runbook no longer says an Azure or Google Cloud managed run stops, and gives the steps that differ for each of those clouds, with the settings and files they use.
+  - Its test holds each added step to a setting, file or count that exists.
+  notes: Split off from I-01vd.
+  refs:
+  - docs/runbooks/moving-to-managed-cells.md
 - id: K-25
   title: Apply the ledger schema to a deployed cell from its API machine
   phase: P1
