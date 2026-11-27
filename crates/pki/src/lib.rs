@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod application_role;
 pub mod database;
 pub mod error;
 pub mod manifest;
