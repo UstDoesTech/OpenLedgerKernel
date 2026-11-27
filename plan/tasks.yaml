@@ -1566,6 +1566,25 @@ tasks:
   notes: Split off from K-24f. Reading an instance's certificate authority widens an identity, so it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
+- id: K-24h
+  title: Clear a managed cell's sign-in leftovers when rotate-credentials runs for a self-hosted cell
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-24d
+  decisions: []
+  deliverables:
+  - crates/pki/src/rotate.rs
+  - crates/pki/tests/managed_cell_credentials.rs
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - When a credentials run finds a self-hosted cell whose secret still holds `db-sign-in`, it removes `db-sign-in` and the passwordless `db.conn` that went with it, so a `proving` run or a person fills a new `db.conn`. A test over an in-memory store shows both gone.
+  - A self-hosted cell with neither entry is written exactly as before, and a managed cell is unchanged, shown by tests.
+  notes: Found writing I-01vd. A rotation writes `db-sign-in` for a managed cell and never removes it, so going back to self-hosted leaves the word `aws_iam` beside a database that wants a password, and the service cannot sign in. Until this is done the runbook tells a person to delete the two entries by hand.
+  refs:
+  - docs/credentialed-workflows.md
 - id: I-01vd
   title: Runbook for moving the proving environment to managed cells, and back
   phase: P1
