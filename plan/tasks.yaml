@@ -765,29 +765,59 @@ tasks:
     every 7 days, inside the 10 days the decision allows.
   refs:
   - docs/credentialed-workflows.md
-- id: K-18
-  title: Issue the etcd members' certificates from the same authority
+- id: K-18a
+  title: Issue the etcd members' certificates from the same authority (the rotation)
   phase: P1
   workstream: K
   size: S
-  status: in_progress
+  status: todo
   depends_on:
   - K-17
   deliverables:
   - crates/pki
+  - scripts/rotation_manifest.py
+  acceptance:
+  - The manifest may list etcd members, each with a name, cloud, address and the secret its files go in. A rotation issues each one a server certificate and a peer certificate from the same authority as the cells' certificates, naming the member's address, and writes them with the authority's certificate into that member's secret as a new version. The files are those the etcd module lists (`ca.crt`, `server.crt`, `server.key`, `peer.crt`, `peer.key`).
+  - Members and cells trust the same authority, shown by a test in which a cell's etcd client certificate from a K-17 rotation is accepted by an etcd member started with the certificates this task issues, with client certificates required.
+  - A rotation that fails part-way leaves every member able to reach the others, and a run prints counts only (`etcd member certificates issued`), each with a test.
+  - The manifest script builds the members from the control-plane layer's outputs when given them, and holds no certificate.
+  notes: Split from K-18. K-17 sets the cells' etcd-ca.crt to the authority's certificate, so etcd must trust it. Until K-18a to K-18c are done, no etcd member has certificates, so no member starts etcd.
+  refs:
+  - docs/credentialed-workflows.md
+- id: K-18c
+  title: Let the rotation identities write the etcd members' secrets
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-17
+  deliverables:
+  - infra/modules/rotation-identity
+  - infra/envs/europe/identities
+  - tests
+  acceptance:
+  - In each cloud the rotation identity may read and add a version to each etcd member's certificate secret, and to no other secret it cannot already reach, shown by tests of the modules and the layer.
+  - The identities layer takes the member secrets from the control-plane layer's outputs, and an environment with no control plane gets none.
+  notes: Split from K-18. Changes an AWS, Azure and Google Cloud role, so it needs a person's review.
+  refs:
+  - docs/credentialed-workflows.md
+- id: K-18b
+  title: Let the rotate-credentials workflow read the control plane and say how to use it
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-18a
+  - K-18c
+  deliverables:
+  - .github/workflows/rotate-credentials.yml
   - docs/runbooks/rotating-credentials.md
   acceptance:
-  - A rotation issues each etcd member a server certificate and a peer certificate from the same authority
-    as the cells' certificates, naming the member's address, and writes them with the authority's
-    certificate into that member's secret as a new version. The files are those the etcd module lists.
-  - Members and cells trust the same authority, shown by a test in which a cell's etcd client certificate
-    from a K-17 rotation is accepted by an etcd member started with the certificates this task issues,
-    with client certificates required.
-  - A rotation that fails part-way leaves every member able to reach the others, and a run prints counts
-    only, each with a test.
-  notes: K-17 sets the cells' etcd-ca.crt to the authority's certificate, so etcd must trust it. Until this
-    task, the members' certificates are made by hand from that authority. Edits a credentialed workflow
-    and may change an AWS or Azure role, so it needs a person's review.
+  - The workflow reads the control-plane layer's outputs on the runner, keeps them there, and gives them to the manifest script.
+  - The runbook no longer says the members' certificates are made by hand, and says what to expect (members start etcd within about 5 minutes of a run).
+  notes: Split from K-18. Edits a credentialed workflow, so it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
 - id: K-19a
