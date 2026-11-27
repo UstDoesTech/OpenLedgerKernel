@@ -66,7 +66,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-97 of 115 tasks done.
+97 of 116 tasks done.
 
 ```mermaid
 flowchart LR
@@ -135,6 +135,7 @@ flowchart LR
   K_24f["K-24f<br/>Give rotate-credentials the public database CA bundle of a managed AWS cell"]
   K_24g["K-24g<br/>Give rotate-credentials the public database CA bundle of a managed Azure or Google Cloud cell"]
   K_24h["K-24h<br/>Clear a managed cell's sign-in leftovers when rotate-credentials runs for a self-hosted cell"]
+  K_24i["K-24i<br/>Let the cells layer set the kind of each cloud's cell on its own"]
   I_01vd["I-01vd<br/>Runbook for moving the proving environment to managed cells, and back"]
   I_01ve["I-01ve<br/>Bring the managed cells runbook up to date for Azure and Google Cloud"]
   K_25["K-25<br/>Apply the ledger schema to a deployed cell from its API machine"]
@@ -278,6 +279,7 @@ flowchart LR
   K_24d --> K_24f
   K_24f --> K_24g
   K_24d --> K_24h
+  K_24cc --> K_24i
   K_24d --> I_01vd
   K_24e --> I_01vd
   K_24f --> I_01vd
@@ -286,6 +288,7 @@ flowchart LR
   K_24bd --> I_01ve
   K_24cb --> I_01ve
   K_24g --> I_01ve
+  K_24i --> I_01ve
   K_13 --> K_25
   K_20h --> K_23a
   K_23a --> K_23b
@@ -431,8 +434,9 @@ flowchart LR
 | **K-24f** Give rotate-credentials the public database CA bundle of a managed AWS cell | Ledger kernel | K-24d | None | S | Agent | Done |
 | **K-24g** Give rotate-credentials the public database CA bundle of a managed Azure or Google Cloud cell | Ledger kernel | K-24f | None | S | Agent | To do |
 | **K-24h** Clear a managed cell's sign-in leftovers when rotate-credentials runs for a self-hosted cell | Ledger kernel | K-24d | None | S | Agent | To do |
+| **K-24i** Let the cells layer set the kind of each cloud's cell on its own | Infrastructure | K-24cc | None | S | Agent | To do |
 | **I-01vd** Runbook for moving the proving environment to managed cells, and back | Infrastructure | K-24d, K-24e, K-24f, K-24cc | None | S | Agent | To do |
-| **I-01ve** Bring the managed cells runbook up to date for Azure and Google Cloud | Infrastructure | I-01vd, K-24bd, K-24cb, K-24g | None | S | Agent | To do |
+| **I-01ve** Bring the managed cells runbook up to date for Azure and Google Cloud | Infrastructure | I-01vd, K-24bd, K-24cb, K-24g, K-24i | None | S | Agent | To do |
 | **K-25** Apply the ledger schema to a deployed cell from its API machine | Ledger kernel | K-13 | None | M | Agent | Done |
 | **K-23a** Edge subnets and a route to the internet on AWS, for the load balancer only | Infrastructure | K-20h | D-22 | S | Agent | Done |
 | **K-23b** A load balancer in front of the AWS API, from named ranges only | Infrastructure | K-23a | D-22 | M | Agent | Done |
