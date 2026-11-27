@@ -1435,6 +1435,26 @@ tasks:
   notes: Split from K-24c, AWS first, with the statements that are the same on every cloud. Edits a role and uses a credential, so it needs a person's review and a person runs it.
   refs:
   - docs/credentialed-workflows.md
+- id: K-24cc
+  title: A workflow a person approves that makes a managed cell's application role
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-24ca
+  decisions: []
+  deliverables:
+  - .github/workflows/managed-role.yml
+  - docs/credentialed-workflows.md
+  - tests/test_managed_role_workflow.py
+  acceptance:
+  - The workflow runs only by dispatch, from main, by the owner, in an environment that needs approval, and takes the cell and the cloud as inputs. It reads the managed service's administrator secret into a file on the runner, runs `ledger-pki managed-role`, and deletes the file, shown by a test of the workflow.
+  - The administrator's secret is read by this workflow alone, and never by rotate-credentials or the API's identity, shown by tests of the identity list.
+  - It prints only the counts the command prints, and no host, role or secret name.
+  notes: Split off from K-24c. It edits a workflow that holds credentials and widens an identity, so it needs a person's review and a person sets up the environment.
+  refs:
+  - docs/credentialed-workflows.md
 - id: K-24cb
   title: Make the other managed cells' application roles and give them only the ledger's schema
   phase: P1
