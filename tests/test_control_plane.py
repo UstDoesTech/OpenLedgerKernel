@@ -146,3 +146,14 @@ def test_the_flows_the_control_plane_needs_are_already_allowed_and_no_others():
     assert ports["etcd_client"] == 2379 and ports["etcd_peer"] == 2380
     etcd = {f["name"] for f in flows["flows"] if f["port"] in ("etcd_client", "etcd_peer")}
     assert etcd == {"api-to-control-plane-etcd", "cell-to-control-plane-etcd", "control-plane-peers"}
+
+
+def test_an_etcd_member_says_why_it_failed_on_the_console_and_prints_no_secret():
+    files = Path(__file__).resolve().parent.parent / "infra" / "modules" / "etcd-boot" / "files"
+    for name in ("etcd-member.service.tpl", "etcd-data-disk.service.tpl"):
+        text = (files / name).read_text()
+        assert "StandardOutput=journal+console" in text and "StandardError=journal+console" in text, name
+    unit = [l for l in (files / "etcd-member.service.tpl").read_text().splitlines() if not l.lstrip().startswith("#")]
+    stop = next(l for l in unit if l.startswith("ExecStopPost="))
+    assert "docker inspect --format" in stop and "> /dev/console" in stop
+    assert "docker logs" not in stop and "key" not in stop.lower() and "cert" not in stop.lower()
