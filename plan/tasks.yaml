@@ -1500,6 +1500,45 @@ tasks:
   refs:
   - docs/credentialed-workflows.md
   - docs/api-design.md
+- id: K-24e
+  title: Let the service read how it signs in to its database from its secret
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-24d
+  decisions: []
+  deliverables:
+  - crates/api
+  - infra/modules/api-boot
+  - tests/test_database_sign_in_file.py
+  acceptance:
+  - The service reads how it signs in from `LEDGER_DB_SIGN_IN` when that is set, and otherwise from the file `LEDGER_DB_SIGN_IN_FILE` names, and with neither it signs in by password, so a cell that is applied changes nothing. Any other word stops the service at start, shown by tests.
+  - The API boot module lists `db-sign-in` as an optional file of the secret, and sets `LEDGER_DB_SIGN_IN_FILE` to it, for every cloud, shown by tests of the module.
+  - A machine for a cell that is self-hosted starts as it did, shown by a test.
+  notes: Found in K-24d. rotate-credentials writes the word as the secret's `db-sign-in` entry, but the machine's environment is set at boot and no layer sets `LEDGER_DB_SIGN_IN`, so nothing reads the entry. Boot files reach a machine only when it is replaced.
+  refs:
+  - docs/api-design.md
+- id: K-24f
+  title: Give rotate-credentials each managed cloud's public database CA bundle
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-24d
+  decisions: []
+  deliverables:
+  - .github/workflows/rotate-credentials.yml
+  - tests/test_rotate_credentials_workflow.py
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - When a cell's kind is managed, the workflow fetches that cloud's public CA bundle for its database service from the cloud's own published address, checks it holds certificates only, and passes it with `--db-ca`, shown by a test of the workflow. For a self-hosted cell it does nothing new.
+  - The bundle is not a secret and is never printed, shown by a test.
+  notes: Found in K-24d. The manifest refuses a managed cell with no db_ca, so a managed run stops until this is in. It edits a workflow that holds credentials, so it needs a person's review.
+  refs:
+  - docs/credentialed-workflows.md
 - id: I-01vd
   title: Runbook for moving the proving environment to managed cells, and back
   phase: P1
@@ -1510,6 +1549,8 @@ tasks:
   - K-24bd
   - K-24cb
   - K-24d
+  - K-24e
+  - K-24f
   decisions: []
   deliverables:
   - docs/runbooks/moving-to-managed-cells.md
