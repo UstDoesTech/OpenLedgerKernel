@@ -66,7 +66,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-88 of 103 tasks done.
+88 of 105 tasks done.
 
 ```mermaid
 flowchart LR
@@ -98,7 +98,9 @@ flowchart LR
   K_13["K-13<br/>Write path skeleton, run the API next to each cell"]
   K_16["K-16<br/>Run the API machines in the Europe environment"]
   K_17["K-17<br/>Issue and rotate the API's certificates and cell credentials"]
-  K_18["K-18<br/>Issue the etcd members' certificates from the same authority"]
+  K_18a["K-18a<br/>Issue the etcd members' certificates from the same authority (the rotation)"]
+  K_18c["K-18c<br/>Let the rotation identities write the etcd members' secrets"]
+  K_18b["K-18b<br/>Let the rotate-credentials workflow read the control plane and say how to use it"]
   K_19a["K-19a<br/>Let the API trust a database CA, and make the first start say why it cannot connect"]
   K_19b["K-19b<br/>Fill each API secret's database connection and the proving tenant's tokens"]
   K_19c["K-19c<br/>Make the rotation identities with OpenTofu"]
@@ -217,7 +219,10 @@ flowchart LR
   K_15 --> K_16
   K_13 --> K_17
   S_07 --> K_17
-  K_17 --> K_18
+  K_17 --> K_18a
+  K_17 --> K_18c
+  K_18a --> K_18b
+  K_18c --> K_18b
   K_17 --> K_19a
   K_19a --> K_19b
   K_17 --> K_19c
@@ -357,7 +362,9 @@ flowchart LR
 | **K-13** Write path skeleton, run the API next to each cell | Ledger kernel | K-14, K-15, S-05 | None | M | Agent | Done |
 | **K-16** Run the API machines in the Europe environment | Ledger kernel | K-13, K-15 | None | S | Agent | Done |
 | **K-17** Issue and rotate the API's certificates and cell credentials | Ledger kernel | K-13, S-07 | D-17 | M | Agent | Done |
-| **K-18** Issue the etcd members' certificates from the same authority | Ledger kernel | K-17 | None | S | Agent | In progress |
+| **K-18a** Issue the etcd members' certificates from the same authority (the rotation) | Ledger kernel | K-17 | None | S | Agent | To do |
+| **K-18c** Let the rotation identities write the etcd members' secrets | Ledger kernel | K-17 | None | S | Agent | To do |
+| **K-18b** Let the rotate-credentials workflow read the control plane and say how to use it | Ledger kernel | K-18a, K-18c | None | S | Agent | To do |
 | **K-19a** Let the API trust a database CA, and make the first start say why it cannot connect | Ledger kernel | K-17 | None | S | Agent | Done |
 | **K-19b** Fill each API secret's database connection and the proving tenant's tokens | Ledger kernel | K-19a | D-19 | S | Agent | Done |
 | **K-19c** Make the rotation identities with OpenTofu | Infrastructure | K-17 | D-18 | M | Agent | Done |
