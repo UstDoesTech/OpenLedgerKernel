@@ -66,7 +66,7 @@ These are human decisions. A task that lists one can still be built up to its in
 The kernel is built first because everything else is a client of it. The order follows risk: the single-round-trip leg (K-03) fixes the latency the Neon run exposed, the in-transit journals (K-04) keep every cell's books balanced at every instant, and replication with fencing (R-01, R-02) carries the guarantees the harness proved. The conformance suite (T-01) then holds the Rust kernel to every behaviour the Python harness established, before real network faults (T-02) and randomised runs (T-03) push past what the harness could test. Infrastructure (I-01) runs in parallel. The walking skeleton (K-11 to K-13) puts a thin write path on the kernel so that a first entry can be made before the gate.
 
 <!-- generated:phase-P1 -->
-93 of 109 tasks done.
+93 of 110 tasks done.
 
 ```mermaid
 flowchart LR
@@ -128,6 +128,7 @@ flowchart LR
   K_24bc["K-24bc<br/>Let the Google Cloud managed cell's API machine sign in to its database by identity"]
   K_24bd["K-24bd<br/>Let the Lakebase cell's API sign in to its database with a service principal"]
   K_24ca["K-24ca<br/>Make the AWS managed cell's application role and give it only the ledger's schema"]
+  K_24cc["K-24cc<br/>A workflow a person approves that makes a managed cell's application role"]
   K_24cb["K-24cb<br/>Make the other managed cells' application roles and give them only the ledger's schema"]
   K_24d["K-24d<br/>Write a managed cell's connection and database authority in rotate-credentials"]
   I_01vd["I-01vd<br/>Runbook for moving the proving environment to managed cells, and back"]
@@ -259,6 +260,7 @@ flowchart LR
   I_01vb --> K_24bd
   K_24a --> K_24bd
   K_24ba --> K_24ca
+  K_24ca --> K_24cc
   K_24ca --> K_24cb
   K_24bb --> K_24cb
   K_24bc --> K_24cb
@@ -406,6 +408,7 @@ flowchart LR
 | **K-24bc** Let the Google Cloud managed cell's API machine sign in to its database by identity | Infrastructure | I-01vb, K-24a | None | S | Agent | To do |
 | **K-24bd** Let the Lakebase cell's API sign in to its database with a service principal | Infrastructure | I-01vb, K-24a | None | S | Agent | To do |
 | **K-24ca** Make the AWS managed cell's application role and give it only the ledger's schema | Ledger kernel | K-24ba | None | M | Agent | Done |
+| **K-24cc** A workflow a person approves that makes a managed cell's application role | Ledger kernel | K-24ca | None | S | Agent | To do |
 | **K-24cb** Make the other managed cells' application roles and give them only the ledger's schema | Ledger kernel | K-24ca, K-24bb, K-24bc, K-24bd | None | S | Agent | To do |
 | **K-24d** Write a managed cell's connection and database authority in rotate-credentials | Ledger kernel | K-24a, K-22 | None | S | Agent | To do |
 | **I-01vd** Runbook for moving the proving environment to managed cells, and back | Infrastructure | K-24bd, K-24cb, K-24d | None | S | Agent | To do |
