@@ -18,9 +18,16 @@ import urllib.request
 # The cloud's own published address for the bundle that signs its managed database's certificate.
 # Only Amazon is here so far. Azure rotates its roots and intermediates on its own schedule, and
 # Cloud SQL signs with a certificate authority of each instance, so neither has one fixed address.
-BUNDLES = {
-    "aws": "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
+# Amazon's global bundle holds over a hundred certificates, which is more than a secret can hold
+# (AWS Secrets Manager: 65,536 bytes), so the cell's own region's bundle is used instead.
+REGIONAL = {
+    "aws": "https://truststore.pki.rds.amazonaws.com/{region}/{region}-bundle.pem",
 }
+BUNDLES = REGIONAL
+REGION = re.compile(r"\.([a-z]{2}(?:-[a-z]+)+-[0-9]+)\.rds\.amazonaws\.com\.?$")
+# The bundle goes into the API secret with the other files. Secrets Manager holds 65,536 bytes in all and
+# Key Vault holds 25 KB, so a bundle larger than this is refused before it is written anywhere.
+MAX_BUNDLE = 20_000
 LIMIT = 1_000_000
 BLOCK = re.compile(r"-----BEGIN CERTIFICATE-----\s+([A-Za-z0-9+/=\s]+?)\s*-----END CERTIFICATE-----")
 
@@ -48,7 +55,21 @@ def check(pem: str) -> str:
             raise SystemExit("a CA bundle holds a certificate that is not base64") from None
         if not der.startswith(b"\x30"):
             raise SystemExit("a CA bundle holds a certificate that is not DER")
-    return pem if pem.endswith("\n") else pem + "\n"
+    pem = pem if pem.endswith("\n") else pem + "\n"
+    if len(pem.encode("ascii")) > MAX_BUNDLE:
+        raise SystemExit("a CA bundle is too large to be kept in the API secret")
+    return pem
+
+
+def url_for(cloud: str, cell: dict) -> str:
+    """The address of the bundle for this cell. AWS gives its region in the database's host name."""
+    template = REGIONAL[cloud]
+    if "{region}" not in template:
+        return template
+    found = REGION.search(str(cell.get("host") or ""))
+    if not found:
+        raise SystemExit(f"a managed database in {cloud} has no host this run can read a region from")
+    return template.format(region=found.group(1))
 
 
 def main(argv: list[str]) -> int:
@@ -64,9 +85,9 @@ def main(argv: list[str]) -> int:
     for cloud in sorted(cells):
         if cells[cloud].get("kind") != "managed":
             continue
-        if cloud not in BUNDLES:
+        if cloud not in REGIONAL:
             raise SystemExit(f"a managed database in {cloud} has no public CA bundle this run can fetch yet")
-        pem = check(fetch(BUNDLES[cloud]))
+        pem = check(fetch(url_for(cloud, cells[cloud])))
         os.makedirs(out, mode=0o700, exist_ok=True)
         with open(os.path.join(out, f"{cloud}.pem"), "w") as f:
             f.write(pem)

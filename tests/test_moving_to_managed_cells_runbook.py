@@ -77,7 +77,7 @@ def test_deletion_protection_is_only_where_the_runbook_says():
 def test_the_status_table_matches_what_the_code_does():
     # Only Amazon has a CA bundle, and the refusal is worded as the runbook quotes it.
     script = (ROOT / "scripts" / "fetch_database_ca.py").read_text()
-    assert re.search(r"BUNDLES = \{\s*\"aws\":", script) and script.count('": "https://') == 1
+    assert re.search(r"REGIONAL = \{\s*\"aws\":", script) and script.count('": "https://') == 1
     assert "a managed database in {cloud} has no public CA bundle this run can fetch yet" in script
     assert "a managed database in azure has no public CA bundle this run can fetch yet" in TEXT
     # Only AWS has the sign-in grant, and the managed Azure and Google Cloud modules have none.
