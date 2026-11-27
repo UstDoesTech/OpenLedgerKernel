@@ -1566,6 +1566,46 @@ tasks:
   notes: Split off from K-24f. Reading an instance's certificate authority widens an identity, so it needs a person's review.
   refs:
   - docs/credentialed-workflows.md
+- id: K-24h
+  title: Clear a managed cell's sign-in leftovers when rotate-credentials runs for a self-hosted cell
+  phase: P1
+  workstream: K
+  size: S
+  status: todo
+  depends_on:
+  - K-24d
+  decisions: []
+  deliverables:
+  - crates/pki/src/rotate.rs
+  - crates/pki/tests/managed_cell_credentials.rs
+  - docs/runbooks/rotating-credentials.md
+  acceptance:
+  - When a credentials run finds a self-hosted cell whose secret still holds `db-sign-in`, it removes `db-sign-in` and the passwordless `db.conn` that went with it, so a `proving` run or a person fills a new `db.conn`. A test over an in-memory store shows both gone.
+  - A self-hosted cell with neither entry is written exactly as before, and a managed cell is unchanged, shown by tests.
+  notes: Found writing I-01vd. A rotation writes `db-sign-in` for a managed cell and never removes it, so going back to self-hosted leaves the word `aws_iam` beside a database that wants a password, and the service cannot sign in. Until this is done the runbook tells a person to delete the two entries by hand.
+  refs:
+  - docs/credentialed-workflows.md
+- id: K-24i
+  title: Let the cells layer set the kind of each cloud's cell on its own
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - K-24cc
+  decisions: []
+  deliverables:
+  - infra/envs/europe/cells/variables.tf
+  - infra/envs/europe/cells/cells.tf
+  - tests/test_cells_layer.py
+  - docs/runbooks/moving-to-managed-cells.md
+  acceptance:
+  - A new variable, `cell_kinds`, maps a cloud (`aws`, `azure`, `gcp`) to `self_hosted` or `managed`. A cloud it does not name takes `cell_kind`, so an environment that sets nothing new is planned exactly as before. A test shows both, and that an unknown cloud or kind is refused.
+  - With `cell_kinds` set to `aws` = `managed` and `cell_kind` left at its default, the Azure and Google Cloud cells keep the self-hosted form and only the AWS cell changes, shown by a test of the layer's module calls.
+  - The runbook uses it to move one cloud at a time.
+  notes: Found writing I-01vd. `cell_kind` is one setting for all three cells, and `rotate-credentials` stops with "a managed database in <cloud> has no public CA bundle this run can fetch yet" for a managed Azure or Google Cloud cell, so today no managed run can finish for any cloud. Moving AWS alone gets the first managed cell working while K-24g, K-24bb and K-24bc are done.
+  refs:
+  - docs/runbooks/pausing-for-cost.md
 - id: I-01vd
   title: Runbook for moving the proving environment to managed cells, and back
   phase: P1
@@ -1573,12 +1613,9 @@ tasks:
   size: S
   status: todo
   depends_on:
-  - K-24bd
-  - K-24cb
   - K-24d
   - K-24e
   - K-24f
-  - K-24g
   - K-24cc
   decisions: []
   deliverables:
@@ -1586,12 +1623,37 @@ tasks:
   - docs/runbooks/README.md
   - tests/test_moving_to_managed_cells_runbook.py
   acceptance:
-  - It gives the order: set cell_kind, plan and read that each cell is replaced and nothing else (not the network, the API machines or the load balancer), apply, run rotate-credentials for db.conn, replace or restart the API machines, check, and how to go back.
+  - It gives the order, the same for every cloud: set cell_kind, plan and read that each cell is replaced and nothing else (not the network, the API machines or the load balancer), apply, run rotate-credentials for db.conn, replace or restart the API machines, check, and how to go back.
   - It says plainly that switching kind destroys the old cells with no data carried across, what that means for the control plane's record of each cell, what a managed cell costs while it exists, and that pausing for cost cannot stop an Azure high-availability server.
+  - It says which clouds a managed run can finish for today, and that cell_kind is one setting for all three cells.
   - A test holds its workflow names, inputs, variables, files and counts to the ones that exist, and that no secret or name is written in it.
+  notes: Split in two because the first part does not need the Azure and Google Cloud work. This part gives the steps that do not change from cloud to cloud, and says what is ready now. I-01ve brings in the rest once K-24bd, K-24cb and K-24g are done.
   refs:
   - docs/runbooks/pausing-for-cost.md
   - docs/runbooks/rolling-the-api-image.md
+- id: I-01ve
+  title: Bring the managed cells runbook up to date for Azure and Google Cloud
+  phase: P1
+  workstream: I
+  size: S
+  status: todo
+  depends_on:
+  - I-01vd
+  - K-24bd
+  - K-24cb
+  - K-24g
+  - K-24i
+  decisions: []
+  deliverables:
+  - docs/runbooks/moving-to-managed-cells.md
+  - tests/test_moving_to_managed_cells_runbook.py
+  acceptance:
+  - The runbook no longer says an Azure or Google Cloud managed run stops, and gives the steps that differ for each of those clouds, with the settings and files they use.
+  - Its test holds each added step to a setting, file or count that exists.
+  notes: Split off from I-01vd.
+  refs:
+  - docs/runbooks/rotating-credentials.md
+  - docs/runbooks/applying-the-ledger-schema.md
 - id: K-25
   title: Apply the ledger schema to a deployed cell from its API machine
   phase: P1
