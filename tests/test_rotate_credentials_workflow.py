@@ -36,16 +36,30 @@ def step(name_part):
     return next(s for s in steps() if name_part in s.get("name", ""))
 
 
-def test_only_a_person_dispatching_it_starts_a_run_and_nothing_schedules_it():
+def test_only_a_person_dispatching_it_or_one_weekly_schedule_starts_a_run():
     triggers = load().get("on", load().get(True))
-    assert set(triggers) == {"workflow_dispatch"}
-    assert "schedule" not in code() and "pull_request" not in code() and "\npush:" not in code()
+    assert set(triggers) == {"workflow_dispatch", "schedule"}
+    # One cron, once a week: a fixed minute, hour and weekday, every day of the month and every month.
+    assert len(triggers["schedule"]) == 1
+    minute, hour, day, month, weekday = triggers["schedule"][0]["cron"].split()
+    assert minute.isdigit() and hour.isdigit() and weekday.isdigit() and (day, month) == ("*", "*")
+    assert "pull_request" not in code() and "\npush:" not in code()
 
 
 def test_it_runs_only_from_main_by_the_owner_and_waits_for_approval():
     assert "github.ref == 'refs/heads/main'" in job()["if"]
-    assert "github.actor == github.repository_owner" in job()["if"]
+    # Only a schedule may skip the owner check, and a schedule runs from the default branch only.
+    assert "(github.event_name == 'schedule' || github.actor == github.repository_owner)" in job()["if"]
     assert job()["environment"] == "rotate-credentials"
+
+
+def test_a_scheduled_run_has_no_inputs_so_each_one_falls_back_to_the_safe_choice():
+    env = job()["env"]
+    assert env["INPUT_KIND"] == "${{ inputs.kind || 'all' }}"
+    assert env["INPUT_SETTLE"] == "${{ inputs.settle_secs || '420' }}"
+    assert env["INPUT_ENV"] == "${{ inputs.env || 'europe' }}"
+    # Never proving by itself: only a person's own dispatch may ask to fill a missing credential.
+    assert env["INPUT_PROVING"] == "${{ inputs.proving || 'false' }}"
 
 
 def test_one_rotation_at_a_time_and_none_is_cancelled_part_way():
@@ -179,7 +193,8 @@ def test_the_code_owners_cover_the_tool_and_its_script():
 def test_proving_is_off_unless_a_person_turns_it_on_and_is_checked_before_use():
     proving = load()[True]["workflow_dispatch"]["inputs"]["proving"]
     assert proving["type"] == "boolean" and proving["default"] is False
-    assert job()["env"]["INPUT_PROVING"] == "${{ inputs.proving }}"
+    # A scheduled run has no input, and falls back to off.
+    assert job()["env"]["INPUT_PROVING"] == "${{ inputs.proving || 'false' }}"
     check = step("Check the inputs")["run"]
     assert "(true|false)" in check and "INPUT_PROVING" in check
 

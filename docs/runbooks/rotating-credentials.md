@@ -18,7 +18,7 @@ Certificates last **30 days**. Cell credentials are replaced on every run. Each 
 
 Run it with `kind` set to `all` **every 7 days**. Certificates are then replaced at least every 10 days, they have at least 20 days left at every run, and cell credentials are never older than 7 days. A missed week costs nothing. The signer or the workflow can be down for about three weeks before any certificate runs out.
 
-Nothing schedules it yet: a person dispatches it, as for every credentialed workflow. Setting a reminder is the way to keep to the 7 days.
+A weekly schedule (Mondays, 05:17 UTC) starts it for you, with `kind` `all` in `europe` and `proving` off. It does nothing until you approve the `rotate-credentials` environment, so each Monday you get an approval request: approve it, and about 15 minutes later it is done. If nobody approves, GitHub drops the waiting run after 30 days, and a rotation later than 7 days costs margin, as above. Also know that GitHub turns a public repository's schedules off after 60 days with no activity in it. You can still dispatch it yourself at any time, and a dispatched run is the way to use `proving`, another environment or another `kind`.
 
 Run it on demand, with the `kind` shown:
 
@@ -132,4 +132,4 @@ A cell's private key, if it was seen, can be used until its certificate runs out
 - **`db.conn` and `tokens.json`.** A person fills these, unless the environment is a proving one and the run was given `proving` (D-19). Then the run copies the cell's administrator credential into `db.conn` and makes a fresh token for the tenant. K-19d replaces the copy with a role the node agent makes. Real sign-in replaces the tokens in A-06.
 - **Reading the proving token.** Use your own sign-in and keep it out of the log: for AWS, `aws secretsmanager get-secret-value --secret-id <the cell's API secret> --query SecretString --output text | jq -r '."tokens.json" | fromjson | .[0].token' > ~/smoke-token-aws`. Each cell's token is its own.
 - **Reading the test user's password.** A `proving` run makes one user for the basic UI, `user@bankofmumanddad.test` (a fake domain), in each cell. Its password is made fresh for each cell and kept in the cell's API secret as `ui-test-password`. The service never reads that entry, only its hash in `users.json`. Read it with your own sign-in and keep it out of the log: for AWS, `aws secretsmanager get-secret-value --secret-id <the cell's API secret> --query SecretString --output text | jq -r '."ui-test-password"'`. Never put it in the repository, an issue or a pull request. Real sign-in replaces this in A-06.
-- **The 7 day rhythm.** A person dispatches it, because a credentialed workflow runs only when a person starts it.
+- **The 7 day rhythm.** A schedule starts it each week, and a person approves it. Nothing rotates without an approval.
