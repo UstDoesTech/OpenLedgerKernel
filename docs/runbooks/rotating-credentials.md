@@ -4,7 +4,7 @@ Use this to issue the API machines' certificates and cell credentials for the fi
 
 ## A managed database's CA bundle
 
-A run fetches each managed cell's public CA bundle from its cloud (`scripts/fetch_database_ca.py`) and writes it as the cell's `db-ca.crt`. Nothing is needed from you. If the run stops with "no public CA bundle this run can fetch yet", the cell is a managed Azure or Google Cloud one, which is not supported yet. A self-hosted cell's run is unchanged.
+A run fetches each managed cell's public CA bundle from its cloud (`scripts/fetch_database_ca.py`) and writes it as the cell's `db-ca.crt`. Nothing is needed from you. If the run stops with "no public CA bundle this run can fetch yet", the cell is a managed Azure or Google Cloud one, which is not supported yet. For AWS it is the bundle of the cell's own region, a few certificates. The global bundle is too big for a secret, and a run that used it stopped at step 1 with "a secret could not be written". A host with no region in it, or a bundle over 20,000 bytes, stops the run before anything is written. A self-hosted cell's run is unchanged.
 
 ## What it does
 

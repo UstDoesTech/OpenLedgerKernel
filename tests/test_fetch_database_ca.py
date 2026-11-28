@@ -16,9 +16,12 @@ DER = b"\x30\x03\x02\x01\x01"
 GOOD = "-----BEGIN CERTIFICATE-----\n" + base64.b64encode(DER).decode() + "\n-----END CERTIFICATE-----\n"
 
 
+HOST = "cell-001.cluster-abc123.eu-north-1.rds.amazonaws.com"
+
+
 def cells(tmp_path, **kinds):
     path = tmp_path / "cells.json"
-    path.write_text(json.dumps({"cells": {"value": {c: {"kind": k} for c, k in kinds.items()}}}))
+    path.write_text(json.dumps({"cells": {"value": {c: {"kind": k, "host": HOST} for c, k in kinds.items()}}}))
     return str(path)
 
 
@@ -63,8 +66,37 @@ def test_a_bundle_with_anything_but_certificates_is_refused_and_quoted_nowhere(b
 def test_only_https_and_a_small_download_are_accepted():
     with pytest.raises(SystemExit):
         ca.fetch("http://example.invalid/bundle.pem")
-    assert all(u.startswith("https://") for u in ca.BUNDLES.values())
-    assert ca.BUNDLES["aws"] == "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem"
+    assert all(u.startswith("https://") for u in ca.REGIONAL.values())
+    assert ca.REGIONAL["aws"] == "https://truststore.pki.rds.amazonaws.com/{region}/{region}-bundle.pem"
+    assert "global-bundle" not in (ROOT / "scripts" / "fetch_database_ca.py").read_text().replace("global bundle", "")
+
+
+def test_it_asks_for_the_bundle_of_the_cells_own_region_and_never_the_global_one(tmp_path, monkeypatch):
+    asked = []
+    monkeypatch.setattr(ca, "fetch", lambda url: asked.append(url) or GOOD)
+    assert ca.main(["x", cells(tmp_path, aws="managed"), str(tmp_path / "out")]) == 0
+    assert asked == ["https://truststore.pki.rds.amazonaws.com/eu-north-1/eu-north-1-bundle.pem"]
+
+
+@pytest.mark.parametrize("host", [None, "", "10.11.0.10", "db.example.com", "x.eu-north-1.rds.amazonaws.com.evil.example"])
+def test_a_host_that_gives_no_region_is_refused_and_nothing_is_fetched(tmp_path, monkeypatch, host):
+    monkeypatch.setattr(ca, "fetch", lambda url: pytest.fail("fetched"))
+    path = tmp_path / "cells.json"
+    path.write_text(json.dumps({"cells": {"value": {"aws": {"kind": "managed", "host": host}}}}))
+    with pytest.raises(SystemExit) as stop:
+        ca.main(["x", str(path), str(tmp_path / "out")])
+    assert "no host this run can read a region from" in str(stop.value)
+
+
+def test_a_bundle_too_big_for_the_secret_is_refused():
+    """Amazon's global bundle has over a hundred certificates, about 150 KB, and Secrets Manager holds 65,536 bytes."""
+    big = ("-----BEGIN CERTIFICATE-----\n" + base64.b64encode(b"\x30" + b"a" * 1500).decode() + "\n-----END CERTIFICATE-----\n") * 20
+    assert len(big) > ca.MAX_BUNDLE
+    with pytest.raises(SystemExit) as stop:
+        ca.check(big)
+    assert "too large" in str(stop.value)
+    assert ca.check(GOOD) == GOOD
+    assert ca.MAX_BUNDLE < 25_000 < 65_536
 
 
 def test_the_script_reads_nothing_from_the_environment_and_runs_no_command():
